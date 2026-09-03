@@ -33,9 +33,16 @@ From `apps/web`:
 npm install
 npm run build
 npm run typecheck
+npm run lint
+npm run format:check
 ```
 
 `npm run dev` starts a local development server. `npm run build` produces a production build under `.output/` (git-ignored, not committed).
+
+### Formatting and static analysis
+
+- [ESLint](https://eslint.org/), via the official [`@nuxt/eslint`](https://eslint.nuxt.com/) module, provides Nuxt- and Vue-aware linting through the generated flat config in [`eslint.config.mjs`](eslint.config.mjs). Run `npm run lint`.
+- [Prettier](https://prettier.io/) owns formatting; the module's stylistic ESLint rules are disabled (`eslint.config.stylistic: false` in `nuxt.config.ts`) to avoid the two disagreeing. Configuration is in [`.prettierrc.json`](.prettierrc.json). Run `npm run format:check` to check, or `npx prettier --write .` to format.
 
 ## Docker development environment
 

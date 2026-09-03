@@ -64,9 +64,16 @@ php artisan about
 php artisan test
 composer validate --strict
 composer check-platform-reqs
+./vendor/bin/pint --test
+./vendor/bin/phpstan analyse
 ```
 
 Do not run the Composer `setup` script until a local PostgreSQL environment has been intentionally configured. It creates a local `.env`, application key, and runs migrations.
+
+### Formatting and static analysis
+
+- [Laravel Pint](https://laravel.com/docs/pint) formats PHP code to the default Laravel preset; no project-specific `pint.json` is committed because the preset already passes cleanly. Run `./vendor/bin/pint` to format, `./vendor/bin/pint --test` to check without writing.
+- [Larastan](https://github.com/larastan/larastan) (PHPStan with Laravel-aware rules) is configured in [`phpstan.neon`](phpstan.neon) at level 9 (the strictest level PHPStan supports), scoped to `app/`. Run `./vendor/bin/phpstan analyse`.
 
 ## Docker development environment
 
