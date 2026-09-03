@@ -16,11 +16,14 @@ Each document carries its own `Status`: `Draft` → `Active` → `Superseded` or
 
 | Document | Status | Version | Summary |
 | --- | --- | --- | --- |
-| [AETS-000 — Foundation](AETS-000.md) | Active | 1.1.0 | Purpose, scope, authority, philosophy, design principles, governance, versioning |
-| [AETS-001 — Accounting Terminology](AETS-001-Accounting-Terminology.md) | Active | 1.1.0 | Canonical accounting vocabulary — 26 defined terms and terminology usage rules |
+| [AETS-000 — Foundation](AETS-000.md) | Active | 1.2.0 | Purpose, scope, authority, philosophy, design principles, governance, versioning |
+| [AETS-001 — Accounting Terminology](AETS-001-Accounting-Terminology.md) | Active | 1.2.0 | Canonical accounting vocabulary — 34 defined terms and terminology usage rules |
 | [AETS-002 — Accounting Invariants](AETS-002-Accounting-Invariants.md) | Active | 1.1.0 | The 14 non-negotiable financial integrity invariants, extracted from AETS-000 §6 |
+| [AETS-003 — Money Specification](AETS-003-Money-Specification.md) | Active | 1.0.1 | Normative Money/Currency/MinorUnits domain model, public contract, persistence mapping, and 15 `MON-NNN` invariants |
 
-Planned, not-yet-created documents (chart of accounts, journal/posting model, money representation design, correction model, period management, bank reconciliation, invoicing and payment allocation, MyInvois submission, reporting, audit trail, AI proposal contract, Proof of Accuracy) are listed from AETS-003 onward in [AETS-000 §10](AETS-000.md#10-planned-document-structure). They are not reserved or committed to until actually created.
+This table, together with [AETS-000 §10](AETS-000.md#10-planned-document-structure), is the single authoritative roadmap for the AETS series — no other document states a competing numbering.
+
+Planned, not-yet-created documents — AETS-004 (Journal & Posting Model), AETS-005 (Chart of Accounts & Account Taxonomy), AETS-006 (Posting Rules), AETS-007 (Accounting Commands), AETS-008 (Bank Reconciliation), AETS-009 (Financial Reporting), AETS-010 (Audit Trail), AETS-011 (AI Accounting Proposal Contract), AETS-012 (Proof of Accuracy), AETS-013 (MyInvois Integration), and AETS-014 (Period Management) — are listed in [AETS-000 §10](AETS-000.md#10-planned-document-structure). They are not reserved or committed to until actually created.
 
 ## Creating an AETS document
 

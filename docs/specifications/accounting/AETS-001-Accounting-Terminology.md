@@ -1,7 +1,7 @@
 # AETS-001: Accounting Terminology
 
 - Status: Active
-- Version: 1.1.0
+- Version: 1.2.0
 - Effective date: 2026-09-03
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -27,9 +27,9 @@ This document supersedes the placeholder that previously occupied `AETS-001` and
 Consistent with the constraints on this task and with [AETS-000](AETS-000.md) §1–2, this document does **not**:
 
 - define any accounting algorithm, calculation, matching rule, or workflow;
-- restate or narrow the Money persistence decision — the canonical representation (integer minor units, PostgreSQL `BIGINT`) is settled by [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved amendment; formalizing the full Money domain value object contract remains AETS-005's task, per [AETS-000 §10](AETS-000.md#10-planned-document-structure);
+- restate or narrow the Money domain contract — the canonical representation and full contract (Currency, MinorUnits, and related types) are fully specified in [AETS-003](AETS-003-Money-Specification.md), per [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved amendment;
 - design the Posting Engine, journal/line schema, or transaction mechanics — deferred to AETS-004;
-- design the Chart of Accounts or account taxonomy — deferred to AETS-003;
+- design the Chart of Accounts or account taxonomy — deferred to AETS-005, per [AETS-000 §10](AETS-000.md#10-planned-document-structure);
 - change, add, or remove any invariant in [AETS-002](AETS-002-Accounting-Invariants.md); or
 - introduce any new architecture decision. Where a definition below touches something an ADR already decided, it cites that ADR rather than restating or reinterpreting it.
 
@@ -60,7 +60,7 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 
 - **Term:** Account
 - **Normative Definition:** A named classification within hore.my's chart of accounts, to which Journal Lines post, representing one category of asset, liability, equity, income, or expense.
-- **Notes / Boundaries:** The structure, taxonomy, numbering, and ownership rules for accounts are defined by a later document (AETS-003, Chart of Accounts & Account Taxonomy) and are not defined here. Every Account belongs to exactly one Tenant.
+- **Notes / Boundaries:** The structure, taxonomy, numbering, and ownership rules for accounts are defined by a later document (AETS-005, Chart of Accounts & Account Taxonomy) and are not defined here. Every Account belongs to exactly one Tenant.
 - **Related Terms:** Journal Line, Debit, Credit, Balance, Tenant.
 
 ### Accounting Command
@@ -126,18 +126,32 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 - **Notes / Boundaries:** A Business Transaction is a real-world occurrence, not itself a ledger record; its accounting effect exists only once represented by a posted Journal. See §4, rule 4, on why "Transaction" alone is never used.
 - **Related Terms:** Bank Transaction, Journal, Accounting Proposal, Evidence.
 
+### Canonical Decimal Representation
+
+- **Term:** Canonical Decimal Representation
+- **Normative Definition:** The single authoritative textual form of a Money amount at an untrusted or external boundary — a decimal string conforming to the canonical grammar for its Currency's scale: an optional leading minus sign, one or more digits, and, only if the Currency's scale is greater than zero, exactly one decimal point followed by exactly that many digits.
+- **Notes / Boundaries:** No locale formatting, thousands separator, currency symbol, whitespace, or scientific notation is part of the canonical grammar ([AETS-003 §9](AETS-003-Money-Specification.md#9-construction-and-parsing)). Parsing it is deterministic; input exceeding the target Currency's scale, or not conforming to the grammar, is rejected outright, never silently rounded or normalized ([ADR-0007](../../adr/0007-money-representation-strategy.md)).
+- **Related Terms:** Money, Currency, Money Parser.
+
 ### Credit
 
 - **Term:** Credit
 - **Normative Definition:** The right-hand side of double-entry accounting; an amount posted to the credit side of a Journal Line, per standard double-entry convention for the relevant Account type.
-- **Notes / Boundaries:** A Credit has no independent meaning outside a Journal Line — it exists only paired with Debits such that a Journal's total debit equals total credit exactly ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 1). Which Account types normally carry credit balances is chart-of-accounts design (AETS-003, not yet created) and is not defined here.
+- **Notes / Boundaries:** A Credit has no independent meaning outside a Journal Line — it exists only paired with Debits such that a Journal's total debit equals total credit exactly ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 1). Which Account types normally carry credit balances is chart-of-accounts design (AETS-005, not yet created) and is not defined here.
 - **Related Terms:** Debit, Journal Line, Balance, Account.
+
+### Currency
+
+- **Term:** Currency
+- **Normative Definition:** A Value Object identifying a monetary unit by its canonical identifier (an ISO 4217 alphabetic code, e.g. `MYR`) and owning that unit's canonical minor-unit scale.
+- **Notes / Boundaries:** Currency, not Money, owns scale — a Money value never carries an independent scale ([AETS-003 §7](AETS-003-Money-Specification.md#7-currency-specification)). MVP supports `MYR` only, at scale 2; the type's shape remains currency-agnostic so it does not need to change to support a second currency later. Two Currency instances are equal if and only if they share the same canonical identifier.
+- **Related Terms:** Money, MinorUnits, Canonical Decimal Representation.
 
 ### Debit
 
 - **Term:** Debit
 - **Normative Definition:** The left-hand side of double-entry accounting; an amount posted to the debit side of a Journal Line, per standard double-entry convention for the relevant Account type.
-- **Notes / Boundaries:** Symmetric to Credit; a Debit has no independent meaning outside a Journal Line, and which Account types normally carry debit balances is chart-of-accounts design (AETS-003, not yet created) and is not defined here.
+- **Notes / Boundaries:** Symmetric to Credit; a Debit has no independent meaning outside a Journal Line, and which Account types normally carry debit balances is chart-of-accounts design (AETS-005, not yet created) and is not defined here.
 - **Related Terms:** Credit, Journal Line, Balance, Account.
 
 ### Evidence
@@ -175,12 +189,40 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 - **Notes / Boundaries:** The Ledger is the single source of financial truth; a Projection is derived from it and must be rebuildable from it ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 5). "Ledger" refers to the posted record set as a whole, not to any single Journal or Account.
 - **Related Terms:** Journal, Balance, Trial Balance, Projection, Tenant.
 
+### MinorUnits
+
+- **Term:** MinorUnits
+- **Normative Definition:** A narrow, dedicated Value Object representing an exact integer numeral — the count of a currency's minor units — used as Money's canonical persisted and internal exact-quantity representation.
+- **Notes / Boundaries:** MinorUnits carries no Currency and no arithmetic or business behavior of its own; it is a type-safety carrier, not a second Money ([AETS-003 §8](AETS-003-Money-Specification.md#8-minorunits-specification)). It exposes an exact string representation and must not expose a native-int canonical accessor. PostgreSQL `BIGINT` is the canonical persisted form of a MinorUnits value ([ADR-0007](../../adr/0007-money-representation-strategy.md); [AETS-003 §15](AETS-003-Money-Specification.md#15-persistence-mapping)).
+- **Related Terms:** Money, Currency, Persistence Adapter.
+
 ### Money
 
 - **Term:** Money
 - **Normative Definition:** An amount paired with an explicit currency and an explicit minor-unit scale, representing a monetary value using one of the exact representations permitted for hore.my.
-- **Notes / Boundaries:** Binary floating point is prohibited for any monetary storage, calculation, comparison, aggregation, posting, reconciliation, or export ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 10; [ADR-0007](../../adr/0007-money-representation-strategy.md)). MVP currency is MYR at two decimal places. **The canonical representation is integer minor units**, stored as PostgreSQL `BIGINT`, per ADR-0007's Founder-approved amendment; the full Money domain value object contract (Currency, MinorUnits, and related types) is formalized separately in AETS-005 (Money Representation Design).
-- **Related Terms:** Journal Line, Debit, Credit, Balance.
+- **Notes / Boundaries:** Binary floating point is prohibited for any monetary storage, calculation, comparison, aggregation, posting, reconciliation, or export ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 10; [ADR-0007](../../adr/0007-money-representation-strategy.md)). MVP currency is MYR at two decimal places. **The canonical representation is integer minor units**, stored as PostgreSQL `BIGINT`, per ADR-0007's Founder-approved amendment. The full Money domain value object contract — construction, arithmetic, comparison, persistence mapping, and the `MON-NNN` invariants — is fully specified in [AETS-003](AETS-003-Money-Specification.md).
+- **Related Terms:** Journal Line, Debit, Credit, Balance, Currency, MinorUnits.
+
+### Money Formatter
+
+- **Term:** Money Formatter
+- **Normative Definition:** The presentation-layer component responsible for rendering a Money value into a human-readable, locale-aware display form (for example, "RM10.25"), consuming a Money value and a display context to produce formatted output.
+- **Notes / Boundaries:** A Money Formatter is explicitly not part of Money — Money must not contain formatting or locale metadata, and formatting logic inside Money is a prohibited operation ([AETS-003 §6](AETS-003-Money-Specification.md#6-money-domain-model), [AETS-003 §21](AETS-003-Money-Specification.md#21-prohibited-operations)). This glossary names the concept without designing its behavior.
+- **Related Terms:** Money, Money Parser, Canonical Decimal Representation.
+
+### Money Parser
+
+- **Term:** Money Parser
+- **Normative Definition:** The deterministic component that validates and converts a Canonical Decimal Representation, paired with an explicit Currency, at a trusted or untrusted boundary into a Money value, applying every rejection rule for malformed input, over-precision, scientific notation, locale-ambiguous forms, and non-string or binary-float input.
+- **Notes / Boundaries:** The Money Parser is the only path by which an external decimal string becomes an authoritative Money value ([ADR-0007](../../adr/0007-money-representation-strategy.md); [AETS-003 §9](AETS-003-Money-Specification.md#9-construction-and-parsing)). It performs no locale normalization itself; normalization, if ever needed for a given input source, is a separate, deterministic step that runs before the Money Parser, never inside it.
+- **Related Terms:** Canonical Decimal Representation, Money, Accounting Proposal.
+
+### Persistence Adapter
+
+- **Term:** Persistence Adapter
+- **Normative Definition:** The infrastructure-layer component responsible for translating between a Money or MinorUnits domain value and its PostgreSQL `BIGINT` column representation, in both directions, including the mandatory bounds check performed before every write.
+- **Notes / Boundaries:** The Persistence Adapter is the only code permitted to know both the domain contract and the database column type — Money, Currency, and MinorUnits themselves remain persistence-agnostic ([ADR-0007](../../adr/0007-money-representation-strategy.md); [AETS-003 §15](AETS-003-Money-Specification.md#15-persistence-mapping)). It must reject, before write, any value outside the signed 64-bit integer range, failing loudly rather than truncating, wrapping, or silently narrowing it.
+- **Related Terms:** MinorUnits, Money, Vendor Wrapper.
 
 ### Posting
 
@@ -217,6 +259,13 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 - **Notes / Boundaries:** Every correction of a posted Journal begins with a Reversal; a Replacement follows only where a corrected effect is also needed ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 4). Reversal mechanics are defined by a later, currently planned document ("Correction Model," [AETS-000 §10](AETS-000.md#10-planned-document-structure)) and are not defined here.
 - **Related Terms:** Replacement, Journal, Audit Event.
 
+### Rounding Mode
+
+- **Term:** Rounding Mode
+- **Normative Definition:** An explicit, hore.my-owned decision, supplied by the caller, governing how a Money arithmetic result that cannot be represented exactly at its Currency's scale is resolved.
+- **Notes / Boundaries:** A Rounding Mode is required whenever a multiply or divide operation cannot produce an exact result at Currency scale; no hidden default applies ([AETS-003 §13](AETS-003-Money-Specification.md#13-rounding-contract)). hore.my owns its own Rounding Mode type — no vendor library's rounding-mode type may appear in a public Money signature ([AETS-003 §16](AETS-003-Money-Specification.md#16-vendor-isolation)). Which specific modes exist, and which business operation uses which, remains deferred tax and rounding policy ([AETS-003 §25](AETS-003-Money-Specification.md#25-deferred-items)) and is not defined here.
+- **Related Terms:** Money, Vendor Wrapper.
+
 ### Source Fingerprint
 
 - **Term:** Source Fingerprint
@@ -238,6 +287,13 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 - **Notes / Boundaries:** An imbalanced Trial Balance is a release blocker ([AETS-002 §5](AETS-002-Accounting-Invariants.md#5-release-blocker); [`HORE_MY_MASTER_CONTEXT.md`](../../product/reference/HORE_MY_MASTER_CONTEXT.md) §18). A Trial Balance is a Projection of the Ledger, not an independent record.
 - **Related Terms:** Ledger, Balance, Projection.
 
+### Vendor Wrapper
+
+- **Term:** Vendor Wrapper
+- **Normative Definition:** The architectural pattern, and the specific hore.my-owned classes implementing it, that contain a third-party library's types (currently `brick/money` and `brick/math`) as a private implementation detail, exposing only hore.my-owned domain types across every public boundary.
+- **Notes / Boundaries:** No vendor namespace type may appear in any public domain or application interface signature; any exception a vendor library raises internally must be translated into a hore.my-owned exception before it can propagate to a caller ([AETS-003 §16](AETS-003-Money-Specification.md#16-vendor-isolation)). This glossary names the pattern and its obligations only, not a specific class design.
+- **Related Terms:** Money, Currency, MinorUnits, Rounding Mode, Persistence Adapter.
+
 ## 6. Cross References
 
 | Source | What it grounds in this document |
@@ -246,9 +302,10 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 | [ADR-0004](../../adr/0004-financial-integrity-principles.md) | The majority of terms: Journal, Journal Line, Posting, Balance, Reversal, Replacement, Actor, Tenant, Audit Event, Source Fingerprint, Allocation, Bank Transaction, Reconciliation, Trial Balance |
 | [ADR-0005](../../adr/0005-ai-provider-abstraction.md) | Accounting Proposal vs. Accounting Command, Evidence, Actor's relationship to AI |
 | [ADR-0006](../../adr/0006-transactional-outbox-pattern.md) | Posting's atomicity with outbox events; the "database transaction" exemption in §4, rule 4 |
-| [ADR-0007](../../adr/0007-money-representation-strategy.md) | Money, and the explicit deferral of its canonical representation |
+| [ADR-0007](../../adr/0007-money-representation-strategy.md) | Money, Currency, and MinorUnits, and Money's resolved canonical representation (integer minor units, PostgreSQL `BIGINT`) |
 | [AETS-000](AETS-000.md) | Authority hierarchy (§3); accounting and AI philosophy (§4–5) grounding Accounting Proposal, Actor; planned document numbers used throughout §5 |
 | [AETS-002](AETS-002-Accounting-Invariants.md) | Every invariant citation in §5's Notes / Boundaries fields; the release-blocker citation under Trial Balance |
+| [AETS-003](AETS-003-Money-Specification.md) | Canonical Decimal Representation, Currency, MinorUnits, Money Formatter, Money Parser, Persistence Adapter, Rounding Mode, Vendor Wrapper, and Money's full domain contract |
 | [`HORE_MY_MASTER_CONTEXT.md`](../../product/reference/HORE_MY_MASTER_CONTEXT.md) | Tenant's MVP single-owner scope (§9); Trial Balance's release-blocker status (§18) |
 
 This document does not cite the System Requirements Specification PDF directly by page or section. As with [AETS-000](AETS-000.md) (see its §4, Validation), no PDF text-extraction tool is available in this environment; alignment instead relies on the SRS content already interpreted and cited by the accepted ADRs and by `HORE_MY_PROJECT_INSTRUCTIONS.txt` / `HORE_MY_MASTER_CONTEXT.md`, both of which outrank the SRS in the authority hierarchy (§3) regardless.
@@ -270,13 +327,13 @@ The following checks were performed on this document before delivery:
 
 The following are explicitly **not** covered by this document and are left to later work:
 
-- **Money's full domain value object contract** (Currency, MinorUnits, and related types) — the canonical representation itself is now resolved by [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved amendment (integer minor units, PostgreSQL `BIGINT`); formalizing the contract built on it remains deferred to AETS-005.
 - **Posting Engine design** (journal/line schema, transaction and concurrency mechanics), deferred to AETS-004.
-- **Chart of Accounts design** (account taxonomy, numbering, ownership rules), deferred to AETS-003.
+- **Chart of Accounts design** (account taxonomy, numbering, ownership rules), deferred to AETS-005.
 - **Any accounting algorithm**, including allocation matching, reconciliation matching, rounding, idempotency-key derivation, and source-fingerprint derivation — each is named where relevant in §5 but not designed here.
 - **Terms referenced but not yet formally defined**, because they fall outside this task's required list and are not yet load-bearing for an existing AETS document: *Chart of Accounts*, *Payment*, *Invoice*, *Quotation*, *Customer*, *MyInvois Submission*, *Period* lifecycle states beyond Open/Closed, *Golden Dataset* / *Proof of Accuracy*. These should be added here (not redefined elsewhere) when the AETS document that first needs them is written, per §4, rule 6.
 - **Non-accounting terminology** (Identity, Workspace/Task, Document Processing, general product vocabulary) — out of this document's scope per §2.2, and not part of the Accounting Core domain this glossary covers.
 
 ## Changelog
 
+- **1.2.0 (2026-09-03):** Added 8 new terms required by [AETS-003](AETS-003-Money-Specification.md): Canonical Decimal Representation, Currency, MinorUnits, Money Formatter, Money Parser, Persistence Adapter, Rounding Mode, Vendor Wrapper. Updated the Money term, §2.2 scope note, §6 Cross References, and §8 Deferred Topics to reflect that AETS-003 (not AETS-005) is the Money Specification, and corrected Chart of Accounts references from AETS-003 to AETS-005 throughout. No existing term's fundamental meaning changed.
 - **1.1.0 (2026-09-03):** Updated the Money term (§5), §2.2 scope note, and §8 deferred-topics entry to reflect [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved resolution of the canonical Money representation (integer minor units, PostgreSQL `BIGINT`). No term's fundamental meaning changed; references to an open two-way representation choice were updated to the now-settled fact.
