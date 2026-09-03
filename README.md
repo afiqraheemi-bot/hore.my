@@ -10,7 +10,7 @@ The repository is at the engineering-foundation stage. Application code has not 
 
 ## Approved architecture
 
-- Nuxt 3, Vue 3, TypeScript, Tailwind CSS, and an installable PWA
+- Nuxt 4, Vue 3, TypeScript, Tailwind CSS, and an installable PWA
 - Laravel modular monolith with explicit module boundaries
 - PostgreSQL as the authoritative transactional database
 - Redis for queues, cache, and coordination

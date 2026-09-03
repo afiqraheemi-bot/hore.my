@@ -23,7 +23,7 @@ This ADR records only the named technologies and capabilities already approved. 
 
 ## Considered options
 
-1. The locked stack: Nuxt 3, Vue 3, TypeScript, Tailwind CSS, installable PWA, Laravel modular monolith, PostgreSQL, Redis, and encrypted/versioned object storage.
+1. The locked stack: Nuxt 4, Vue 3, TypeScript, Tailwind CSS, installable PWA, Laravel modular monolith, PostgreSQL, Redis, and encrypted/versioned object storage.
 2. A different frontend or backend framework stack.
 3. A serverless or microservices-first stack.
 
@@ -31,7 +31,7 @@ This ADR records only the named technologies and capabilities already approved. 
 
 hore.my will use:
 
-- **Frontend:** Nuxt 3, Vue 3, TypeScript, Tailwind CSS, and an installable PWA.
+- **Frontend:** Nuxt 4, Vue 3, TypeScript, Tailwind CSS, and an installable PWA.
 - **Backend:** Laravel implemented as the modular monolith defined by ADR-0001.
 - **Primary database:** PostgreSQL as the authoritative relational and transactional database.
 - **Queue, cache, and coordination:** Redis, with workload-specific queue policies.
@@ -83,3 +83,12 @@ A framework, primary database, or architectural replacement requires a supersedi
 ## Compliance
 
 The selected stack must be configured for tenant isolation, least privilege, encryption in transit and at rest, secret separation, immutable audit records, retention controls, and Malaysian localization. Dependency licenses and vulnerabilities are release gates. This ADR does not select a compliance certification or introduce additional product scope.
+
+## Amendment — 2026-09-03: Nuxt 3 superseded by Nuxt 4
+
+- **Authority:** Founder / Product Owner approval.
+- **Effective date:** 2026-09-03.
+- **Reason:** Nuxt 3 reached End-of-Life before hore.my frontend implementation began. This amendment is a technology lifecycle correction made ahead of any frontend bootstrap, not a product, UX, or architecture change.
+- **Change:** Every normative reference to Nuxt 3 in this ADR's Considered options and Decision is replaced with Nuxt 4.
+- **Unchanged:** Vue 3, TypeScript, Tailwind CSS, installable PWA, the Laravel modular monolith, PostgreSQL, Redis, and every other technology, capability, and constraint recorded in this ADR remain exactly as originally decided. No other technology decision is affected.
+- **Cross-reference:** This amendment is also recorded in [`docs/product/reference/SRS_OVERRIDES.md`](../product/reference/SRS_OVERRIDES.md), which confirms no override to the System Requirements Specification is required — the SRS locks only a generic "Nuxt PWA" requirement, which Nuxt 4 satisfies — and separately logs the correction to the explicit Nuxt 3 statements in `HORE_MY_PROJECT_INSTRUCTIONS.txt` and `HORE_MY_MASTER_CONTEXT.md`.

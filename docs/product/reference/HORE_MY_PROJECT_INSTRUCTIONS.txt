@@ -27,7 +27,7 @@ INTEGRITI KEWANGAN
 - Setiap angka laporan mesti boleh dijejaki kepada jurnal dan bukti.
 
 TEKNOLOGI
-Nuxt 3, Vue 3, TypeScript, Tailwind dan PWA; Laravel modular monolith; PostgreSQL; Redis; object storage terenkripsi; queue isolation; monitoring, backup dan recovery. AI menggunakan provider abstraction, structured output, schema validation, confidence policy dan evaluation registry. MyInvois menggunakan adapter berversi.
+Nuxt 4, Vue 3, TypeScript, Tailwind dan PWA; Laravel modular monolith; PostgreSQL; Redis; object storage terenkripsi; queue isolation; monitoring, backup dan recovery. AI menggunakan provider abstraction, structured output, schema validation, confidence policy dan evaluation registry. MyInvois menggunakan adapter berversi.
 
 SKALA DAN KESELAMATAN
 Sasaran 3,000 sesi serentak melalui load test, availability 99.9%, RPO 5 minit dan RTO 60 minit atau lebih baik. Tenant isolation, least privilege, encryption, audit log dan environment isolation wajib.

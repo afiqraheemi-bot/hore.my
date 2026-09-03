@@ -165,7 +165,7 @@ Output operasi AI mesti berstruktur, sah terhadap schema, mempunyai versi model/
 
 ### Frontend
 
-- Nuxt 3.
+- Nuxt 4.
 - Vue 3.
 - TypeScript.
 - Tailwind CSS.
