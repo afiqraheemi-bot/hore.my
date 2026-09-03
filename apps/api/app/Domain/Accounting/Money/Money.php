@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Domain\Accounting\Money;
 
 use App\Domain\Accounting\Money\Exception\CurrencyMismatchException;
+use App\Domain\Accounting\Money\Exception\DivisionByZeroException;
 use App\Domain\Accounting\Money\Exception\InvalidMoneyAmountException;
 use App\Domain\Accounting\Money\Exception\MoneyArithmeticException;
+use App\Domain\Accounting\Money\Exception\RoundingRequiredException;
 use App\Domain\Accounting\Money\Exception\UnresolvedMoneySignPolicyException;
+use Brick\Math\Exception\DivisionByZeroException as BrickDivisionByZeroException;
 use Brick\Math\Exception\MathException as BrickMathException;
+use Brick\Math\Exception\RoundingNecessaryException as BrickRoundingNecessaryException;
+use Brick\Math\RoundingMode as BrickRoundingMode;
 use Brick\Money\Exception\MoneyException as BrickMoneyException;
 use Brick\Money\Money as BrickMoney;
 
@@ -29,7 +34,12 @@ use Brick\Money\Money as BrickMoney;
  * here: `fromDecimalString` and `subtract` reject, with a distinct
  * exception, any case that would require a negative Money or
  * MinorUnits value, rather than inventing an answer. `multiply` and
- * `divide` are not implemented — see M1-T3's report.
+ * `divide` are not implemented — see M1-T4's report. `add` and
+ * `subtract` now pass an explicit {@see RoundingMode::Unnecessary}
+ * through to the vendor engine (previously implicit), preparing the
+ * mapping and the `RoundingRequiredException` / `DivisionByZeroException`
+ * translations that future `multiply`/`divide` work will need, without
+ * implementing either operation or any business rounding policy.
  */
 final class Money
 {
@@ -137,7 +147,10 @@ final class Money
     {
         $this->guardSameCurrency($other);
 
-        return new self($this->guardedBrickCall('add', fn (): BrickMoney => $this->inner->plus($other->inner)), $this->currency);
+        $mode = self::brickRoundingModeFor(RoundingMode::Unnecessary);
+        $result = $this->guardedBrickCall('add', fn (): BrickMoney => $this->inner->plus($other->inner, $mode));
+
+        return new self($result, $this->currency);
     }
 
     /**
@@ -155,7 +168,8 @@ final class Money
     {
         $this->guardSameCurrency($other);
 
-        $result = $this->guardedBrickCall('subtract', fn (): BrickMoney => $this->inner->minus($other->inner));
+        $mode = self::brickRoundingModeFor(RoundingMode::Unnecessary);
+        $result = $this->guardedBrickCall('subtract', fn (): BrickMoney => $this->inner->minus($other->inner, $mode));
 
         if ($result->isNegative()) {
             throw UnresolvedMoneySignPolicyException::forSubtraction();
@@ -213,6 +227,10 @@ final class Money
     {
         try {
             return $operation();
+        } catch (BrickDivisionByZeroException) {
+            throw DivisionByZeroException::forDivisor();
+        } catch (BrickRoundingNecessaryException) {
+            throw RoundingRequiredException::forOperation($operationName);
         } catch (BrickMoneyException|BrickMathException) {
             // Deliberately not chained as $previous, and $operationName
             // is the only detail carried forward — a vendor exception
@@ -220,6 +238,18 @@ final class Money
             // this translation, by any public means (AETS-003 §16).
             throw MoneyArithmeticException::forOperation($operationName);
         }
+    }
+
+    /**
+     * Translates hore.my's own RoundingMode into the vendor library's
+     * equivalent — confined entirely to this method, so no vendor
+     * rounding type ever appears outside it (AETS-003 §13, §16).
+     */
+    private static function brickRoundingModeFor(RoundingMode $mode): BrickRoundingMode
+    {
+        return match ($mode) {
+            RoundingMode::Unnecessary => BrickRoundingMode::Unnecessary,
+        };
     }
 
     private static function brickCurrencyFor(Currency $currency): \Brick\Money\Currency

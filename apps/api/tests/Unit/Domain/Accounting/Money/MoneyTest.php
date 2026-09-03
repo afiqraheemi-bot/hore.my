@@ -8,9 +8,12 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Exception\CurrencyMismatchException;
 use App\Domain\Accounting\Money\Exception\InvalidMoneyAmountException;
 use App\Domain\Accounting\Money\Exception\MoneyArithmeticException;
+use App\Domain\Accounting\Money\Exception\RoundingRequiredException;
 use App\Domain\Accounting\Money\Exception\UnresolvedMoneySignPolicyException;
 use App\Domain\Accounting\Money\MinorUnits;
 use App\Domain\Accounting\Money\Money;
+use Brick\Math\Exception\DivisionByZeroException;
+use Brick\Math\Exception\RoundingNecessaryException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -474,6 +477,49 @@ final class MoneyTest extends TestCase
                 $caught->getMessage(),
             );
         }
+    }
+
+    /**
+     * M1-T4: a vendor division-by-zero failure is translated into
+     * hore.my's own {@see \App\Domain\Accounting\Money\Exception\DivisionByZeroException},
+     * not the generic {@see MoneyArithmeticException}. Not yet
+     * reachable through the public API (`divide` is not implemented),
+     * so the translation machinery itself is exercised directly and
+     * narrowly, via the same `guardedBrickCall` reflection already
+     * used above — no new reflection surface is introduced.
+     */
+    public function test_brick_division_by_zero_is_translated_to_the_specific_exception(): void
+    {
+        $money = Money::fromDecimalString('10.25', $this->myr);
+
+        $reflection = new ReflectionClass(Money::class);
+        $method = $reflection->getMethod('guardedBrickCall');
+
+        $this->expectException(\App\Domain\Accounting\Money\Exception\DivisionByZeroException::class);
+
+        $method->invoke($money, 'test-operation', function (): void {
+            throw new DivisionByZeroException('vendor division by zero, forced for this test');
+        });
+    }
+
+    /**
+     * M1-T4: a vendor rounding-necessary failure is translated into
+     * hore.my's own {@see RoundingRequiredException},
+     * not the generic {@see MoneyArithmeticException}. Same scope note
+     * as the division-by-zero test above.
+     */
+    public function test_brick_rounding_necessary_is_translated_to_the_specific_exception(): void
+    {
+        $money = Money::fromDecimalString('10.25', $this->myr);
+
+        $reflection = new ReflectionClass(Money::class);
+        $method = $reflection->getMethod('guardedBrickCall');
+
+        $this->expectException(RoundingRequiredException::class);
+
+        $method->invoke($money, 'test-operation', function (): void {
+            throw new RoundingNecessaryException('vendor rounding necessary, forced for this test');
+        });
     }
 
     /**
