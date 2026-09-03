@@ -1,0 +1,47 @@
+name: Repository CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so the base/before commit is reachable for the
+          # whitespace check below.
+          fetch-depth: 0
+
+      - name: Check for whitespace errors in this change
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+
+          # Fall back to the empty-tree hash (diff against nothing) when
+          # there is no valid prior commit to compare against, e.g. the
+          # first push to a new branch.
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+
+          git diff --check "$base"
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
