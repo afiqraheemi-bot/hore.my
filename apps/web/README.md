@@ -36,3 +36,7 @@ npm run typecheck
 ```
 
 `npm run dev` starts a local development server. `npm run build` produces a production build under `.output/` (git-ignored, not committed).
+
+## Docker development environment
+
+A minimal Docker Compose environment (`api`, `web`, `postgres`, `redis`, `mailpit`) is defined at the repository root in [`docker-compose.yml`](../../docker-compose.yml). See [`docs/development/setup.md`](../../docs/development/setup.md) for usage. It is development-only and introduces no production infrastructure or architecture decision.

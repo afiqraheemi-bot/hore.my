@@ -67,3 +67,7 @@ composer check-platform-reqs
 ```
 
 Do not run the Composer `setup` script until a local PostgreSQL environment has been intentionally configured. It creates a local `.env`, application key, and runs migrations.
+
+## Docker development environment
+
+A minimal Docker Compose environment (`api`, `web`, `postgres`, `redis`, `mailpit`) is defined at the repository root in [`docker-compose.yml`](../../docker-compose.yml). See [`docs/development/setup.md`](../../docs/development/setup.md) for usage. It is development-only and introduces no production infrastructure or architecture decision.

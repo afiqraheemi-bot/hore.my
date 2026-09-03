@@ -1,0 +1,16 @@
+.git
+.env
+.env.backup
+.env.production
+!.env.example
+vendor
+node_modules
+storage/*.key
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/logs/*
+storage/pail
+.phpunit.result.cache
+.phpunit.cache
