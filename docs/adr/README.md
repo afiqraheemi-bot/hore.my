@@ -28,7 +28,7 @@ Decisions are interpreted using the precedence documented in [`docs/product/refe
 | [ADR-0004](0004-financial-integrity-principles.md) | Accepted | Make posting balanced, atomic, idempotent, append-only, reversible, auditable, and tenant-isolated. |
 | [ADR-0005](0005-ai-provider-abstraction.md) | Accepted | Isolate AI/OCR providers and restrict AI to proposals and interpretation. |
 | [ADR-0006](0006-transactional-outbox-pattern.md) | Accepted | Commit outbox events atomically and process external work asynchronously and idempotently. |
-| [ADR-0007](0007-money-representation-strategy.md) | Accepted | Permit integer minor units or controlled exact decimal types and prohibit binary floating point. |
+| [ADR-0007](0007-money-representation-strategy.md) | Accepted | Use PostgreSQL BIGINT storing integer minor units as canonical Money persistence; prohibit binary floating point everywhere. |
 
 ## Creating an ADR
 
