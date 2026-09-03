@@ -1,7 +1,7 @@
 # ATS-003: Money Test Specification
 
 - Status: Active
-- Version: 1.2.0
+- Version: 1.3.0
 - Effective date: 2026-09-03
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-003: Money Specification](../AETS-003-Money-Specification.md). It exists so that Money implementation work has a precise, testable, traceable target before any code is written — exactly the coverage AETS-003 §24 said a future Money ATS must provide.
 
-Every test defined here is identified by a stable ID (`MON-T001`–`MON-T021`, `MON-T022`–`MON-T092`, and `MON-T093`) and traced to the `MON-NNN` invariant(s) it proves (§6). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`MON-T001`–`MON-T095`) and traced to the `MON-NNN` invariant(s) it proves (§6). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -59,7 +59,7 @@ Every `MON-NNN` invariant from [AETS-003 §20](../AETS-003-Money-Specification.m
 | Invariant | Summary | Test IDs |
 | --- | --- | --- |
 | MON-001 | No binary float | MON-T034, MON-T042, MON-T056, MON-T085 |
-| MON-002 | Exact construction | MON-T001, MON-T003, MON-T004, MON-T007, MON-T008, MON-T022, MON-T073, MON-T082 |
+| MON-002 | Exact construction | MON-T001, MON-T003, MON-T004, MON-T007, MON-T008, MON-T022, MON-T073, MON-T082, MON-T094 |
 | MON-003 | Immutable Money (and Currency, MinorUnits) | MON-T006, MON-T013, MON-T093 |
 | MON-004 | Explicit Currency | MON-T005, MON-T009, MON-T010, MON-T062, MON-T092 |
 | MON-005 | Currency owns scale | MON-T011, MON-T014, MON-T063 |
@@ -68,7 +68,7 @@ Every `MON-NNN` invariant from [AETS-003 §20](../AETS-003-Money-Specification.m
 | MON-008 | Exact MinorUnits round-trip | MON-T017, MON-T020, MON-T064, MON-T065, MON-T079, MON-T080 |
 | MON-009 | Persistence bounds checking | MON-T059, MON-T060, MON-T061, MON-T066, MON-T077, MON-T084 |
 | MON-010 | No vendor-type leakage | MON-T067, MON-T068, MON-T069, MON-T070, MON-T071, MON-T078 |
-| MON-011 | Exact-or-fail arithmetic | MON-T035, MON-T037, MON-T039, MON-T040, MON-T041, MON-T043, MON-T044, MON-T072, MON-T075, MON-T076, MON-T081, MON-T086 |
+| MON-011 | Exact-or-fail arithmetic | MON-T035, MON-T037, MON-T039, MON-T040, MON-T041, MON-T043, MON-T044, MON-T072, MON-T075, MON-T076, MON-T081, MON-T086, MON-T094, MON-T095 |
 | MON-012 | Serialization round-trip | MON-T055, MON-T056, MON-T057, MON-T058, MON-T065, MON-T079 |
 | MON-013 | MinorUnits type-safety | MON-T015, MON-T016, MON-T017, MON-T019, MON-T020 |
 | MON-014 | No native-int canonical accessor | MON-T018 |
@@ -132,6 +132,7 @@ All tests in this section target `fromDecimalString` against the canonical decim
 | MON-T032 | Whitespace-only string is rejected. | `"   "` | Typed failure |
 | MON-T033 | Leading/trailing whitespace around an otherwise-valid amount is rejected — whitespace is not part of the canonical grammar, so it is not trimmed-then-accepted. | `" 10.25 "` | Typed failure |
 | MON-T034 | A native binary float value (not a string) is rejected at the type level, before grammar validation is even applied. | `10.25` (PHP `float`) | Typed failure |
+| MON-T094 | A grammatically valid negative decimal string (AETS-003 §9's grammar permits a leading minus sign) is rejected with a typed failure distinct from malformed input, while Money sign policy remains unresolved (§25). This is not a permanent prohibition on negative Money — only that construction does not yet decide what it means. | `"-10.25"` | Typed failure (distinct category from `MON-T023`) |
 
 ## 11. Arithmetic Tests
 
@@ -147,6 +148,7 @@ All tests in this section target `fromDecimalString` against the canonical decim
 | MON-T042 | `multiply` and `divide` reject a native float scalar argument at the type level. |
 | MON-T043 | `divide` by zero produces a typed failure — never an engine-level error, warning, `NaN`, or `Infinity` result. |
 | MON-T044 | `divide` whose result is inexact, called without a `RoundingMode`, produces a typed failure. |
+| MON-T095 | `subtract` whose exact mathematical result would be negative is rejected with a typed failure, while Money sign policy remains unresolved (§25) — the same non-permanent, sign-policy-blocked category as `MON-T094`, applied to arithmetic rather than construction. |
 
 ## 12. Equality and Comparison Tests
 
@@ -333,5 +335,6 @@ A change that alters a test ID's expected result, removes a test ID, or changes 
 
 ## Changelog
 
+- **1.3.0 (2026-09-04):** Added `MON-T094` (grammatically valid negative decimal input rejected/deferred pending sign policy) and `MON-T095` (subtraction producing a negative result rejected/deferred pending sign policy), the next available IDs, discovered as a gap during M1-T3 implementation. `MON-T094` mapped to `MON-002` (§6); both mapped to `MON-011` (§6). No existing test ID (`MON-T001`–`MON-T093`) was renumbered, altered, or removed. Neither new ID represents a permanent prohibition on negative Money — both describe the current, sign-policy-blocked state only.
 - **1.2.0 (2026-09-03):** Added `MON-T093` (MinorUnits immutability), the next available ID, discovered as a gap during M1-T2 implementation — `MON-003`'s invariant text names Money, Currency, and MinorUnits immutability together, but no MinorUnits-specific test ID previously existed. Mapped `MON-T093` to `MON-003` in the traceability matrix (§6) alongside the existing `MON-T006`/`MON-T013`. No existing test ID (`MON-T001`–`MON-T092`) was renumbered, altered, or removed.
 - **1.1.0 (2026-09-03):** Resolved the two canonical-boundary ambiguities flagged at 1.0.0, per Founder-approved clarification: (1) canonical decimal representation is strict — `"10.2"` and `"10"` are not canonical for MYR and must be rejected, distinct from a permitted separate normalization layer; (2) canonical currency identifiers are uppercase ISO 4217 form only — `"myr"`/`"Myr"` must be rejected. MON-T025 and MON-T092 are now normative rather than flagged; the golden tables (§19) gained the `"10.20"` valid case, the `"10"` and currency-identifier-case invalid cases. No test ID was added, removed, or renumbered, and no `MON-NNN` traceability mapping changed.

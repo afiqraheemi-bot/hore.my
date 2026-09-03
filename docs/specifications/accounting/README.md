@@ -31,7 +31,7 @@ Planned, not-yet-created documents — AETS-004 (Journal & Posting Model), AETS-
 
 | Document | Status | Version | Proves | Summary |
 | --- | --- | --- | --- | --- |
-| [ATS-003 — Money Test Specification](tests/ATS-003-Money-Test-Specification.md) | Active | 1.1.0 | [AETS-003](AETS-003-Money-Specification.md) | 92 test IDs (`MON-T001`–`MON-T092`) tracing every `MON-NNN` invariant to at least one test; golden MYR cases, property-based generators, persistence and vendor-isolation tests |
+| [ATS-003 — Money Test Specification](tests/ATS-003-Money-Test-Specification.md) | Active | 1.3.0 | [AETS-003](AETS-003-Money-Specification.md) | 95 test IDs (`MON-T001`–`MON-T095`) tracing every `MON-NNN` invariant to at least one test; golden MYR cases, property-based generators, persistence and vendor-isolation tests |
 
 ## Creating an AETS document
 

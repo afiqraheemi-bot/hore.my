@@ -25,6 +25,7 @@
         "ext-tokenizer": "*",
         "ext-xml": "*",
         "ext-xmlwriter": "*",
+        "brick/money": "^0.14.2",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0"
     },
