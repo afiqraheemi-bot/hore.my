@@ -25,6 +25,14 @@ This table, together with [AETS-000 §10](AETS-000.md#10-planned-document-struct
 
 Planned, not-yet-created documents — AETS-004 (Journal & Posting Model), AETS-005 (Chart of Accounts & Account Taxonomy), AETS-006 (Posting Rules), AETS-007 (Accounting Commands), AETS-008 (Bank Reconciliation), AETS-009 (Financial Reporting), AETS-010 (Audit Trail), AETS-011 (AI Accounting Proposal Contract), AETS-012 (Proof of Accuracy), AETS-013 (MyInvois Integration), and AETS-014 (Period Management) — are listed in [AETS-000 §10](AETS-000.md#10-planned-document-structure). They are not reserved or committed to until actually created.
 
+## Test Specifications
+
+`tests/` contains Accounting Test Specifications (ATS) — normative test specifications proving compliance with their corresponding AETS document. Each is numbered to match the AETS document it proves (e.g. `ATS-003` proves `AETS-003`). An ATS specifies what must be tested, at what level, and with what data; it is not implementation code.
+
+| Document | Status | Version | Proves | Summary |
+| --- | --- | --- | --- | --- |
+| [ATS-003 — Money Test Specification](tests/ATS-003-Money-Test-Specification.md) | Active | 1.1.0 | [AETS-003](AETS-003-Money-Specification.md) | 92 test IDs (`MON-T001`–`MON-T092`) tracing every `MON-NNN` invariant to at least one test; golden MYR cases, property-based generators, persistence and vendor-isolation tests |
+
 ## Creating an AETS document
 
 - Use the next sequential `AETS-NNN` number and a short, descriptive title.
@@ -32,3 +40,11 @@ Planned, not-yet-created documents — AETS-004 (Journal & Posting Model), AETS-
 - Cite the ADR(s) and AETS-000/AETS-002 section(s) the document implements.
 - Do not introduce anything [AETS-002](AETS-002-Accounting-Invariants.md) (accounting invariants) or AETS-000 §3 (authority hierarchy) prohibits.
 - Add the document to the index table above once it exists.
+
+## Creating an ATS document
+
+- Name it `ATS-NNN-Title.md` under `tests/`, matching the AETS document number it proves.
+- Copy an existing ATS's header shape (`Status`, `Version`, `Effective date`, `Owner`, `Reviewers`, `Related`).
+- Use stable, prefixed test IDs (e.g. `MON-T001`) and trace every invariant of the AETS document it proves to at least one test ID.
+- Do not invent behavior the corresponding AETS document does not define — flag ambiguity instead of guessing.
+- Add the document to the Test Specifications index table above once it exists.
