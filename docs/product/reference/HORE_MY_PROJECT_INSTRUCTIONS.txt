@@ -1,0 +1,43 @@
+HORE.MY - PROJECT INSTRUCTIONS
+
+hore.my ialah AI-native accounting workspace untuk solopreneur dan peniaga mikro Malaysia yang beroperasi sebagai enterprise atau milikan tunggal. MVP menyokong seorang pemilik, MYR serta input teks, imej dan fail.
+
+MATLAMAT
+Jadikan akaun semudah memberi arahan, upload bukti, semak cadangan dan sahkan tindakan. Objektif: jimat, produktif dan tech-driven.
+
+PRINSIP DIKUNCI
+- Action-first, bukan conversation-first.
+- Bukan platform chatting dan tiada open-ended chat.
+- UI/UX mengikuti kesederhanaan ChatGPT hampir 99%: sidebar minimal, ruang berpusat, satu composer, lampiran, respons progresif dan sejarah tugasan.
+- Jangan salin aset, kod atau identiti OpenAI; visual kekal milik hore.my.
+- Setiap interaksi mesti mempunyai objektif, status, tindakan dan hasil terminal.
+- Tiada Telegram, WhatsApp atau suara dalam MVP.
+
+HASIL MVP
+Rekod income/expense automatik; pelanggan, sebut harga, invois dan bayaran; MyInvois; import bank dan rekonsiliasi; laporan kewangan; compliance-ready pack; audit trail dan bukti asal.
+
+INTEGRITI KEWANGAN
+- AI hanya mentafsir, mengekstrak, mengklasifikasi, mencadangkan dan menerangkan. AI tidak boleh menulis terus ke lejar.
+- Gunakan integer minor units atau NUMERIC/DECIMAL; binary float dilarang untuk wang.
+- Debit mesti sentiasa sama dengan kredit.
+- Posting mesti atomik, idempoten dan boleh diaudit.
+- Posted journal bersifat append-only. Pembetulan melalui reversal dan replacement.
+- Transaksi/import berulang tidak boleh mencipta duplikasi.
+- Rekonsiliasi selesai mesti berbeza RM0.00.
+- Setiap angka laporan mesti boleh dijejaki kepada jurnal dan bukti.
+
+TEKNOLOGI
+Nuxt 3, Vue 3, TypeScript, Tailwind dan PWA; Laravel modular monolith; PostgreSQL; Redis; object storage terenkripsi; queue isolation; monitoring, backup dan recovery. AI menggunakan provider abstraction, structured output, schema validation, confidence policy dan evaluation registry. MyInvois menggunakan adapter berversi.
+
+SKALA DAN KESELAMATAN
+Sasaran 3,000 sesi serentak melalui load test, availability 99.9%, RPO 5 minit dan RTO 60 minit atau lebih baik. Tenant isolation, least privilege, encryption, audit log dan environment isolation wajib.
+
+DI LUAR MVP
+Sdn. Bhd., multi-entiti, multi-currency, payroll, inventori kompleks, manufacturing, portal akauntan, multi-user approval, live bank feed, mobile native, suara, Telegram, WhatsApp dan nasihat cukai autonomi.
+
+WORKFLOW CODEX
+Milestone -> Sprint -> Task -> Implement -> Test -> Review -> Commit -> Demo -> Release Gate.
+Satu task satu objektif. Pecahkan kerja besar. Baca codebase dahulu. Jalankan targeted tests. Semak diff. Gunakan commit atomik. Jangan overengineer, refactor di luar skop atau ubah seni bina secara senyap. Gunakan ADR bagi keputusan material.
+
+ARAHAN SEMUA CHAT
+Rujuk HORE_MY_MASTER_CONTEXT.md, Cadangan Projek Terperinci dan SRS. Kekalkan keputusan dikunci, jangan tambah skop tanpa kelulusan Founder dan bezakan keputusan rasmi daripada cadangan. Utamakan ketepatan kewangan, keselamatan, auditability dan pengalaman sangat mudah. Semak sumber rasmi terkini untuk MyInvois/regulatory. Jangan dakwa sesuatu siap tanpa bukti ujian. Tanya Founder hanya apabila keputusan mengubah skop, kos, risiko atau pengalaman pengguna.

@@ -1,0 +1,17 @@
+# Default ownership. Replace this handle only through an authorized governance change.
+* @afiqrahim
+
+# Governance and authoritative decisions
+/ENGINEERING_BLUEPRINT.md @afiqrahim
+/CODEOWNERS @afiqrahim
+/docs/adr/ @afiqrahim
+/docs/product/reference/ @afiqrahim
+
+# Security, financial integrity, data, and production operations
+/SECURITY.md @afiqrahim
+/apps/api/ @afiqrahim
+/apps/worker/ @afiqrahim
+/database/ @afiqrahim
+/infrastructure/ @afiqrahim
+/packages/domain/ @afiqrahim
+/packages/contracts/ @afiqrahim

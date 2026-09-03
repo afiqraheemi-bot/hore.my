@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.gz binary
+
+composer.lock -diff
+package-lock.json -diff
+pnpm-lock.yaml -diff
+yarn.lock -diff
