@@ -12,6 +12,7 @@ use App\Domain\Accounting\Money\Exception\RoundingRequiredException;
 use App\Domain\Accounting\Money\Exception\UnresolvedMoneySignPolicyException;
 use App\Domain\Accounting\Money\MinorUnits;
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Money\RoundingMode;
 use Brick\Math\Exception\DivisionByZeroException;
 use Brick\Math\Exception\RoundingNecessaryException;
 use PHPUnit\Framework\TestCase;
@@ -122,6 +123,315 @@ final class MoneyTest extends TestCase
         $difference = $a->subtract($b);
 
         $this->assertSame('5.25', $difference->toDecimalString());
+    }
+
+    /**
+     * MON-T041: multiply by an integer scalar whose exact result
+     * already fits the Currency's scale is unaffected by rounding.
+     */
+    public function test_exact_integer_multiplication(): void
+    {
+        $money = Money::fromDecimalString('10.25', $this->myr);
+
+        $product = $money->multiply('4', RoundingMode::Unnecessary);
+
+        $this->assertSame('41.00', $product->toDecimalString());
+    }
+
+    /**
+     * MON-T040 (structure fixed now, content deferred — §23): multiply
+     * by a decimal scalar whose exact result fits the Currency's scale
+     * exactly, with no rounding required.
+     */
+    public function test_exact_decimal_multiplication(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $product = $money->multiply('1.5', RoundingMode::Unnecessary);
+
+        $this->assertSame('15.00', $product->toDecimalString());
+    }
+
+    /**
+     * MON-T040: multiply whose exact mathematical result cannot be
+     * represented at the Currency's scale fails, since
+     * {@see RoundingMode::Unnecessary} is the only mode currently
+     * defined and permits no rounding.
+     */
+    public function test_multiplication_requiring_rounding_is_rejected(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(RoundingRequiredException::class);
+
+        $money->multiply('0.333333', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * Multiplying by zero is always exact — the result is always
+     * representable at any Currency scale.
+     */
+    public function test_multiplication_by_zero_is_exact(): void
+    {
+        $money = Money::fromDecimalString('10.25', $this->myr);
+
+        $product = $money->multiply('0', RoundingMode::Unnecessary);
+
+        $this->assertSame('0.00', $product->toDecimalString());
+    }
+
+    /**
+     * multiply() preserves the Currency of the original Money.
+     */
+    public function test_multiplication_preserves_currency(): void
+    {
+        $money = Money::fromDecimalString('10.25', $this->myr);
+
+        $product = $money->multiply('2', RoundingMode::Unnecessary);
+
+        $this->assertTrue($this->myr->equals($product->currency()));
+    }
+
+    /**
+     * MON-T042: multiply rejects a native float scalar at the type
+     * level, before any grammar or value validation runs.
+     */
+    public function test_multiply_rejects_native_float_at_the_type_level(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(\TypeError::class);
+
+        /** @phpstan-ignore-next-line argument.type (deliberately passing an invalid type to prove the boundary rejects it) */
+        $money->multiply(1.5, RoundingMode::Unnecessary);
+    }
+
+    /**
+     * A malformed multiply scalar is rejected with the same category of
+     * failure as a malformed decimal string.
+     */
+    public function test_multiply_rejects_a_malformed_scalar(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(InvalidMoneyAmountException::class);
+
+        $money->multiply('abc', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * A grammatically valid but negative multiply scalar is rejected as
+     * a sign-policy-deferred failure, distinct from a malformed one —
+     * mirroring MON-T094's construction-time distinction, applied here
+     * to the scalar operand.
+     */
+    public function test_multiply_rejects_a_negative_scalar_via_sign_policy(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(UnresolvedMoneySignPolicyException::class);
+
+        $money->multiply('-2', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * multiply() does not mutate the original Money (MON-T006 applied
+     * to multiplication).
+     */
+    public function test_multiplication_does_not_mutate_the_original(): void
+    {
+        $original = Money::fromDecimalString('10.25', $this->myr);
+
+        $original->multiply('2', RoundingMode::Unnecessary);
+
+        $this->assertSame('10.25', $original->toDecimalString());
+    }
+
+    /**
+     * MON-T041 / very large operand: multiplication remains exact well
+     * beyond native PHP_INT_MAX.
+     */
+    public function test_multiplication_is_exact_at_very_large_magnitude(): void
+    {
+        $huge = Money::fromDecimalString('99999999999999999999999999999999999999.99', $this->myr);
+
+        $product = $huge->multiply('2', RoundingMode::Unnecessary);
+
+        $this->assertSame('199999999999999999999999999999999999999.98', $product->toDecimalString());
+    }
+
+    /**
+     * MON-T043 (structure): exact division by an integer scalar.
+     */
+    public function test_exact_division(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $quotient = $money->divide('4', RoundingMode::Unnecessary);
+
+        $this->assertSame('2.50', $quotient->toDecimalString());
+    }
+
+    /**
+     * MON-T044 (structure fixed now, content deferred — §23): divide
+     * whose exact mathematical result cannot be represented at the
+     * Currency's scale fails, since {@see RoundingMode::Unnecessary} is
+     * the only mode currently defined and permits no rounding.
+     */
+    public function test_division_requiring_rounding_is_rejected(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(RoundingRequiredException::class);
+
+        $money->divide('3', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * MON-T043: division by zero produces a typed failure, never an
+     * engine-level error or an infinite/NaN-equivalent result.
+     */
+    public function test_division_by_zero_is_rejected(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(\App\Domain\Accounting\Money\Exception\DivisionByZeroException::class);
+
+        $money->divide('0', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * divide() preserves the Currency of the original Money.
+     */
+    public function test_division_preserves_currency(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $quotient = $money->divide('4', RoundingMode::Unnecessary);
+
+        $this->assertTrue($this->myr->equals($quotient->currency()));
+    }
+
+    /**
+     * MON-T042: divide rejects a native float scalar at the type level.
+     */
+    public function test_divide_rejects_native_float_at_the_type_level(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(\TypeError::class);
+
+        /** @phpstan-ignore-next-line argument.type (deliberately passing an invalid type to prove the boundary rejects it) */
+        $money->divide(4.0, RoundingMode::Unnecessary);
+    }
+
+    /**
+     * A malformed divide scalar is rejected with the same category of
+     * failure as a malformed decimal string.
+     */
+    public function test_divide_rejects_a_malformed_scalar(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(InvalidMoneyAmountException::class);
+
+        $money->divide('abc', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * A grammatically valid but negative divide scalar is rejected as a
+     * sign-policy-deferred failure, distinct from a malformed one.
+     */
+    public function test_divide_rejects_a_negative_scalar_via_sign_policy(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        $this->expectException(UnresolvedMoneySignPolicyException::class);
+
+        $money->divide('-4', RoundingMode::Unnecessary);
+    }
+
+    /**
+     * divide() does not mutate the original Money.
+     */
+    public function test_division_does_not_mutate_the_original(): void
+    {
+        $original = Money::fromDecimalString('10.00', $this->myr);
+
+        $original->divide('4', RoundingMode::Unnecessary);
+
+        $this->assertSame('10.00', $original->toDecimalString());
+    }
+
+    /**
+     * MON-T043 / very large operand: division remains exact well
+     * beyond native PHP_INT_MAX when the result fits exactly.
+     */
+    public function test_division_is_exact_at_very_large_magnitude(): void
+    {
+        $huge = Money::fromDecimalString('199999999999999999999999999999999999999.98', $this->myr);
+
+        $quotient = $huge->divide('2', RoundingMode::Unnecessary);
+
+        $this->assertSame('99999999999999999999999999999999999999.99', $quotient->toDecimalString());
+    }
+
+    /**
+     * MON-T051 / MON-T076: `RoundingMode` is a required argument for
+     * both multiply and divide — omitting it is not a callable, valid
+     * invocation. Proven structurally (the parameter has no default),
+     * not by attempting the uncallable invocation itself.
+     */
+    public function test_multiply_and_divide_require_an_explicit_rounding_mode(): void
+    {
+        $reflection = new ReflectionClass(Money::class);
+
+        foreach (['multiply', 'divide'] as $methodName) {
+            $method = $reflection->getMethod($methodName);
+            $parameters = $method->getParameters();
+
+            $this->assertCount(2, $parameters);
+            $this->assertSame('mode', $parameters[1]->getName());
+            $this->assertFalse($parameters[1]->isOptional());
+            $this->assertFalse($parameters[1]->isDefaultValueAvailable());
+
+            $type = $parameters[1]->getType();
+            $this->assertInstanceOf(\ReflectionNamedType::class, $type);
+            $this->assertSame(RoundingMode::class, $type->getName());
+        }
+    }
+
+    /**
+     * MON-T069 / MON-T078: a vendor rounding-necessary failure from
+     * `multipliedBy`/`dividedBy` is translated into hore.my's own
+     * {@see RoundingRequiredException} through the public API, not
+     * merely the private translation boundary already covered above
+     * for add/subtract.
+     */
+    public function test_multiply_and_divide_do_not_leak_vendor_exceptions(): void
+    {
+        $money = Money::fromDecimalString('10.00', $this->myr);
+
+        try {
+            $money->multiply('0.333333', RoundingMode::Unnecessary);
+            $this->fail('Expected RoundingRequiredException was not thrown.');
+        } catch (RoundingRequiredException $caught) {
+            $this->assertStringNotContainsString('Brick', $caught->getMessage());
+        }
+
+        try {
+            $money->divide('3', RoundingMode::Unnecessary);
+            $this->fail('Expected RoundingRequiredException was not thrown.');
+        } catch (RoundingRequiredException $caught) {
+            $this->assertStringNotContainsString('Brick', $caught->getMessage());
+        }
+
+        try {
+            $money->divide('0', RoundingMode::Unnecessary);
+            $this->fail('Expected DivisionByZeroException was not thrown.');
+        } catch (\App\Domain\Accounting\Money\Exception\DivisionByZeroException $caught) {
+            $this->assertStringNotContainsString('Brick', $caught->getMessage());
+        }
     }
 
     /**

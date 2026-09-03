@@ -34,15 +34,38 @@ use Brick\Money\Money as BrickMoney;
  * here: `fromDecimalString` and `subtract` reject, with a distinct
  * exception, any case that would require a negative Money or
  * MinorUnits value, rather than inventing an answer. `multiply` and
- * `divide` are not implemented — see M1-T4's report. `add` and
- * `subtract` now pass an explicit {@see RoundingMode::Unnecessary}
- * through to the vendor engine (previously implicit), preparing the
- * mapping and the `RoundingRequiredException` / `DivisionByZeroException`
- * translations that future `multiply`/`divide` work will need, without
- * implementing either operation or any business rounding policy.
+ * `divide` accept only a non-negative exact numeral scalar for the
+ * same reason — a negative scalar is rejected the same way a negative
+ * decimal string is (M1-T5).
+ *
+ * `multiply` and `divide` require an explicit {@see RoundingMode}
+ * argument at every call site (AETS-003 §13); since only
+ * {@see RoundingMode::Unnecessary} currently exists, any operation
+ * whose exact result does not fit the Currency's scale fails with
+ * {@see RoundingRequiredException}
+ * rather than silently rounding.
  */
 final class Money
 {
+    /**
+     * Canonical grammar for a `multiply`/`divide` scalar operand: an
+     * optional leading minus sign (permitted by the grammar, but
+     * rejected separately — see {@see guardedScalar()} — because sign
+     * policy is deferred, not because it is malformed); digits with no
+     * redundant leading zero; and, optionally, a decimal point followed
+     * by one or more digits. Unlike Money's own {@see grammarFor()},
+     * this is not tied to any Currency scale — a scalar is not itself a
+     * Money value (AETS-003 §10).
+     */
+    private const SCALAR_PATTERN = '/^(?<sign>-)?(?<int>0|[1-9][0-9]*)(\.(?<frac>[0-9]+))?$/';
+
+    /**
+     * A bounded input-length check, mirroring MinorUnits' own bound, as
+     * a basic defense against an adversarially long scalar operand
+     * (AETS-003 §18).
+     */
+    private const SCALAR_MAX_LENGTH = 1000;
+
     private readonly BrickMoney $inner;
 
     private readonly Currency $currency;
@@ -179,6 +202,76 @@ final class Money
     }
 
     /**
+     * The exact product of this Money and a non-negative exact numeral
+     * scalar, correct for any magnitude.
+     *
+     * The scalar is a canonical numeral string — an optional integer
+     * part and, optionally, a decimal point followed by one or more
+     * digits (AETS-003 §10's "numeral string" scalar option; no
+     * Currency-scale grammar applies, since a scalar is not itself a
+     * Money value). A grammatically valid but negative scalar is
+     * rejected the same way a negative decimal string is (§9's
+     * sign-permitting grammar, deferred sign policy).
+     *
+     * `$mode` is required at every call site (AETS-003 §13) — omitting
+     * it is not a valid invocation. Only {@see RoundingMode::Unnecessary}
+     * currently exists, so any exact result that would not fit this
+     * Money's Currency scale fails rather than being rounded.
+     *
+     * @throws InvalidMoneyAmountException if the scalar is not a
+     *                                     canonical exact numeral.
+     * @throws UnresolvedMoneySignPolicyException if the scalar is
+     *                                            negative.
+     * @throws RoundingRequiredException if the exact result cannot be
+     *                                   represented at this Money's
+     *                                   Currency scale.
+     * @throws MoneyArithmeticException if the underlying arithmetic
+     *                                  engine reports an unanticipated failure.
+     */
+    public function multiply(string $scalar, RoundingMode $mode): self
+    {
+        $validScalar = self::guardedScalar($scalar, 'multiply');
+        $brickMode = self::brickRoundingModeFor($mode);
+
+        $result = $this->guardedBrickCall(
+            'multiply',
+            fn (): BrickMoney => $this->inner->multipliedBy($validScalar, $brickMode),
+        );
+
+        return new self($result, $this->currency);
+    }
+
+    /**
+     * The exact quotient of this Money divided by a non-negative exact
+     * numeral scalar, correct for any magnitude. Scalar grammar,
+     * deferred-sign handling, and the mandatory `$mode` argument are as
+     * described on {@see multiply()}.
+     *
+     * @throws InvalidMoneyAmountException if the scalar is not a
+     *                                     canonical exact numeral.
+     * @throws UnresolvedMoneySignPolicyException if the scalar is
+     *                                            negative.
+     * @throws DivisionByZeroException if the scalar is zero.
+     * @throws RoundingRequiredException if the exact result cannot be
+     *                                   represented at this Money's
+     *                                   Currency scale.
+     * @throws MoneyArithmeticException if the underlying arithmetic
+     *                                  engine reports an unanticipated failure.
+     */
+    public function divide(string $scalar, RoundingMode $mode): self
+    {
+        $validScalar = self::guardedScalar($scalar, 'divide');
+        $brickMode = self::brickRoundingModeFor($mode);
+
+        $result = $this->guardedBrickCall(
+            'divide',
+            fn (): BrickMoney => $this->inner->dividedBy($validScalar, $brickMode),
+        );
+
+        return new self($result, $this->currency);
+    }
+
+    /**
      * A three-way ordering comparison between two same-Currency Money
      * values: negative if this is less than $other, zero if equal,
      * positive if greater. Correct for any magnitude.
@@ -279,5 +372,32 @@ final class Money
         }
 
         return '/^(?<sign>-)?(?<int>0|[1-9][0-9]*)$/';
+    }
+
+    /**
+     * Validates a `multiply`/`divide` scalar operand against
+     * {@see SCALAR_PATTERN} and the deferred sign policy, returning it
+     * unchanged once confirmed exact and non-negative.
+     *
+     * @throws InvalidMoneyAmountException if the scalar is not a
+     *                                     canonical exact numeral.
+     * @throws UnresolvedMoneySignPolicyException if the scalar is
+     *                                            negative.
+     */
+    private static function guardedScalar(string $scalar, string $operation): string
+    {
+        if (strlen($scalar) > self::SCALAR_MAX_LENGTH) {
+            throw InvalidMoneyAmountException::forScalar($scalar);
+        }
+
+        if (preg_match(self::SCALAR_PATTERN, $scalar, $matches) !== 1) {
+            throw InvalidMoneyAmountException::forScalar($scalar);
+        }
+
+        if ($matches['sign'] !== '') {
+            throw UnresolvedMoneySignPolicyException::forScalarOperation($operation, $scalar);
+        }
+
+        return $scalar;
     }
 }

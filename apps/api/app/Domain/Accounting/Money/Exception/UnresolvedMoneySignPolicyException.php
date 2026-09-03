@@ -28,4 +28,19 @@ final class UnresolvedMoneySignPolicyException extends \InvalidArgumentException
             'This subtraction would produce a negative result. Money sign policy is not yet resolved; a negative Money result is not currently supported.',
         );
     }
+
+    /**
+     * Thrown when a `multiply`/`divide` scalar operand is a
+     * grammatically valid negative numeral — the same deferred-sign
+     * category as {@see forDecimalString()} and {@see forSubtraction()},
+     * applied to a scalar operand rather than a Money value.
+     */
+    public static function forScalarOperation(string $operation, string $value): self
+    {
+        return new self(sprintf(
+            'Value "%s" is a negative numeral, supplied as the scalar operand to "%s". Money sign policy is not yet resolved; a negative scalar operand is not currently supported.',
+            $value,
+            $operation,
+        ));
+    }
 }

@@ -18,4 +18,16 @@ final class InvalidMoneyAmountException extends \InvalidArgumentException
             $value,
         ));
     }
+
+    /**
+     * Thrown when a `multiply`/`divide` scalar operand is not a
+     * canonical exact numeral (AETS-003 §10, §11).
+     */
+    public static function forScalar(string $value): self
+    {
+        return new self(sprintf(
+            'Value "%s" is not a canonical exact numeral for a Money scalar operand.',
+            $value,
+        ));
+    }
 }
