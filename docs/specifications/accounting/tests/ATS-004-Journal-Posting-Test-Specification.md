@@ -1,7 +1,7 @@
 # ATS-004: Journal & Posting Test Specification
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-004: Journal & Posting Model](../AETS-004-Journal-Posting-Model.md). It exists so that Journal/Posting implementation work has a precise, testable, traceable target before any code is written — exactly the coverage AETS-004 §25 said a future Journal & Posting ATS must provide.
 
-Every test defined here is identified by a stable ID (`JRN-T001`–`JRN-T085`) and traced to the `JRN-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`JRN-T001`–`JRN-T100`) and traced to the `JRN-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -64,17 +64,17 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 
 | Invariant | Summary | Test IDs |
 | --- | --- | --- |
-| JRN-001 | Tenant ownership | JRN-T016, JRN-T056, JRN-T057, JRN-T058, JRN-T076 |
-| JRN-002 | At least two lines | JRN-T002, JRN-T003, JRN-T004 |
-| JRN-003 | Stable opaque identifier | JRN-T014 |
-| JRN-004 | Recorded lifecycle state | JRN-T001, JRN-T015, JRN-T023, JRN-T024 |
+| JRN-001 | Tenant ownership | JRN-T016, JRN-T056, JRN-T057, JRN-T058, JRN-T076, JRN-T086 |
+| JRN-002 | At least two lines | JRN-T002, JRN-T003, JRN-T004, JRN-T088, JRN-T093, JRN-T100 |
+| JRN-003 | Stable opaque identifier | JRN-T014, JRN-T087, JRN-T098 |
+| JRN-004 | Recorded lifecycle state | JRN-T001, JRN-T015, JRN-T023, JRN-T024, JRN-T089, JRN-T090, JRN-T091, JRN-T092, JRN-T099 |
 | JRN-005 | Immutable posted Journal | JRN-T010, JRN-T017, JRN-T044, JRN-T048, JRN-T077 |
 | JRN-006 | No direct posted-Journal mutation | JRN-T018, JRN-T019, JRN-T020, JRN-T077 |
-| JRN-007 | Exact debit/credit balance | JRN-T025, JRN-T026, JRN-T045, JRN-T049, JRN-T062, JRN-T063, JRN-T067, JRN-T075 |
+| JRN-007 | Exact debit/credit balance | JRN-T025, JRN-T026, JRN-T045, JRN-T049, JRN-T062, JRN-T063, JRN-T067, JRN-T075, JRN-T095, JRN-T096, JRN-T097 |
 | JRN-008 | No dual-direction line | JRN-T005, JRN-T006, JRN-T007, JRN-T008 |
 | JRN-009 | No binary float | JRN-T012, JRN-T068 |
 | JRN-010 | Single Account reference | JRN-T009, JRN-T013 |
-| JRN-011 | Single Currency per Journal | JRN-T011 |
+| JRN-011 | Single Currency per Journal | JRN-T011, JRN-T094 |
 | JRN-012 | Atomic posting | JRN-T030, JRN-T031, JRN-T083, JRN-T085 |
 | JRN-013 | No network call inside the posting transaction | JRN-T032 |
 | JRN-014 | Idempotent posting | JRN-T033, JRN-T034, JRN-T035, JRN-T036, JRN-T065, JRN-T074, JRN-T084 |
@@ -118,6 +118,26 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 | JRN-T015 | A Journal records its current lifecycle state, and only Draft and Posted are valid values. |
 
 > **Note on `JRN-T002`–`JRN-T004`.** These three tests together prove the minimum-line-count requirement (`JRN-002`): a Journal MUST contain at least two Journal Lines. This is final for the current specification baseline, per [AETS-004 §7](../AETS-004-Journal-Posting-Model.md#7-journal-line) and [AETS-002 §4](../AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 1.
+
+**Reconstitution** — `Journal::reconstitute(...)` is the domain-owned counterpart to `create()` used to load a previously-persisted Journal — Draft or Posted — rather than forcing persistence code through `create(...)->post()`, which would misrepresent restoration of already-decided state as a new posting decision. Unlike a typical reconstitution counterpart that skips re-validating what construction already checked, `reconstitute()` validates the exact same structural financial invariants `create()` does every time — persisted data is not trusted merely because it came from storage:
+
+| ID | Test |
+| --- | --- |
+| JRN-T086 | `reconstitute()` restores TenantId exactly as supplied. |
+| JRN-T087 | `reconstitute()` restores JournalId exactly as supplied. |
+| JRN-T088 | `reconstitute()` restores the exact Journal Line list — same count, same instances, never cloned or replaced. |
+| JRN-T089 | `reconstitute()` can restore a Draft Journal exactly. |
+| JRN-T090 | `reconstitute()` can restore a Posted Journal exactly. |
+| JRN-T091 | `reconstitute()` never calls `post()` — reconstituting a Posted Journal does not invoke the Draft -> Posted transition. |
+| JRN-T092 | Reconstituting a Posted Journal does not throw the "already posted" failure `post()` itself raises (`JRN-T024`) — that failure is specific to a repeated *transition* attempt, not to state restoration. |
+| JRN-T093 | `reconstitute()` still enforces the minimum two Journal Lines requirement (`JRN-002`) — a persisted line set with fewer than two lines is rejected, not trusted. |
+| JRN-T094 | `reconstitute()` still rejects a mixed-Currency Journal Line set (`JRN-011`). |
+| JRN-T095 | `reconstitute()` still rejects an unbalanced Journal Line set (`JRN-007`). |
+| JRN-T096 | A Journal Line set claimed to already be Posted, but financially invalid (unbalanced, mixed-Currency, or insufficient lines), is still rejected — the supplied lifecycle state does not exempt the data from validation. |
+| JRN-T097 | Exact Money balance remains mandatory through `reconstitute()`, computed via the same Money arithmetic `create()` uses — never native float, never a tolerance window. |
+| JRN-T098 | Identity equality remains based on JournalId regardless of which factory produced a Journal — a `create()`d Journal and a `reconstitute()`d Journal sharing the same identifier are equal. |
+| JRN-T099 | `reconstitute()` introduces no posting, Audit Event, Outbox, or idempotency-key side effect of any kind — it performs no I/O. |
+| JRN-T100 | Journal Line order is preserved exactly through `reconstitute()` — order is part of what "exact" restoration means, not merely count and content. |
 
 ## 8. Aggregate Tests
 
@@ -299,4 +319,5 @@ This section states expected behaviors only. It does not define benchmarks, late
 
 ## 24. Changelog
 
+- **1.1.0 (2026-09-04):** Added `JRN-T086`–`JRN-T100` (§7, new "Reconstitution" subsection) — the reconstitution traceability gap identified while implementing `Journal::reconstitute()` (M3-T7): exact TenantId/JournalId/Journal-Line-list/line-order restoration; Draft and Posted state each restorable exactly; reconstituting a Posted Journal never calls `post()` and never throws the "already posted" failure `post()` itself raises; the minimum-two-lines, single-Currency, and exact-balance requirements all still enforced on reconstitution, including when the supplied state claims Posted; identity equality unaffected; and no posting/Audit/Outbox/idempotency side effect of any kind. Mapped into the existing traceability matrix (§5) under `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-007`, and `JRN-011` — no new `JRN-NNN` invariant was needed; reconstitution re-uses the same financial invariants `create()` already proves, restoring only the lifecycle state as an additional supplied fact. No existing test ID (`JRN-T001`–`JRN-T085`) was renumbered, altered, or removed.
 - **1.0.0 (2026-09-04):** Initial creation. Reviewed and marked `Active`. `JRN-002`'s minimum-line-count requirement (at least two Journal Lines) is confirmed final for the current specification baseline; the drafting-stage note flagging it for Founder confirmation is resolved and removed from both this document and [AETS-004](../AETS-004-Journal-Posting-Model.md). No test ID was added, removed, or renumbered.

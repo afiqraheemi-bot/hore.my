@@ -20,6 +20,7 @@ use App\Domain\Accounting\Money\Money;
 use App\Domain\Shared\Tenancy\TenantId;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Tests\Unit\Domain\Accounting\ChartOfAccounts\AccountTest;
 
 /**
  * Covers the ATS-004 tests relevant to {@see Journal} at the
@@ -50,6 +51,14 @@ use ReflectionClass;
  * Posting Command, so the Tenant/Actor/Evidence/idempotency
  * validation a real Posting Command would also perform (§11) is not
  * exercised here and awaits the future Posting Engine task.
+ *
+ * This revision (M3-T7) also covers {@see Journal::reconstitute()}.
+ * Neither AETS-004 nor ATS-004 mentions reconstitution anywhere — a
+ * genuine traceability gap, reported rather than silently worked
+ * around: this suite's reconstitution tests trace to no `JRN-T` ID at
+ * all, mirroring the identical, already-accepted gap for
+ * {@see AccountTest}'s
+ * own `Account::reconstitute()` coverage.
  */
 final class JournalTest extends TestCase
 {
@@ -275,6 +284,225 @@ final class JournalTest extends TestCase
         foreach (['reopen', 'draft', 'unpost', 'reset', 'cancel', 'delete', 'updateLines', 'replaceLines'] as $forbiddenMethodName) {
             $this->assertNotContains($forbiddenMethodName, $publicMethodNames);
         }
+    }
+
+    /**
+     * `create()` remains Draft-only after this task's refactor —
+     * unchanged behavior, re-proven to guard against a regression
+     * introduced while sharing validation logic with
+     * {@see Journal::reconstitute()}.
+     */
+    public function test_create_remains_draft_only(): void
+    {
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $this->assertSame(JournalState::Draft, $journal->state());
+    }
+
+    /**
+     * A Draft Journal can be reconstituted exactly.
+     */
+    public function test_reconstitute_restores_a_draft_journal(): void
+    {
+        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Draft);
+
+        $this->assertInstanceOf(Journal::class, $journal);
+        $this->assertSame(JournalState::Draft, $journal->state());
+    }
+
+    /**
+     * A Posted Journal can be reconstituted exactly — without ever
+     * calling `create(...)->post()`, and without throwing
+     * {@see JournalAlreadyPostedException}: reconstitution restores an
+     * already-decided fact, it does not perform a posting decision.
+     */
+    public function test_reconstitute_restores_a_posted_journal(): void
+    {
+        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Posted);
+
+        $this->assertSame(JournalState::Posted, $journal->state());
+    }
+
+    /**
+     * TenantId is restored exactly through `reconstitute()`.
+     */
+    public function test_reconstitute_restores_tenant_id_exactly(): void
+    {
+        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Draft);
+
+        $this->assertTrue($this->tenantId->equals($journal->tenantId()));
+    }
+
+    /**
+     * JournalId is restored exactly through `reconstitute()`.
+     */
+    public function test_reconstitute_restores_journal_id_exactly(): void
+    {
+        $id = JournalId::of('journal-0001');
+
+        $journal = Journal::reconstitute($this->tenantId, $id, [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Draft);
+
+        $this->assertTrue($id->equals($journal->id()));
+    }
+
+    /**
+     * Journal Lines are restored exactly, in order, and as the same
+     * {@see JournalLine} instances — never cloned, never reordered.
+     */
+    public function test_reconstitute_restores_lines_exactly_and_in_order(): void
+    {
+        $debit = $this->debitLine('account-cash', '100.00');
+        $credit = $this->creditLine('account-income', '100.00');
+
+        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], JournalState::Draft);
+
+        $this->assertSame([$debit, $credit], $journal->lines());
+    }
+
+    /**
+     * Normal posting transition behavior is unaffected by
+     * `reconstitute()` existing: a reconstituted Draft Journal can
+     * still be posted through the ordinary `post()` path.
+     */
+    public function test_posting_transition_behavior_is_unchanged_after_reconstitution(): void
+    {
+        $draft = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Draft);
+
+        $posted = $draft->post();
+
+        $this->assertSame(JournalState::Posted, $posted->state());
+        $this->assertSame(JournalState::Draft, $draft->state());
+    }
+
+    /**
+     * Reconstituting a Posted Journal does not throw
+     * {@see JournalAlreadyPostedException} — that exception is
+     * `post()`'s own re-posting guard, and `reconstitute()` never
+     * calls `post()` at all, proven directly by source inspection.
+     */
+    public function test_reconstituting_a_posted_journal_does_not_throw_already_posted(): void
+    {
+        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Posted);
+
+        $this->assertSame(JournalState::Posted, $journal->state());
+
+        $reflection = new ReflectionClass(Journal::class);
+        $method = $reflection->getMethod('reconstitute');
+        $source = file_get_contents((string) $reflection->getFileName());
+        $this->assertIsString($source);
+
+        // Extract the reconstitute() method's own body by line range,
+        // rather than scanning the whole file, so this proves the
+        // method itself never calls post() — not merely that the
+        // string "post()" is absent somewhere else in the class.
+        $lines = explode("\n", $source);
+        $bodyLines = array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1);
+        $body = implode("\n", $bodyLines);
+
+        $this->assertStringNotContainsString('->post(', $body);
+        $this->assertStringNotContainsString('self::post(', $body);
+    }
+
+    /**
+     * Fewer than two lines is rejected during reconstitution — the
+     * same structural invariant `create()` enforces, not weakened
+     * merely because the data claims to come from persistence.
+     */
+    public function test_reconstitute_rejects_fewer_than_two_lines(): void
+    {
+        $this->expectException(InsufficientJournalLinesException::class);
+
+        Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+        ], JournalState::Draft);
+    }
+
+    /**
+     * Mixed Currency is rejected during reconstitution.
+     */
+    public function test_reconstitute_rejects_mixed_currency(): void
+    {
+        $otherCurrency = $this->currencyOtherThanMyr();
+
+        $this->expectException(MixedCurrencyJournalException::class);
+
+        Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            JournalLine::create(AccountId::of('account-cash'), Money::fromDecimalString('100.00', $this->myr), JournalDirection::Debit),
+            JournalLine::create(AccountId::of('account-income'), Money::fromDecimalString('100.00', $otherCurrency), JournalDirection::Credit),
+        ], JournalState::Draft);
+    }
+
+    /**
+     * Unbalanced lines are rejected during reconstitution — exact
+     * Money balance is still required, via the same Money arithmetic
+     * `create()` uses, never native float.
+     */
+    public function test_reconstitute_rejects_unbalanced_lines(): void
+    {
+        $this->expectException(UnbalancedJournalException::class);
+
+        Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-expense', '45.50'),
+            $this->creditLine('account-cash', '45.00'),
+        ], JournalState::Draft);
+    }
+
+    /**
+     * Reconstituting a Posted Journal from an unbalanced line set is
+     * rejected exactly the same way — the supplied `JournalState` does
+     * not exempt the data from financial-invariant validation. No
+     * invalid Journal may enter the Domain merely because it claims to
+     * already be Posted.
+     */
+    public function test_reconstitute_rejects_unbalanced_posted_journal(): void
+    {
+        $this->expectException(UnbalancedJournalException::class);
+
+        Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-expense', '45.50'),
+            $this->creditLine('account-cash', '45.00'),
+        ], JournalState::Posted);
+    }
+
+    /**
+     * Identity equality remains JournalId-based for reconstituted
+     * Journals too — no change in equality semantics.
+     */
+    public function test_reconstituted_journal_equality_is_journal_id_based(): void
+    {
+        $id = JournalId::of('journal-0001');
+
+        $a = Journal::reconstitute($this->tenantId, $id, [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Draft);
+        $b = Journal::reconstitute($this->tenantId, $id, [
+            $this->debitLine('account-cash', '50.00'),
+            $this->creditLine('account-income', '50.00'),
+        ], JournalState::Posted);
+
+        $this->assertTrue($a->equals($b));
     }
 
     /**
@@ -612,9 +840,13 @@ final class JournalTest extends TestCase
      * The only path to a Posted Journal is `post()` itself — no
      * alternately-named posting method exists, and no other public
      * method beyond the fixed, minimal, intended API (which now
-     * includes `post()`, per M3-T6).
+     * includes `post()`, per M3-T6, and `reconstitute()`, per M3-T7).
+     * In particular, none of the forbidden shortcuts this task warns
+     * against exist: no arbitrary state setter, no `fromDatabase()`,
+     * `hydrateRaw()`, or `bypassValidation()`, no unsafe constructor,
+     * no `reopen()`/`unpost()`.
      */
-    public function test_only_the_intended_public_api_including_post_exists(): void
+    public function test_only_the_intended_public_api_including_reconstitute_exists(): void
     {
         $reflection = new ReflectionClass(Journal::class);
 
@@ -625,11 +857,15 @@ final class JournalTest extends TestCase
         sort($publicMethodNames);
 
         $this->assertSame(
-            ['create', 'equals', 'id', 'isBalanced', 'lines', 'post', 'state', 'tenantId'],
+            ['create', 'equals', 'id', 'isBalanced', 'lines', 'post', 'reconstitute', 'state', 'tenantId'],
             $publicMethodNames,
         );
 
-        foreach (['postJournal', 'transition', 'markPosted'] as $forbiddenMethodName) {
+        foreach ([
+            'postJournal', 'transition', 'markPosted',
+            'fromDatabase', 'hydrateRaw', 'bypassValidation',
+            'setState', 'reopen', 'unpost',
+        ] as $forbiddenMethodName) {
             $this->assertNotContains($forbiddenMethodName, $publicMethodNames);
         }
     }

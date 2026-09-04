@@ -63,6 +63,16 @@ use App\Domain\Shared\Tenancy\TenantId;
  * something {@see Money} itself refuses to do at all, AETS-003 §6,
  * `MON-006`).
  *
+ * **Reconstitution, not persistence.** This revision (M3-T7) adds
+ * {@see reconstitute()}: the domain-owned counterpart to
+ * {@see create()} a future persistence adapter uses to load an
+ * *existing* Journal — Draft or Posted — without forcing it through
+ * `create(...)->post()`, which would misrepresent restoration of
+ * already-decided state as a new posting decision. See
+ * {@see reconstitute()}'s own docblock for why it still re-validates
+ * every structural financial invariant rather than trusting persisted
+ * data.
+ *
  * Deliberately absent from this revision: Reversal, Replacement,
  * Actor/Source/Evidence, Audit Event, Outbox, persistence, repository,
  * and any migration — none of them are part of what AETS-004 §6/§7
@@ -107,7 +117,9 @@ final class Journal
      * Validates, in order, before any Journal instance is returned:
      * at least two Journal Lines (`JRN-002`); every line sharing
      * exactly one Currency (`JRN-011`); and exact Debit/Credit balance
-     * (`JRN-007`) — see {@see isBalanced()}.
+     * (`JRN-007`) — see {@see isBalanced()}. Identical to the
+     * validation {@see reconstitute()} performs; only the resulting
+     * state differs.
      *
      * @param  list<JournalLine>  $lines
      *
@@ -120,19 +132,49 @@ final class Journal
      */
     public static function create(TenantId $tenantId, JournalId $id, array $lines): self
     {
-        if (count($lines) < self::MINIMUM_LINE_COUNT) {
-            throw InsufficientJournalLinesException::forCount(count($lines));
-        }
+        return self::assembleValidated($tenantId, $id, $lines, JournalState::Draft);
+    }
 
-        self::assertSingleCurrency($lines);
-
-        $journal = new self($tenantId, $id, $lines, JournalState::Draft);
-
-        if (! $journal->isBalanced()) {
-            throw UnbalancedJournalException::forDifference();
-        }
-
-        return $journal;
+    /**
+     * Reconstruct an already-existing Journal from previously-persisted
+     * state (M3-T7) — the domain-owned counterpart to {@see create()}
+     * a future persistence adapter uses to load a Journal that may
+     * already be Draft or Posted, instead of forcing persistence code
+     * through `create(...)->post()` to arrive at a Posted instance.
+     * That would be wrong for a reason beyond convenience:
+     * reconstitution restores an already-decided, already-persisted
+     * fact, it is not a new business posting decision — {@see post()}
+     * remains the *only* method that represents that decision, and
+     * this method never calls it.
+     *
+     * **Persisted data is not trusted.** Unlike a typical
+     * reconstitution counterpart that skips re-validating what
+     * construction already checked, this method validates the exact
+     * same structural financial invariants {@see create()} does —
+     * at least two Journal Lines (`JRN-002`), a single shared Currency
+     * (`JRN-011`), and exact Debit/Credit balance (`JRN-007`) — every
+     * time. A corrupted, truncated, or otherwise malformed persisted
+     * Journal Line set MUST NOT silently re-enter the Domain as valid
+     * merely because it came from storage; only `$state` is restored
+     * exactly as given, never re-derived or second-guessed.
+     *
+     * Performs no I/O of any kind — no database read, no query, no
+     * network call — and produces no Audit Event, Outbox publish, or
+     * idempotency-key effect. It is not a Posting Command and must
+     * never be mistaken for one.
+     *
+     * @param  list<JournalLine>  $lines
+     *
+     * @throws InsufficientJournalLinesException if fewer than two
+     *                                           lines are given.
+     * @throws MixedCurrencyJournalException if the lines do not all
+     *                                       share the same Currency.
+     * @throws UnbalancedJournalException if total Debit Money does
+     *                                    not exactly equal total Credit Money.
+     */
+    public static function reconstitute(TenantId $tenantId, JournalId $id, array $lines, JournalState $state): self
+    {
+        return self::assembleValidated($tenantId, $id, $lines, $state);
     }
 
     /**
@@ -234,6 +276,36 @@ final class Journal
     public function equals(self $other): bool
     {
         return $this->id->equals($other->id);
+    }
+
+    /**
+     * The shared validation-and-assembly path {@see create()} and
+     * {@see reconstitute()} both funnel through — the only difference
+     * between a newly created Journal and a reconstituted one is which
+     * `JournalState` is supplied; every structural financial invariant
+     * is enforced identically either way.
+     *
+     * @param  list<JournalLine>  $lines
+     *
+     * @throws InsufficientJournalLinesException
+     * @throws MixedCurrencyJournalException
+     * @throws UnbalancedJournalException
+     */
+    private static function assembleValidated(TenantId $tenantId, JournalId $id, array $lines, JournalState $state): self
+    {
+        if (count($lines) < self::MINIMUM_LINE_COUNT) {
+            throw InsufficientJournalLinesException::forCount(count($lines));
+        }
+
+        self::assertSingleCurrency($lines);
+
+        $journal = new self($tenantId, $id, $lines, $state);
+
+        if (! $journal->isBalanced()) {
+            throw UnbalancedJournalException::forDifference();
+        }
+
+        return $journal;
     }
 
     /**
