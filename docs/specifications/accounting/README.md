@@ -35,7 +35,7 @@ Planned, not-yet-created documents — AETS-006 (Posting Rules), AETS-007 (Accou
 | --- | --- | --- | --- | --- |
 | [ATS-003 — Money Test Specification](tests/ATS-003-Money-Test-Specification.md) | Active | 1.3.0 | [AETS-003](AETS-003-Money-Specification.md) | 95 test IDs (`MON-T001`–`MON-T095`) tracing every `MON-NNN` invariant to at least one test; golden MYR cases, property-based generators, persistence and vendor-isolation tests |
 | [ATS-004 — Journal & Posting Test Specification](tests/ATS-004-Journal-Posting-Test-Specification.md) | Active | 1.0.0 | [AETS-004](AETS-004-Journal-Posting-Model.md) | 85 test IDs (`JRN-T001`–`JRN-T085`) tracing every `JRN-NNN` invariant to at least one test; balance/reversal property-based generators, golden journal cases, atomicity/idempotency/concurrency and tenant-isolation integration tests |
-| [ATS-005 — Chart of Accounts Test Specification](tests/ATS-005-Chart-of-Accounts-Test-Specification.md) | Active | 1.0.0 | [AETS-005](AETS-005-Chart-of-Accounts.md) | 90 test IDs (`COA-T001`–`COA-T090`) tracing every `COA-NNN` invariant to at least one test; type/normal-balance and hierarchy property-based generators, golden account cases, tenant-isolation and posting-eligibility tests |
+| [ATS-005 — Chart of Accounts Test Specification](tests/ATS-005-Chart-of-Accounts-Test-Specification.md) | Active | 1.1.0 | [AETS-005](AETS-005-Chart-of-Accounts.md) | 97 test IDs (`COA-T001`–`COA-T097`) tracing every `COA-NNN` invariant to at least one test; type/normal-balance and hierarchy property-based generators, golden account cases, tenant-isolation, posting-eligibility, and Account deactivation-lifecycle tests |
 
 ## Creating an AETS document
 

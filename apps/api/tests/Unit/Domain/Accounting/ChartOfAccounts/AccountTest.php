@@ -1,0 +1,409 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Domain\Accounting\ChartOfAccounts;
+
+use App\Domain\Accounting\ChartOfAccounts\Account;
+use App\Domain\Accounting\ChartOfAccounts\AccountCode;
+use App\Domain\Accounting\ChartOfAccounts\AccountId;
+use App\Domain\Accounting\ChartOfAccounts\AccountName;
+use App\Domain\Accounting\ChartOfAccounts\AccountType;
+use App\Domain\Accounting\ChartOfAccounts\NormalBalance;
+use App\Domain\Shared\Tenancy\TenantId;
+use PHPUnit\Framework\TestCase;
+use ReflectionClass;
+
+/**
+ * Covers the Account-level ATS-005 cases this revision (M2-T5.1B)
+ * supports, now that Tenant ownership and AccountName exist. `COA-T001`
+ * is now fully coverable (a Tenant is present). `COA-T002`'s
+ * "immutable... for its lifetime" claim is still only partially
+ * provable — no persistence exists yet to prove survival across a
+ * write/read cycle. Hierarchy, System-vs-User-Created distinction,
+ * `activate()`/`rename()`/code or type changes, and persistence remain
+ * out of scope — see M2-T5.1B's report.
+ */
+final class AccountTest extends TestCase
+{
+    private function validTenantId(): TenantId
+    {
+        return TenantId::of('tenant-0001');
+    }
+
+    private function validId(): AccountId
+    {
+        return AccountId::of('account-0001');
+    }
+
+    private function validCode(): AccountCode
+    {
+        return AccountCode::of('1000');
+    }
+
+    private function validName(): AccountName
+    {
+        return AccountName::of('Cash / Bank');
+    }
+
+    private function createAccount(
+        ?TenantId $tenantId = null,
+        ?AccountId $id = null,
+        ?AccountCode $code = null,
+        ?AccountName $name = null,
+        AccountType $type = AccountType::Asset,
+        bool $isPostingEligible = true,
+    ): Account {
+        return Account::create(
+            $tenantId ?? $this->validTenantId(),
+            $id ?? $this->validId(),
+            $code ?? $this->validCode(),
+            $name ?? $this->validName(),
+            $type,
+            $isPostingEligible,
+        );
+    }
+
+    /**
+     * COA-T001: an Account can be validly constructed with a Tenant,
+     * Account Code, Name, Account Type, and posting-eligibility state
+     * all present.
+     */
+    public function test_valid_account_constructs_successfully(): void
+    {
+        $account = $this->createAccount();
+
+        $this->assertInstanceOf(Account::class, $account);
+    }
+
+    /**
+     * Explicit Tenant ownership: the Account reports exactly the
+     * Tenant it was constructed with.
+     */
+    public function test_tenant_id_returns_the_constructed_tenant(): void
+    {
+        $tenantId = $this->validTenantId();
+
+        $account = $this->createAccount(tenantId: $tenantId);
+
+        $this->assertTrue($tenantId->equals($account->tenantId()));
+    }
+
+    /**
+     * Stable AccountId: the Account reports exactly the identifier it
+     * was constructed with.
+     */
+    public function test_id_returns_the_constructed_identifier(): void
+    {
+        $id = $this->validId();
+
+        $account = $this->createAccount(id: $id);
+
+        $this->assertTrue($id->equals($account->id()));
+    }
+
+    /**
+     * Required AccountCode: the Account reports exactly the Code it
+     * was constructed with.
+     */
+    public function test_code_returns_the_constructed_code(): void
+    {
+        $code = $this->validCode();
+
+        $account = $this->createAccount(code: $code);
+
+        $this->assertTrue($code->equals($account->code()));
+    }
+
+    /**
+     * Required AccountName: the Account reports exactly the Name it
+     * was constructed with.
+     */
+    public function test_name_returns_the_constructed_name(): void
+    {
+        $name = $this->validName();
+
+        $account = $this->createAccount(name: $name);
+
+        $this->assertTrue($name->equals($account->name()));
+    }
+
+    public function test_type_returns_the_constructed_type(): void
+    {
+        $account = $this->createAccount(type: AccountType::Liability);
+
+        $this->assertSame(AccountType::Liability, $account->type());
+    }
+
+    /**
+     * COA-T005: Normal Balance is exactly the canonical value the
+     * Account Type derives — proven across every Account Type.
+     */
+    public function test_normal_balance_is_derived_from_type(): void
+    {
+        foreach (AccountType::cases() as $type) {
+            $account = $this->createAccount(type: $type);
+
+            $this->assertSame($type->normalBalance(), $account->normalBalance());
+        }
+    }
+
+    /**
+     * COA-T005: Normal Balance cannot be independently supplied —
+     * proven structurally, since `create()` declares no Normal Balance
+     * parameter at all.
+     */
+    public function test_normal_balance_cannot_be_independently_supplied(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+        $method = $reflection->getMethod('create');
+
+        $parameterTypes = array_map(
+            static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                ? $parameter->getType()->getName()
+                : null,
+            $method->getParameters(),
+        );
+
+        $this->assertNotContains(NormalBalance::class, $parameterTypes);
+    }
+
+    /**
+     * Every `create()` parameter is required: Tenant, identifier,
+     * Code, Name, Account Type, and posting-eligibility state each
+     * have no default value, so none can be omitted or left
+     * undefined (`COA-T004`, `COA-T006`, plus explicit Tenant/Code/
+     * Name presence).
+     */
+    public function test_every_create_parameter_is_required(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+        $method = $reflection->getMethod('create');
+
+        $this->assertCount(6, $method->getParameters());
+
+        foreach ($method->getParameters() as $parameter) {
+            $this->assertFalse(
+                $parameter->isOptional(),
+                sprintf('Parameter "%s" must be required.', $parameter->getName()),
+            );
+            $this->assertFalse(
+                $parameter->isDefaultValueAvailable(),
+                sprintf('Parameter "%s" must have no default value.', $parameter->getName()),
+            );
+        }
+
+        $parameterTypes = array_map(
+            static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                ? $parameter->getType()->getName()
+                : null,
+            $method->getParameters(),
+        );
+
+        $this->assertSame(
+            [TenantId::class, AccountId::class, AccountCode::class, AccountName::class, AccountType::class, 'bool'],
+            $parameterTypes,
+        );
+    }
+
+    /**
+     * A new Account is always Active at creation.
+     */
+    public function test_new_account_is_active(): void
+    {
+        $account = $this->createAccount();
+
+        $this->assertTrue($account->isActive());
+    }
+
+    public function test_posting_eligible_true_is_honored(): void
+    {
+        $account = $this->createAccount(isPostingEligible: true);
+
+        $this->assertTrue($account->isPostingAllowed());
+    }
+
+    public function test_posting_eligible_false_is_honored(): void
+    {
+        $account = $this->createAccount(isPostingEligible: false);
+
+        $this->assertFalse($account->isPostingAllowed());
+    }
+
+    /**
+     * AETS-005 §13: an Inactive Account reports posting not allowed,
+     * even though it was created posting-eligible.
+     */
+    public function test_inactive_account_reports_posting_not_allowed(): void
+    {
+        $account = $this->createAccount(isPostingEligible: true)->deactivate();
+
+        $this->assertFalse($account->isPostingAllowed());
+    }
+
+    /**
+     * `deactivate()` returns a new Account instance, distinct from the
+     * original — and the original is left untouched.
+     */
+    public function test_deactivate_returns_a_new_instance(): void
+    {
+        $original = $this->createAccount();
+
+        $deactivated = $original->deactivate();
+
+        $this->assertNotSame($original, $deactivated);
+        $this->assertTrue($original->isActive());
+        $this->assertFalse($deactivated->isActive());
+    }
+
+    /**
+     * `deactivate()` preserves Tenant, identifier, Code, Name, Type,
+     * and Normal Balance unchanged — only the Active state (and,
+     * derived from it, posting-allowed) changes.
+     */
+    public function test_deactivate_preserves_identity_and_domain_fields(): void
+    {
+        $original = $this->createAccount(isPostingEligible: true);
+
+        $deactivated = $original->deactivate();
+
+        $this->assertTrue($original->tenantId()->equals($deactivated->tenantId()));
+        $this->assertTrue($original->id()->equals($deactivated->id()));
+        $this->assertTrue($original->code()->equals($deactivated->code()));
+        $this->assertTrue($original->name()->equals($deactivated->name()));
+        $this->assertSame($original->type(), $deactivated->type());
+        $this->assertSame($original->normalBalance(), $deactivated->normalBalance());
+    }
+
+    /**
+     * Repeated deactivation is deterministic: deactivating an
+     * already-Inactive Account produces another Account equal in every
+     * observable respect — idempotent in effect, even though a new
+     * instance is returned each time.
+     */
+    public function test_repeated_deactivation_is_deterministic(): void
+    {
+        $account = $this->createAccount(isPostingEligible: true);
+
+        $deactivatedOnce = $account->deactivate();
+        $deactivatedTwice = $deactivatedOnce->deactivate();
+
+        $this->assertFalse($deactivatedOnce->isActive());
+        $this->assertFalse($deactivatedTwice->isActive());
+        $this->assertFalse($deactivatedOnce->isPostingAllowed());
+        $this->assertFalse($deactivatedTwice->isPostingAllowed());
+        $this->assertTrue($deactivatedOnce->id()->equals($deactivatedTwice->id()));
+        $this->assertTrue($deactivatedOnce->equals($deactivatedTwice));
+    }
+
+    /**
+     * COA-T008: an Account's public shape exposes no mutable
+     * authoritative balance field or accessor, at construction or
+     * thereafter — proven by an exact inventory of the public API and
+     * of every declared property.
+     */
+    public function test_exposes_only_the_required_public_api(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        $publicMethodNames = array_map(
+            static fn (\ReflectionMethod $method): string => $method->getName(),
+            $reflection->getMethods(\ReflectionMethod::IS_PUBLIC),
+        );
+
+        $this->assertSame(
+            ['create', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'deactivate', 'equals'],
+            $publicMethodNames,
+        );
+
+        $propertyNames = array_map(
+            static fn (\ReflectionProperty $property): string => $property->getName(),
+            $reflection->getProperties(),
+        );
+
+        $this->assertSame(
+            ['tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'active', 'postingEligible'],
+            $propertyNames,
+        );
+    }
+
+    /**
+     * Account is immutable: every property is readonly and no public
+     * mutator method exists — `deactivate()` returns a new instance
+     * rather than mutating in place (already proven directly by
+     * `test_deactivate_returns_a_new_instance`); no `activate()`,
+     * `rename()`, or code/type-changing method exists at all.
+     */
+    public function test_account_is_immutable(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        foreach ($reflection->getProperties() as $property) {
+            $this->assertTrue(
+                $property->isReadOnly(),
+                sprintf('Property "%s" must be readonly.', $property->getName()),
+            );
+        }
+
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            $this->assertStringStartsNotWith(
+                'set',
+                $method->getName(),
+                sprintf('Public method "%s" must not be a mutator.', $method->getName()),
+            );
+        }
+    }
+
+    /**
+     * No native database ID semantics: no public method returns a
+     * native PHP int as the canonical representation of anything.
+     */
+    public function test_no_native_int_canonical_accessor(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            $returnType = $method->getReturnType();
+
+            if ($returnType instanceof \ReflectionNamedType) {
+                $this->assertNotSame(
+                    'int',
+                    $returnType->getName(),
+                    sprintf('Public method "%s" must not return a native int.', $method->getName()),
+                );
+            }
+        }
+    }
+
+    public function test_equals_same_identifier_is_equal(): void
+    {
+        $id = $this->validId();
+
+        $a = $this->createAccount(id: $id);
+        $b = Account::create($this->validTenantId(), $id, AccountCode::of('1100'), AccountName::of('Cash / Bank (renamed)'), AccountType::Asset, true);
+
+        $this->assertTrue($a->equals($b));
+    }
+
+    public function test_equals_different_identifier_is_not_equal(): void
+    {
+        $a = $this->createAccount(id: AccountId::of('account-0001'));
+        $b = $this->createAccount(id: AccountId::of('account-0002'));
+
+        $this->assertFalse($a->equals($b));
+    }
+
+    /**
+     * Framework independence: no Illuminate/Eloquent dependency
+     * anywhere in the file.
+     */
+    public function test_has_no_framework_dependency(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+        $source = file_get_contents((string) $reflection->getFileName());
+
+        $this->assertIsString($source);
+        $this->assertStringNotContainsString('Illuminate\\', $source);
+        $this->assertStringNotContainsString('Eloquent', $source);
+    }
+}

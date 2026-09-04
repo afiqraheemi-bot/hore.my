@@ -1,7 +1,7 @@
 # ATS-005: Chart of Accounts Test Specification
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-005: Chart of Accounts & Account Taxonomy](../AETS-005-Chart-of-Accounts.md). It exists so that Account domain implementation has a precise, testable, traceable target before any code is written — exactly the coverage AETS-005 §24 said a future Chart of Accounts ATS must provide.
 
-Every test defined here is identified by a stable ID (`COA-T001`–`COA-T090`) and traced to the `COA-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`COA-T001`–`COA-T097`) and traced to the `COA-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -61,15 +61,15 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 
 | Invariant | Summary | Test IDs |
 | --- | --- | --- |
-| COA-001 | Tenant ownership | COA-T058 |
-| COA-002 | Stable identifier | COA-T002 |
+| COA-001 | Tenant ownership | COA-T058, COA-T093 |
+| COA-002 | Stable identifier | COA-T002, COA-T093 |
 | COA-003 | Tenant-scoped code uniqueness | COA-T024, COA-T025, COA-T055, COA-T073 |
-| COA-004 | Exactly one Account Type | COA-T004, COA-T009, COA-T010, COA-T011, COA-T012, COA-T013, COA-T014, COA-T015 |
-| COA-005 | Canonical Normal Balance | COA-T005, COA-T016, COA-T017, COA-T018, COA-T019, COA-T020, COA-T021, COA-T054, COA-T070, COA-T090 |
+| COA-004 | Exactly one Account Type | COA-T004, COA-T009, COA-T010, COA-T011, COA-T012, COA-T013, COA-T014, COA-T015, COA-T093 |
+| COA-005 | Canonical Normal Balance | COA-T005, COA-T016, COA-T017, COA-T018, COA-T019, COA-T020, COA-T021, COA-T054, COA-T070, COA-T090, COA-T093 |
 | COA-006 | No hierarchy cycles | COA-T034, COA-T035, COA-T071, COA-T072, COA-T083 |
 | COA-007 | Same-tenant parent/child | COA-T033, COA-T037, COA-T059 |
 | COA-008 | Posting only to posting-eligible accounts | COA-T040, COA-T042, COA-T067, COA-T085 |
-| COA-009 | Inactive account rejects new posting | COA-T041, COA-T066, COA-T084 |
+| COA-009 | Inactive account rejects new posting | COA-T041, COA-T066, COA-T084, COA-T095 |
 | COA-010 | Non-posting/group account rejects posting | COA-T039, COA-T042, COA-T067, COA-T085 |
 | COA-011 | Posted history survives deactivation | COA-T043, COA-T064, COA-T075 |
 | COA-012 | No authoritative mutable balance on Account | COA-T008, COA-T069, COA-T074 |
@@ -78,8 +78,8 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-015 | Journal Line/Journal tenant match | COA-T060, COA-T068, COA-T086 |
 | COA-016 | System account tenant immutability | COA-T052, COA-T061 |
 | COA-017 | Account name presence | COA-T003 |
-| COA-018 | Explicit posting-eligibility state | COA-T006 |
-| COA-019 | Explicit active/inactive state | COA-T007, COA-T044 |
+| COA-018 | Explicit posting-eligibility state | COA-T006, COA-T093 |
+| COA-019 | Explicit active/inactive state | COA-T007, COA-T044, COA-T091, COA-T092, COA-T094, COA-T096, COA-T097 |
 | COA-020 | Account Code is not a raw identifier | COA-T026, COA-T087 |
 
 ## 6. Test Data Strategy
@@ -214,6 +214,13 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-T062 | Active → Inactive transition is supported and observable. |
 | COA-T063 | An Account referenced by any posted Journal Line is not hard-deleted. |
 | COA-T064 | Deactivating an Account does not alter the historical effect of any Journal Line already posted against it. |
+| COA-T091 | An Active Account can be deactivated — the operation succeeds. |
+| COA-T092 | `deactivate()` returns a new Account instance, distinct from the one it was called on. |
+| COA-T093 | Deactivation preserves TenantId, AccountId, AccountCode, AccountName, AccountType, NormalBalance, and the configured posting-eligibility state — only the Active/Inactive state (and the effective posting-allowed answer derived from it) changes. |
+| COA-T094 | A deactivated Account reports Inactive. |
+| COA-T095 | An Inactive Account reports posting not allowed, even when its own posting-eligibility configuration remains posting-eligible. |
+| COA-T096 | Repeated deactivation is deterministic: deactivating an already-Inactive Account produces another Account equal in every observable respect. |
+| COA-T097 | Deactivation does not mutate the original Account — the original remains Active (and every other field unchanged) after `deactivate()` is called on it. |
 
 ## 19. Journal Integration Tests
 
@@ -320,4 +327,5 @@ This document follows [AETS-000](../AETS-000.md)'s governance rules in full — 
 
 ## Changelog
 
+- **1.1.0 (2026-09-04):** Added `COA-T091`–`COA-T097` (§18, Lifecycle Tests) — the `Account::deactivate()` coverage gap identified while implementing the Account aggregate (M2-T5.1): deactivation succeeds, returns a new instance, preserves every field but Active state, results in Inactive, causes posting-not-allowed even when posting-eligible is still configured true, is deterministic under repetition, and never mutates the original. Mapped into the existing traceability matrix (§5) under `COA-001`, `COA-002`, `COA-004`, `COA-005`, `COA-009`, `COA-018`, and `COA-019` — no new `COA-NNN` invariant was needed. No existing test ID (`COA-T001`–`COA-T090`) was renumbered, altered, or removed.
 - **1.0.0 (2026-09-04):** Initial creation. Reviewed and marked `Active`. No `COA-T` test ID, traceability mapping, or any other content changed.
