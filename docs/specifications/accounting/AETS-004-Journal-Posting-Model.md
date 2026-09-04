@@ -1,7 +1,7 @@
 # AETS-004: Journal & Posting Model
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -151,6 +151,8 @@ This section states the required conceptual contract only; it does not invent a 
 - If none exists: the command proceeds through the full validation pipeline (§11) and, on success, the (Tenant, Idempotency Key) → Journal association MUST be recorded durably as part of the same atomic transaction (§13) that posts the Journal — so a crash between checking and committing cannot itself create a duplicate.
 - The same logical Posting Command MUST NOT create duplicate Journals under any sequence of retries, including concurrent retries (§20).
 - Repeated safe retry MUST return or identify the existing result where appropriate — never a second economic effect, and never a hard failure solely because the command was already, successfully, processed once.
+
+**Idempotency Key vs. Source Fingerprint.** This section states the Idempotency Key contract only — the identifier that makes a Posting Command itself safely retryable. [AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 3 additionally requires a Source Fingerprint, but only where a command originates from, or is materially derived from, external/imported source data requiring duplicate-source detection ([AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint)) — this is a distinct, conditional guarantee against duplicate *source* data, not against a duplicate *command*, and is not part of every Posting Command's contract. This document's silence on Source Fingerprint here is deliberate, not an omission: the concrete Posting Command contract, including where a Source Fingerprint is required and how its absence fails safely, is defined by AETS-007.
 
 ## 15. Append-Only Rules
 
@@ -312,4 +314,5 @@ A change to any `JRN-NNN` invariant, or to any MUST-level requirement in §6–�
 
 ## Changelog
 
+- **1.1.0 (2026-09-05):** Added a clarifying note to §14 (Idempotency) distinguishing Idempotency Key (this section's subject, universal to every Posting Command) from Source Fingerprint (a distinct, conditional guarantee [AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 3 requires only for source-derived commands, now concretely defined by AETS-007) — resolving an ambiguity discovered while drafting AETS-007 (M4-T0.1), where this section's silence on Source Fingerprint could be misread as a contradiction of invariant 3's literal (now-corrected) wording rather than the deliberate scoping it always was. No `JRN-NNN` invariant, MUST-level requirement, or previously specified Posting Command behavior changed — this is a MINOR clarification only.
 - **1.0.0 (2026-09-04):** Initial creation. Reviewed and marked `Active`. The Journal minimum-line-count requirement (`JRN-002`) is confirmed final for the current specification baseline: at least two Journal Lines, per [AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 1 — the drafting-stage note flagging this for Founder confirmation is resolved and removed. No `JRN-NNN` invariant, MUST-level requirement, or any other content changed.
