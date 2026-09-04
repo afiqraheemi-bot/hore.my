@@ -21,10 +21,11 @@ Each document carries its own `Status`: `Draft` → `Active` → `Superseded` or
 | [AETS-002 — Accounting Invariants](AETS-002-Accounting-Invariants.md) | Active | 1.1.0 | The 14 non-negotiable financial integrity invariants, extracted from AETS-000 §6 |
 | [AETS-003 — Money Specification](AETS-003-Money-Specification.md) | Active | 1.0.1 | Normative Money/Currency/MinorUnits domain model, public contract, persistence mapping, and 15 `MON-NNN` invariants |
 | [AETS-004 — Journal & Posting Model](AETS-004-Journal-Posting-Model.md) | Active | 1.0.0 | Normative Journal/Journal Line model, debit/credit semantics, posting lifecycle, atomicity, idempotency, append-only rules, reversal/replacement, and 23 `JRN-NNN` invariants |
+| [AETS-005 — Chart of Accounts & Account Taxonomy](AETS-005-Chart-of-Accounts.md) | Active | 1.0.0 | Normative Account model, code/type/normal-balance rules, hierarchy, posting eligibility, system vs. user-created accounts, tenant ownership, lifecycle, Journal Line integration, and 20 `COA-NNN` invariants |
 
 This table, together with [AETS-000 §10](AETS-000.md#10-planned-document-structure), is the single authoritative roadmap for the AETS series — no other document states a competing numbering.
 
-Planned, not-yet-created documents — AETS-005 (Chart of Accounts & Account Taxonomy), AETS-006 (Posting Rules), AETS-007 (Accounting Commands), AETS-008 (Bank Reconciliation), AETS-009 (Financial Reporting), AETS-010 (Audit Trail), AETS-011 (AI Accounting Proposal Contract), AETS-012 (Proof of Accuracy), AETS-013 (MyInvois Integration), and AETS-014 (Period Management) — are listed in [AETS-000 §10](AETS-000.md#10-planned-document-structure). They are not reserved or committed to until actually created.
+Planned, not-yet-created documents — AETS-006 (Posting Rules), AETS-007 (Accounting Commands), AETS-008 (Bank Reconciliation), AETS-009 (Financial Reporting), AETS-010 (Audit Trail), AETS-011 (AI Accounting Proposal Contract), AETS-012 (Proof of Accuracy), AETS-013 (MyInvois Integration), and AETS-014 (Period Management) — are listed in [AETS-000 §10](AETS-000.md#10-planned-document-structure). They are not reserved or committed to until actually created.
 
 ## Test Specifications
 
