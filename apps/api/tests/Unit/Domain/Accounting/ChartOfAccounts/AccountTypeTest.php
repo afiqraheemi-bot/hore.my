@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Tests\Unit\Domain\Accounting\ChartOfAccounts;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
+use App\Domain\Accounting\ChartOfAccounts\NormalBalance;
 use PHPUnit\Framework\TestCase;
 use ReflectionEnum;
 
 /**
- * Covers the ATS-005 Account Type Tests relevant to {@see AccountType}
- * alone (COA-T009–COA-T015). AccountType is the only Chart of Accounts
- * concept implemented by M2-T1 — Normal Balance, Account, Account Code,
- * hierarchy, posting eligibility, and persistence do not exist yet, so
- * every test here is scoped to what a bare PHP enum can prove on its
- * own, per AETS-005 §10.
+ * Covers the ATS-005 Account Type Tests and Normal Balance Tests
+ * relevant to {@see AccountType} alone (COA-T009–COA-T022 — the
+ * `AccountType` → `NormalBalance` mapping is owned by
+ * {@see AccountType::normalBalance()}, so its tests live here rather
+ * than in {@see NormalBalanceTest}). Account, Account Code, hierarchy,
+ * posting eligibility, account status, and persistence do not exist
+ * yet, so every test here is scoped to what the two bare enums and
+ * their mapping method can prove on their own, per AETS-005 §10–§11.
  */
 final class AccountTypeTest extends TestCase
 {
@@ -116,9 +119,10 @@ final class AccountTypeTest extends TestCase
 
     /**
      * Architectural constraints this task requires directly: no
-     * property beyond every PHP enum case's implicit `name`, no extra
-     * public method beyond the enum's own built-in `cases()`, no trait,
-     * and no interface.
+     * property beyond every PHP enum case's implicit `name`, no own
+     * method beyond the single required {@see AccountType::normalBalance()}
+     * (plus the enum's own built-in `cases()`), no trait, and no
+     * interface.
      */
     public function test_enum_has_no_properties_methods_traits_or_interfaces(): void
     {
@@ -137,12 +141,15 @@ final class AccountTypeTest extends TestCase
         $this->assertSame(['UnitEnum'], $reflection->getInterfaceNames());
 
         $builtInEnumMethods = ['cases', 'from', 'tryFrom'];
-        $ownMethods = array_filter(
-            $reflection->getMethods(),
-            static fn (\ReflectionMethod $method): bool => $method->getDeclaringClass()->getName() === AccountType::class
-                && ! in_array($method->getName(), $builtInEnumMethods, true),
-        );
-        $this->assertSame([], $ownMethods);
+        $ownMethodNames = array_values(array_map(
+            static fn (\ReflectionMethod $method): string => $method->getName(),
+            array_filter(
+                $reflection->getMethods(),
+                static fn (\ReflectionMethod $method): bool => $method->getDeclaringClass()->getName() === AccountType::class
+                    && ! in_array($method->getName(), $builtInEnumMethods, true),
+            ),
+        ));
+        $this->assertSame(['normalBalance'], $ownMethodNames);
     }
 
     /**
@@ -158,5 +165,95 @@ final class AccountTypeTest extends TestCase
         $this->assertIsString($source);
         $this->assertStringNotContainsString('Illuminate\\', $source);
         $this->assertStringNotContainsString('Eloquent', $source);
+    }
+
+    /**
+     * COA-T016: Asset -> Debit.
+     */
+    public function test_asset_maps_to_debit(): void
+    {
+        $this->assertSame(NormalBalance::Debit, AccountType::Asset->normalBalance());
+    }
+
+    /**
+     * COA-T017: Expense -> Debit.
+     */
+    public function test_expense_maps_to_debit(): void
+    {
+        $this->assertSame(NormalBalance::Debit, AccountType::Expense->normalBalance());
+    }
+
+    /**
+     * COA-T018: Liability -> Credit.
+     */
+    public function test_liability_maps_to_credit(): void
+    {
+        $this->assertSame(NormalBalance::Credit, AccountType::Liability->normalBalance());
+    }
+
+    /**
+     * COA-T019: Equity -> Credit.
+     */
+    public function test_equity_maps_to_credit(): void
+    {
+        $this->assertSame(NormalBalance::Credit, AccountType::Equity->normalBalance());
+    }
+
+    /**
+     * COA-T020: Revenue -> Credit.
+     */
+    public function test_revenue_maps_to_credit(): void
+    {
+        $this->assertSame(NormalBalance::Credit, AccountType::Revenue->normalBalance());
+    }
+
+    /**
+     * Every AccountType MUST map to exactly one NormalBalance
+     * (`COA-005`) — swept across every case, not just the five
+     * hand-picked examples above.
+     */
+    public function test_every_account_type_maps_to_exactly_one_normal_balance(): void
+    {
+        foreach (AccountType::cases() as $accountType) {
+            $normalBalance = $accountType->normalBalance();
+
+            $this->assertInstanceOf(NormalBalance::class, $normalBalance);
+        }
+    }
+
+    /**
+     * The mapping is deterministic: calling `normalBalance()` on the
+     * same case, any number of times, always returns the identical
+     * NormalBalance instance.
+     */
+    public function test_mapping_is_deterministic(): void
+    {
+        $first = AccountType::Asset->normalBalance();
+        $second = AccountType::Asset->normalBalance();
+
+        $this->assertSame($first, $second);
+    }
+
+    /**
+     * COA-T021 / COA-T022: Normal Balance cannot be independently
+     * overridden, and cannot consult, infer, or influence a Journal
+     * Line's Direction — both proven by the same structural fact.
+     * `normalBalance()` takes no parameters, so its result depends
+     * solely on `$this` (the AccountType case itself) and returns only
+     * a {@see NormalBalance}, never a Journal-related type; combined
+     * with AccountType declaring no property
+     * (`test_enum_has_no_properties_methods_traits_or_interfaces`),
+     * there is no way to construct an AccountType/NormalBalance pairing
+     * other than through this method's fixed `match` expression, and no
+     * surface through which any Journal Line Direction could reach it
+     * (AETS-004 §8, not implemented here).
+     */
+    public function test_normal_balance_cannot_be_independently_overridden(): void
+    {
+        $reflection = new ReflectionEnum(AccountType::class);
+        $method = $reflection->getMethod('normalBalance');
+
+        $this->assertCount(0, $method->getParameters());
+        $this->assertSame(NormalBalance::class, (string) $method->getReturnType());
     }
 }
