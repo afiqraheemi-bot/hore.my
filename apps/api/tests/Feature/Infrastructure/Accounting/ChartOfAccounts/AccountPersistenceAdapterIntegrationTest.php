@@ -8,6 +8,7 @@ use App\Domain\Accounting\ChartOfAccounts\Account;
 use App\Domain\Accounting\ChartOfAccounts\AccountCode;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountName;
+use App\Domain\Accounting\ChartOfAccounts\AccountOrigin;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountPersistenceAdapter;
@@ -85,6 +86,7 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
             AccountName::of('Cash / Bank'),
             AccountType::Asset,
             true,
+            AccountOrigin::System,
         );
 
         $id = $this->insertFixtureRow($original);
@@ -98,6 +100,25 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
         $this->assertSame($original->normalBalance(), $reconstructed->normalBalance());
         $this->assertSame($original->isActive(), $reconstructed->isActive());
         $this->assertSame($original->isPostingEligible(), $reconstructed->isPostingEligible());
+        $this->assertSame($original->origin(), $reconstructed->origin());
+    }
+
+    /**
+     * Account Origin round-trips exactly through a real PostgreSQL row,
+     * for every canonical origin — `System` and `UserCreated` alike.
+     */
+    public function test_account_origin_round_trips_through_a_real_postgres_row(): void
+    {
+        foreach (AccountOrigin::cases() as $origin) {
+            $original = Account::create($this->tenantId, AccountId::of('account-'.strtolower($origin->name)), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true, $origin);
+
+            $id = $this->insertFixtureRow($original);
+            $reconstructed = $this->selectFixtureRow($id);
+
+            $this->assertSame($origin, $reconstructed->origin());
+
+            DB::connection('pgsql')->table(self::FIXTURE_TABLE)->truncate();
+        }
     }
 
     /**
@@ -108,8 +129,8 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
      */
     public function test_tenant_scoped_account_code_uniqueness_is_enforced(): void
     {
-        $account = Account::create($this->tenantId, AccountId::of('account-a'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true);
-        $duplicate = Account::create($this->tenantId, AccountId::of('account-b'), AccountCode::of('1000'), AccountName::of('Cash Duplicate'), AccountType::Asset, true);
+        $account = Account::create($this->tenantId, AccountId::of('account-a'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true, AccountOrigin::UserCreated);
+        $duplicate = Account::create($this->tenantId, AccountId::of('account-b'), AccountCode::of('1000'), AccountName::of('Cash Duplicate'), AccountType::Asset, true, AccountOrigin::UserCreated);
 
         $this->insertFixtureRow($account);
 
@@ -125,8 +146,8 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
     public function test_same_account_code_is_permitted_for_different_tenants(): void
     {
         $tenantB = TenantId::of('tenant-0002');
-        $accountA = Account::create($this->tenantId, AccountId::of('account-a'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true);
-        $accountB = Account::create($tenantB, AccountId::of('account-b'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true);
+        $accountA = Account::create($this->tenantId, AccountId::of('account-a'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true, AccountOrigin::UserCreated);
+        $accountB = Account::create($tenantB, AccountId::of('account-b'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true, AccountOrigin::UserCreated);
 
         $idA = $this->insertFixtureRow($accountA);
         $idB = $this->insertFixtureRow($accountB);
@@ -141,7 +162,7 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
     public function test_identifier_round_trips_through_a_real_postgres_row(): void
     {
         $accountId = AccountId::of('account-cash');
-        $account = Account::create($this->tenantId, $accountId, AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true);
+        $account = Account::create($this->tenantId, $accountId, AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true, AccountOrigin::UserCreated);
 
         $id = $this->insertFixtureRow($account);
         $reconstructed = $this->selectFixtureRow($id);
@@ -155,10 +176,10 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
      */
     public function test_nullable_parent_reference_round_trips(): void
     {
-        $parent = Account::create($this->tenantId, AccountId::of('account-parent'), AccountCode::of('9000'), AccountName::of('Parent'), AccountType::Asset, false);
-        $childWithParent = Account::create($this->tenantId, AccountId::of('account-child'), AccountCode::of('1000'), AccountName::of('Child'), AccountType::Asset, true)
+        $parent = Account::create($this->tenantId, AccountId::of('account-parent'), AccountCode::of('9000'), AccountName::of('Parent'), AccountType::Asset, false, AccountOrigin::UserCreated);
+        $childWithParent = Account::create($this->tenantId, AccountId::of('account-child'), AccountCode::of('1000'), AccountName::of('Child'), AccountType::Asset, true, AccountOrigin::UserCreated)
             ->withParent($parent, [$parent]);
-        $childWithoutParent = Account::create($this->tenantId, AccountId::of('account-orphan'), AccountCode::of('1100'), AccountName::of('Orphan'), AccountType::Asset, true);
+        $childWithoutParent = Account::create($this->tenantId, AccountId::of('account-orphan'), AccountCode::of('1100'), AccountName::of('Orphan'), AccountType::Asset, true, AccountOrigin::UserCreated);
 
         $idWithParent = $this->insertFixtureRow($childWithParent);
         $idWithoutParent = $this->insertFixtureRow($childWithoutParent);
@@ -179,7 +200,7 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
      */
     public function test_lifecycle_and_posting_eligibility_round_trip(): void
     {
-        $account = Account::create($this->tenantId, AccountId::of('account-cash'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true)
+        $account = Account::create($this->tenantId, AccountId::of('account-cash'), AccountCode::of('1000'), AccountName::of('Cash'), AccountType::Asset, true, AccountOrigin::UserCreated)
             ->deactivate();
 
         $id = $this->insertFixtureRow($account);
@@ -225,7 +246,7 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
 
     private function selectFixtureRow(int $id): Account
     {
-        /** @var object{tenant_id: string, account_id: string, account_code: string, account_name: string, account_type: string, active: bool, posting_eligible: bool, parent_id: string|null} $row */
+        /** @var object{tenant_id: string, account_id: string, account_code: string, account_name: string, account_type: string, account_origin: string, active: bool, posting_eligible: bool, parent_id: string|null} $row */
         $row = DB::connection('pgsql')->table(self::FIXTURE_TABLE)->where('id', $id)->firstOrFail();
 
         return $this->adapter->fromPersistedRow([
@@ -234,6 +255,7 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
             'account_code' => $row->account_code,
             'account_name' => $row->account_name,
             'account_type' => $row->account_type,
+            'account_origin' => $row->account_origin,
             'active' => (bool) $row->active,
             'posting_eligible' => (bool) $row->posting_eligible,
             'parent_id' => $row->parent_id,
@@ -266,6 +288,7 @@ final class AccountPersistenceAdapterIntegrationTest extends TestCase
             $table->string('account_code', 64);
             $table->string('account_name', 64);
             $table->string('account_type', 32);
+            $table->string('account_origin', 32);
             $table->boolean('active');
             $table->boolean('posting_eligible');
             $table->string('parent_id', 64)->nullable();

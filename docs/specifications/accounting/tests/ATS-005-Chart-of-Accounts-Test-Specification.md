@@ -1,7 +1,7 @@
 # ATS-005: Chart of Accounts Test Specification
 
 - Status: Active
-- Version: 1.4.0
+- Version: 1.5.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-005: Chart of Accounts & Account Taxonomy](../AETS-005-Chart-of-Accounts.md). It exists so that Account domain implementation has a precise, testable, traceable target before any code is written — exactly the coverage AETS-005 §24 said a future Chart of Accounts ATS must provide.
 
-Every test defined here is identified by a stable ID (`COA-T001`–`COA-T133`) and traced to the `COA-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`COA-T001`–`COA-T147`) and traced to the `COA-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -65,7 +65,7 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-002 | Stable identifier | COA-T002, COA-T093, COA-T100, COA-T109, COA-T112, COA-T113, COA-T114, COA-T116, COA-T122, COA-T127 |
 | COA-003 | Tenant-scoped code uniqueness | COA-T024, COA-T025, COA-T055, COA-T073, COA-T101, COA-T117, COA-T128, COA-T131, COA-T132, COA-T133 |
 | COA-004 | Exactly one Account Type | COA-T004, COA-T009, COA-T010, COA-T011, COA-T012, COA-T013, COA-T014, COA-T015, COA-T093, COA-T103, COA-T119, COA-T130 |
-| COA-005 | Canonical Normal Balance | COA-T005, COA-T016, COA-T017, COA-T018, COA-T019, COA-T020, COA-T021, COA-T054, COA-T070, COA-T090, COA-T093, COA-T104, COA-T105, COA-T123, COA-T124 |
+| COA-005 | Canonical Normal Balance | COA-T005, COA-T016, COA-T017, COA-T018, COA-T019, COA-T020, COA-T021, COA-T054, COA-T070, COA-T090, COA-T093, COA-T104, COA-T105, COA-T123, COA-T124, COA-T144 |
 | COA-006 | No hierarchy cycles | COA-T034, COA-T035, COA-T071, COA-T072, COA-T083, COA-T098, COA-T110, COA-T111 |
 | COA-007 | Same-tenant parent/child | COA-T033, COA-T037, COA-T059 |
 | COA-008 | Posting only to posting-eligible accounts | COA-T040, COA-T042, COA-T067, COA-T085 |
@@ -73,10 +73,10 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-010 | Non-posting/group account rejects posting | COA-T039, COA-T042, COA-T067, COA-T085 |
 | COA-011 | Posted history survives deactivation | COA-T043, COA-T064, COA-T075 |
 | COA-012 | No authoritative mutable balance on Account | COA-T008, COA-T069, COA-T074, COA-T125 |
-| COA-013 | System account protection | COA-T048, COA-T049, COA-T050 |
-| COA-014 | No hard delete after posted reference | COA-T051, COA-T063 |
+| COA-013 | System account protection | COA-T048, COA-T049, COA-T050, COA-T134, COA-T135, COA-T136, COA-T137, COA-T138, COA-T139, COA-T141, COA-T142, COA-T145, COA-T146, COA-T147 |
+| COA-014 | No hard delete after posted reference | COA-T051, COA-T063, COA-T143 |
 | COA-015 | Journal Line/Journal tenant match | COA-T060, COA-T068, COA-T086 |
-| COA-016 | System account tenant immutability | COA-T052, COA-T061 |
+| COA-016 | System account tenant immutability | COA-T052, COA-T061, COA-T140 |
 | COA-017 | Account name presence | COA-T003, COA-T102, COA-T118, COA-T129 |
 | COA-018 | Explicit posting-eligibility state | COA-T006, COA-T093, COA-T108, COA-T121 |
 | COA-019 | Explicit active/inactive state | COA-T007, COA-T044, COA-T091, COA-T092, COA-T094, COA-T096, COA-T097, COA-T106, COA-T107, COA-T120 |
@@ -122,6 +122,17 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-T110 | `reconstitute()` does not invoke hierarchy assignment validation — it calls neither the self-parent/same-Tenant checks nor {@see AccountHierarchyPolicy}, and accepts no `$knownAccounts`. |
 | COA-T111 | `reconstitute()` is not a business parent-assignment path: `withParent()` remains the only public method that can decide a new parent, and its full validation (self-parent, same-Tenant, cycle, fail-closed incomplete-context) is unaffected by `reconstitute()`'s existence. |
 | COA-T112 | Identity equality remains based on AccountId regardless of which factory produced an Account — a `create()`d Account and a `reconstitute()`d Account sharing the same identifier are equal. |
+
+**Account Origin** — every Account explicitly carries how it came to exist (§15, §16): System, seeded by deterministic tenant-setup logic, or User-Created, created through the ordinary account-creation path. Neither is a safe default for the other — a construction path that left Origin unstated would make the System Account protections (`COA-013`, `COA-014`, `COA-016`) unenforceable, since the Account itself would not know which protections apply to it:
+
+| ID | Test |
+| --- | --- |
+| COA-T134 | An Account cannot be constructed without an explicit Account Origin — `System` or `UserCreated` — it is never silently assumed to be one or the other. |
+| COA-T135 | An Account MAY be constructed with Account Origin `System`. |
+| COA-T136 | An Account MAY be constructed with Account Origin `UserCreated`. |
+| COA-T137 | Account Origin, once constructed, is preserved unchanged by `deactivate()`. |
+| COA-T138 | Account Origin, once constructed, is preserved unchanged by `withParent()`. |
+| COA-T139 | Account Origin, once constructed, is preserved unchanged by `reconstitute()`, exactly as supplied. |
 
 ## 8. Account Type Tests
 
@@ -208,6 +219,15 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-T051 | A System Account is not hard-deleted, whether or not it has ever been posted to. |
 | COA-T052 | A System Account is not reassigned to a different Tenant. |
 
+**Structural proof, current API surface** — these four hold today by the *absence* of a violating operation, not by a runtime guard added specifically to reject one: no public `Account` method other than the two construction paths (`create()`/`reconstitute()`) accepts a Tenant identifier, an Account Type, or an Account Code, and no delete/removal-shaped method exists at all. A future mutation API (e.g. a `changeTenant()`, `changeType()`, `changeCode()`, or `delete()` method) remains responsible for enforcing these protections itself when introduced — this structural absence is not evidence such an API, once added, would automatically be safe:
+
+| ID | Test |
+| --- | --- |
+| COA-T140 | A System Account currently has no public API path to reassign it to a different Tenant — no public method other than `create()`/`reconstitute()` accepts a Tenant identifier. |
+| COA-T141 | A System Account currently has no public API path to change its Account Type — no public method other than `create()`/`reconstitute()` accepts an Account Type. |
+| COA-T142 | A System Account currently has no public API path to change its Account Code — no public method other than `create()`/`reconstitute()` accepts an Account Code. |
+| COA-T143 | A System Account currently has no public delete/removal API at all. |
+
 ## 16. User-Created Account Tests
 
 | ID | Test |
@@ -217,6 +237,7 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | COA-T055 | A User-Created Account must use a Tenant-scoped unique Account Code. |
 | COA-T056 | A User-Created Account cannot be created with a Code colliding with a System Account's Code in the same Tenant. |
 | COA-T057 | A User-Created Account operation cannot retype, re-code, or otherwise mutate a System Account. |
+| COA-T144 | A User-Created Account's Normal Balance remains exclusively and canonically derived from its Account Type (§9, `COA-005`) — Account Origin carries no independent authority over Normal Balance derivation, and none is asserted for it. |
 
 ## 17. Tenant Isolation Tests
 
@@ -341,6 +362,9 @@ A future Account persistence integration suite MUST prove:
 | COA-T131 | Tenant-scoped Account Code uniqueness is enforced by a real PostgreSQL constraint, not only application-level validation. | Integration |
 | COA-T132 | The same Account Code is permitted across two different Tenants. | Integration |
 | COA-T133 | Every proof above requiring real integrity/constraint semantics runs against a real PostgreSQL instance, never SQLite. | Integration |
+| COA-T145 | An Account's Account Origin is included in its persisted representation, mapped via the adapter's own deterministic translation — never a backed enum, never an invented numbering scheme. | Unit |
+| COA-T146 | Account Origin round-trips exactly, across every canonical origin — read restores exactly what was written. | Unit |
+| COA-T147 | An unsupported persisted Account Origin value is rejected, through a hore.my-owned infrastructure exception. | Unit |
 
 ## 24. Exit Criteria
 
@@ -373,6 +397,7 @@ This document follows [AETS-000](../AETS-000.md)'s governance rules in full — 
 
 ## Changelog
 
+- **1.5.0 (2026-09-04):** Added `COA-T134`–`COA-T147` — the Account Origin traceability gap identified while implementing `AccountOrigin` (M2-T7): explicit-origin-required construction, `System`- and `UserCreated`-origin constructibility, origin preserved unchanged through `deactivate()`/`withParent()`/`reconstitute()` (§7, new "Account Origin" subsection); structural proof that the current `Account` public API exposes no Tenant-reassignment, Account-Type-change, Account-Code-change, or delete/removal path for a System Account (§15); a User-Created Account's Normal Balance remaining exclusively derived from Account Type regardless of Origin (§16); and Account Origin's inclusion in, and exact round-trip through, the persistence mapping, plus rejection of an unsupported persisted value (§23, "Concrete coverage" table). Mapped into the existing traceability matrix (§5) under `COA-005`, `COA-013`, `COA-014`, and `COA-016` — no new `COA-NNN` invariant was needed; explicit Account Origin and the structural absence of a violating public API are the mechanism by which those existing invariants hold, not a distinct rule. `COA-T056` (cross-origin Account Code collision within one Tenant) remains deferred — it requires repository/database-level uniqueness enforcement, out of scope for this change. No existing test ID (`COA-T001`–`COA-T133`) was renumbered, altered, or removed.
 - **1.4.0 (2026-09-04):** Added `COA-T113`–`COA-T133` (§23, Persistence Expectations — a new "Concrete coverage" table) — the persistence-adapter traceability gap identified while implementing `AccountPersistenceAdapter` (M2-T6): domain-to-persisted and persisted-to-domain mapping, exact round-trip for every field (TenantId, AccountId, AccountCode, AccountName, AccountType, Active/Inactive, configured posting-eligibility, nullable parentId), Normal Balance never an independent persisted field and always re-derived on read, no monetary balance/debit/credit field, malformed-input rejection for every persisted field, and real-PostgreSQL proof of tenant-scoped Account Code uniqueness (and its cross-tenant permission counterpart). Mapped into the existing traceability matrix (§5) under `COA-001`, `COA-002`, `COA-003`, `COA-004`, `COA-005`, `COA-012`, `COA-017`, `COA-018`, and `COA-019` — no new `COA-NNN` invariant was needed. No existing test ID (`COA-T001`–`COA-T112`) was renumbered, altered, or removed.
 - **1.3.0 (2026-09-04):** Added `COA-T099`–`COA-T112` (§7, Account Construction Tests — a new "Reconstitution" subsection) — coverage for `Account::reconstitute()` (M2-T5.3): exact restoration of TenantId, AccountId, AccountCode, AccountName, AccountType, Active/Inactive state, configured posting-eligibility, and an optional parentId; Normal Balance still derived exclusively from Account Type with no caller-suppliable override; and two architectural-boundary tests proving reconstitution neither invokes hierarchy assignment validation nor acts as a business parent-assignment path, leaving `withParent()` as the sole such path. Mapped into the existing traceability matrix (§5) under `COA-001`, `COA-002`, `COA-003`, `COA-004`, `COA-005`, `COA-006`, `COA-017`, `COA-018`, and `COA-019` — no new `COA-NNN` invariant was needed. No existing test ID (`COA-T001`–`COA-T098`) was renumbered, altered, or removed.
 - **1.2.0 (2026-09-04):** Added `COA-T098` (§12, Hierarchy Tests) — the fail-closed incomplete-ancestry-context coverage gap identified while closing the `Account::withParent()` cycle-validation bypass (M2-T5.2): a parent assignment whose proposed parent's ancestry cannot be fully proven cycle-free from the supplied hierarchy context is rejected deterministically, before the assignment succeeds, rather than accepted as safe by assumption. Mapped into the existing traceability matrix (§5) under `COA-006` (no hierarchy cycles) — no new `COA-NNN` invariant was needed; failing closed on unprovable ancestry is a direct, necessary consequence of that invariant, not a distinct rule. No existing test ID (`COA-T001`–`COA-T097`) was renumbered, altered, or removed.

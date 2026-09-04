@@ -8,6 +8,7 @@ use App\Domain\Accounting\ChartOfAccounts\Account;
 use App\Domain\Accounting\ChartOfAccounts\AccountCode;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountName;
+use App\Domain\Accounting\ChartOfAccounts\AccountOrigin;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountCodeException;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountIdException;
@@ -15,6 +16,7 @@ use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountNameException;
 use App\Domain\Shared\Tenancy\Exception\InvalidTenantIdException;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountPersistenceAdapter;
+use App\Infrastructure\Accounting\ChartOfAccounts\Exception\InvalidPersistedAccountOriginException;
 use App\Infrastructure\Accounting\ChartOfAccounts\Exception\InvalidPersistedAccountTypeException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -44,6 +46,7 @@ final class AccountPersistenceAdapterTest extends TestCase
         bool $active = true,
         bool $isPostingEligible = true,
         AccountType $type = AccountType::Asset,
+        AccountOrigin $origin = AccountOrigin::UserCreated,
         ?AccountId $parentId = null,
     ): Account {
         $account = Account::create(
@@ -53,6 +56,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             AccountName::of('Cash / Bank'),
             $type,
             $isPostingEligible,
+            $origin,
         );
 
         if (! $active) {
@@ -60,7 +64,7 @@ final class AccountPersistenceAdapterTest extends TestCase
         }
 
         if ($parentId !== null) {
-            $parent = Account::create($this->tenantId, $parentId, AccountCode::of('9000'), AccountName::of('Parent'), $type, false);
+            $parent = Account::create($this->tenantId, $parentId, AccountCode::of('9000'), AccountName::of('Parent'), $type, false, AccountOrigin::UserCreated);
             $account = $account->withParent($parent, [$parent, $account]);
         }
 
@@ -81,6 +85,7 @@ final class AccountPersistenceAdapterTest extends TestCase
         $this->assertSame('1000', $row['account_code']);
         $this->assertSame('Cash / Bank', $row['account_name']);
         $this->assertSame('Asset', $row['account_type']);
+        $this->assertSame('UserCreated', $row['account_origin']);
         $this->assertTrue($row['active']);
         $this->assertTrue($row['posting_eligible']);
         $this->assertNull($row['parent_id']);
@@ -98,6 +103,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => 'Cash / Bank',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => null,
@@ -108,6 +114,7 @@ final class AccountPersistenceAdapterTest extends TestCase
         $this->assertSame('1000', $account->code()->toString());
         $this->assertSame('Cash / Bank', $account->name()->toString());
         $this->assertSame(AccountType::Asset, $account->type());
+        $this->assertSame(AccountOrigin::UserCreated, $account->origin());
         $this->assertTrue($account->isActive());
         $this->assertTrue($account->isPostingEligible());
         $this->assertNull($account->parentId());
@@ -128,6 +135,7 @@ final class AccountPersistenceAdapterTest extends TestCase
         $this->assertTrue($original->name()->equals($reconstructed->name()));
         $this->assertSame($original->type(), $reconstructed->type());
         $this->assertSame($original->normalBalance(), $reconstructed->normalBalance());
+        $this->assertSame($original->origin(), $reconstructed->origin());
         $this->assertSame($original->isActive(), $reconstructed->isActive());
         $this->assertSame($original->isPostingEligible(), $reconstructed->isPostingEligible());
     }
@@ -292,10 +300,56 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => 'Cash / Bank',
             'account_type' => 'NotARealType',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => null,
         ]);
+    }
+
+    /**
+     * An unsupported persisted Account Origin is rejected.
+     */
+    public function test_unsupported_persisted_origin_is_rejected(): void
+    {
+        $this->expectException(InvalidPersistedAccountOriginException::class);
+
+        $this->adapter->fromPersistedRow([
+            'tenant_id' => 'tenant-0001',
+            'account_id' => 'account-0001',
+            'account_code' => '1000',
+            'account_name' => 'Cash / Bank',
+            'account_type' => 'Asset',
+            'account_origin' => 'NotARealOrigin',
+            'active' => true,
+            'posting_eligible' => true,
+            'parent_id' => null,
+        ]);
+    }
+
+    /**
+     * Account Origin round-trips exactly, for both canonical values.
+     */
+    public function test_account_origin_round_trips_for_every_origin(): void
+    {
+        foreach (AccountOrigin::cases() as $origin) {
+            $account = $this->makeAccount(origin: $origin);
+
+            $reconstructed = $this->adapter->fromPersistedRow($this->adapter->toPersistedRow($account));
+
+            $this->assertSame($origin, $reconstructed->origin());
+        }
+    }
+
+    /**
+     * The persisted row's `account_origin` field carries the exact PHP
+     * enum case name — the adapter's own confined translation.
+     */
+    public function test_persisted_row_account_origin_field_is_exact(): void
+    {
+        $row = $this->adapter->toPersistedRow($this->makeAccount(origin: AccountOrigin::System));
+
+        $this->assertSame('System', $row['account_origin']);
     }
 
     /**
@@ -312,6 +366,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => 'Cash / Bank',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => null,
@@ -332,6 +387,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => 'Cash / Bank',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => null,
@@ -352,6 +408,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '',
             'account_name' => 'Cash / Bank',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => null,
@@ -372,6 +429,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => '',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => null,
@@ -392,6 +450,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => 'Cash / Bank',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => '   ',
@@ -413,6 +472,7 @@ final class AccountPersistenceAdapterTest extends TestCase
             'account_code' => '1000',
             'account_name' => 'Cash / Bank',
             'account_type' => 'Asset',
+            'account_origin' => 'UserCreated',
             'active' => true,
             'posting_eligible' => true,
             'parent_id' => 'account-nonexistent-parent',

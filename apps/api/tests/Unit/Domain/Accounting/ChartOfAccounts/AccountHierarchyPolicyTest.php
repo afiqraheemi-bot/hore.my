@@ -9,6 +9,7 @@ use App\Domain\Accounting\ChartOfAccounts\AccountCode;
 use App\Domain\Accounting\ChartOfAccounts\AccountHierarchyPolicy;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountName;
+use App\Domain\Accounting\ChartOfAccounts\AccountOrigin;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountHierarchyException;
 use App\Domain\Shared\Tenancy\TenantId;
@@ -42,6 +43,7 @@ final class AccountHierarchyPolicyTest extends TestCase
             AccountName::of($id),
             AccountType::Asset,
             true,
+            AccountOrigin::UserCreated,
         );
     }
 

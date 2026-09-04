@@ -8,6 +8,7 @@ use App\Domain\Accounting\ChartOfAccounts\Account;
 use App\Domain\Accounting\ChartOfAccounts\AccountCode;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountName;
+use App\Domain\Accounting\ChartOfAccounts\AccountOrigin;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountHierarchyException;
 use App\Domain\Accounting\ChartOfAccounts\NormalBalance;
@@ -16,8 +17,8 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
 /**
- * Covers the Account-level ATS-005 cases this revision (M2-T5.2)
- * supports, now that optional parent/child hierarchy exists (§12).
+ * Covers the Account-level ATS-005 cases this revision (M2-T7)
+ * supports, now that {@see AccountOrigin} (§15, §16) exists.
  * `COA-T001` is fully coverable (a Tenant is present). `COA-T002`'s
  * "immutable... for its lifetime" claim is still only partially
  * provable — no persistence exists yet to prove survival across a
@@ -25,9 +26,12 @@ use ReflectionClass;
  * `COA-T036`) is covered separately in
  * {@see AccountHierarchyPolicyTest},
  * since it requires graph context this Value Object alone cannot
- * provide. System-vs-User-Created distinction,
- * `activate()`/`rename()`/code or type changes, and persistence remain
- * out of scope — see M2-T5.2's report.
+ * provide. System Account protections (`COA-T048`–`COA-T052`) are
+ * proven structurally here, per this class's own docblock, since the
+ * current public API has no delete/change-Tenant/change-Type/
+ * change-Code method for *any* Account to attempt in the first place.
+ * `activate()`/`rename()`/code or type changes and persistence remain
+ * out of scope — see M2-T7's report.
  */
 final class AccountTest extends TestCase
 {
@@ -51,6 +55,13 @@ final class AccountTest extends TestCase
         return AccountName::of('Cash / Bank');
     }
 
+    /**
+     * `AccountOrigin::UserCreated` is this test helper's own
+     * convenience default (test scaffolding only) — {@see Account::create()}
+     * itself has no default and requires the caller to state it
+     * explicitly every time; that requirement is proven directly by
+     * `test_every_create_parameter_is_required()`.
+     */
     private function createAccount(
         ?TenantId $tenantId = null,
         ?AccountId $id = null,
@@ -58,6 +69,7 @@ final class AccountTest extends TestCase
         ?AccountName $name = null,
         AccountType $type = AccountType::Asset,
         bool $isPostingEligible = true,
+        AccountOrigin $origin = AccountOrigin::UserCreated,
     ): Account {
         return Account::create(
             $tenantId ?? $this->validTenantId(),
@@ -66,6 +78,7 @@ final class AccountTest extends TestCase
             $name ?? $this->validName(),
             $type,
             $isPostingEligible,
+            $origin,
         );
     }
 
@@ -175,17 +188,18 @@ final class AccountTest extends TestCase
 
     /**
      * Every `create()` parameter is required: Tenant, identifier,
-     * Code, Name, Account Type, and posting-eligibility state each
-     * have no default value, so none can be omitted or left
+     * Code, Name, Account Type, posting-eligibility state, and Origin
+     * each have no default value, so none can be omitted or left
      * undefined (`COA-T004`, `COA-T006`, plus explicit Tenant/Code/
-     * Name presence).
+     * Name/Origin presence) — Origin is never silently assumed as
+     * System or UserCreated (M2-T7).
      */
     public function test_every_create_parameter_is_required(): void
     {
         $reflection = new ReflectionClass(Account::class);
         $method = $reflection->getMethod('create');
 
-        $this->assertCount(6, $method->getParameters());
+        $this->assertCount(7, $method->getParameters());
 
         foreach ($method->getParameters() as $parameter) {
             $this->assertFalse(
@@ -206,7 +220,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            [TenantId::class, AccountId::class, AccountCode::class, AccountName::class, AccountType::class, 'bool'],
+            [TenantId::class, AccountId::class, AccountCode::class, AccountName::class, AccountType::class, 'bool', AccountOrigin::class],
             $parameterTypes,
         );
     }
@@ -246,7 +260,7 @@ final class AccountTest extends TestCase
         $code = $this->validCode();
         $name = $this->validName();
 
-        $account = Account::reconstitute($tenantId, $id, $code, $name, AccountType::Asset, true, true, null);
+        $account = Account::reconstitute($tenantId, $id, $code, $name, AccountType::Asset, true, true, AccountOrigin::UserCreated, null);
 
         $this->assertTrue($tenantId->equals($account->tenantId()));
         $this->assertTrue($id->equals($account->id()));
@@ -264,7 +278,7 @@ final class AccountTest extends TestCase
      */
     public function test_reconstitute_restores_an_inactive_account(): void
     {
-        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, false, true, null);
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, false, true, AccountOrigin::UserCreated, null);
 
         $this->assertFalse($account->isActive());
     }
@@ -276,7 +290,7 @@ final class AccountTest extends TestCase
     {
         $parentId = AccountId::of('account-parent');
 
-        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, $parentId);
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, AccountOrigin::UserCreated, $parentId);
 
         $this->assertNotNull($account->parentId());
         $this->assertTrue($parentId->equals($account->parentId()));
@@ -288,7 +302,7 @@ final class AccountTest extends TestCase
      */
     public function test_reconstitute_without_a_parent_id_restores_no_parent(): void
     {
-        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, null);
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, AccountOrigin::UserCreated, null);
 
         $this->assertNull($account->parentId());
     }
@@ -301,7 +315,7 @@ final class AccountTest extends TestCase
     public function test_reconstitute_derives_normal_balance_from_type(): void
     {
         foreach (AccountType::cases() as $type) {
-            $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), $type, true, true, null);
+            $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), $type, true, true, AccountOrigin::UserCreated, null);
 
             $this->assertSame($type->normalBalance(), $account->normalBalance());
         }
@@ -335,9 +349,9 @@ final class AccountTest extends TestCase
      */
     public function test_reconstitute_preserves_posting_eligibility_and_effective_posting_allowed(): void
     {
-        $activeEligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, null);
-        $activeIneligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, false, null);
-        $inactiveEligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, false, true, null);
+        $activeEligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, AccountOrigin::UserCreated, null);
+        $activeIneligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, false, AccountOrigin::UserCreated, null);
+        $inactiveEligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, false, true, AccountOrigin::UserCreated, null);
 
         $this->assertTrue($activeEligible->isPostingAllowed());
         $this->assertFalse($activeIneligible->isPostingAllowed());
@@ -354,7 +368,7 @@ final class AccountTest extends TestCase
         $id = $this->validId();
 
         $created = $this->createAccount(id: $id);
-        $reconstituted = Account::reconstitute($this->validTenantId(), $id, AccountCode::of('9999'), AccountName::of('Different Name'), AccountType::Liability, false, false, null);
+        $reconstituted = Account::reconstitute($this->validTenantId(), $id, AccountCode::of('9999'), AccountName::of('Different Name'), AccountType::Liability, false, false, AccountOrigin::UserCreated, null);
 
         $this->assertTrue($created->equals($reconstituted));
     }
@@ -364,7 +378,7 @@ final class AccountTest extends TestCase
      * it never calls {@see AccountHierarchyPolicy} and accepts no
      * `$knownAccounts`, since restoring a persisted `parentId` is not a
      * business decision, only a replay of one already made. This is
-     * proven structurally: the method has exactly eight parameters and
+     * proven structurally: the method has exactly nine parameters and
      * none of them is a `$knownAccounts`-shaped array.
      */
     public function test_reconstitute_has_no_knownaccounts_parameter(): void
@@ -372,7 +386,7 @@ final class AccountTest extends TestCase
         $reflection = new ReflectionClass(Account::class);
         $method = $reflection->getMethod('reconstitute');
 
-        $this->assertCount(8, $method->getParameters());
+        $this->assertCount(9, $method->getParameters());
 
         $parameterNames = array_map(
             static fn (\ReflectionParameter $parameter): string => $parameter->getName(),
@@ -389,7 +403,7 @@ final class AccountTest extends TestCase
      */
     public function test_with_parent_validation_is_unchanged_by_reconstitute(): void
     {
-        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, null);
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, AccountOrigin::UserCreated, null);
 
         $this->expectException(InvalidAccountHierarchyException::class);
 
@@ -513,7 +527,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            ['create', 'reconstitute', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'isPostingEligible', 'parentId', 'deactivate', 'withParent', 'equals'],
+            ['create', 'reconstitute', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'isPostingEligible', 'origin', 'parentId', 'deactivate', 'withParent', 'equals'],
             $publicMethodNames,
         );
 
@@ -523,7 +537,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            ['tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'active', 'postingEligible', 'parentId'],
+            ['tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'active', 'postingEligible', 'origin', 'parentId'],
             $propertyNames,
         );
     }
@@ -581,7 +595,7 @@ final class AccountTest extends TestCase
         $id = $this->validId();
 
         $a = $this->createAccount(id: $id);
-        $b = Account::create($this->validTenantId(), $id, AccountCode::of('1100'), AccountName::of('Cash / Bank (renamed)'), AccountType::Asset, true);
+        $b = Account::create($this->validTenantId(), $id, AccountCode::of('1100'), AccountName::of('Cash / Bank (renamed)'), AccountType::Asset, true, AccountOrigin::UserCreated);
 
         $this->assertTrue($a->equals($b));
     }
@@ -788,6 +802,227 @@ final class AccountTest extends TestCase
         $this->assertSame($child->normalBalance(), $result->normalBalance());
         $this->assertSame($child->isActive(), $result->isActive());
         $this->assertSame($child->isPostingAllowed(), $result->isPostingAllowed());
+    }
+
+    /**
+     * COA-T053 (structure): System is a valid, constructible Account
+     * Origin.
+     */
+    public function test_system_origin_is_constructible(): void
+    {
+        $account = $this->createAccount(origin: AccountOrigin::System);
+
+        $this->assertSame(AccountOrigin::System, $account->origin());
+    }
+
+    /**
+     * COA-T053: UserCreated is a valid, constructible Account Origin —
+     * "a User-Created Account can be created within a Tenant through
+     * the ordinary account-creation path."
+     */
+    public function test_user_created_origin_is_constructible(): void
+    {
+        $account = $this->createAccount(origin: AccountOrigin::UserCreated);
+
+        $this->assertSame(AccountOrigin::UserCreated, $account->origin());
+    }
+
+    /**
+     * An Account explicitly carries exactly one Origin — never both,
+     * never neither, and never silently defaulted by `Account` itself
+     * (only this test suite's own helper has a convenience default;
+     * see `test_every_create_parameter_is_required()`).
+     */
+    public function test_account_explicitly_carries_one_origin(): void
+    {
+        $system = $this->createAccount(id: AccountId::of('account-system'), origin: AccountOrigin::System);
+        $userCreated = $this->createAccount(id: AccountId::of('account-user'), origin: AccountOrigin::UserCreated);
+
+        $this->assertSame(AccountOrigin::System, $system->origin());
+        $this->assertSame(AccountOrigin::UserCreated, $userCreated->origin());
+    }
+
+    /**
+     * Origin is preserved through `deactivate()`.
+     */
+    public function test_origin_preserved_through_deactivate(): void
+    {
+        $account = $this->createAccount(origin: AccountOrigin::System)->deactivate();
+
+        $this->assertSame(AccountOrigin::System, $account->origin());
+    }
+
+    /**
+     * Origin is preserved through `withParent()`.
+     */
+    public function test_origin_preserved_through_with_parent(): void
+    {
+        $tenantId = $this->validTenantId();
+        $parent = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-parent'));
+        $child = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-child'), origin: AccountOrigin::System)
+            ->withParent($parent, [$parent]);
+
+        $this->assertSame(AccountOrigin::System, $child->origin());
+    }
+
+    /**
+     * Origin is preserved through `reconstitute()` — restored exactly,
+     * for both canonical values.
+     */
+    public function test_origin_preserved_through_reconstitute(): void
+    {
+        $system = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, AccountOrigin::System, null);
+        $userCreated = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, AccountOrigin::UserCreated, null);
+
+        $this->assertSame(AccountOrigin::System, $system->origin());
+        $this->assertSame(AccountOrigin::UserCreated, $userCreated->origin());
+    }
+
+    /**
+     * COA-T052: a System Account cannot be reassigned to a different
+     * Tenant through any current public API — proven structurally: no
+     * method on `Account` accepts or sets a new `TenantId` after
+     * construction (`tenantId()` is a read-only accessor; `create()`
+     * and `reconstitute()` are the only places a `TenantId` is ever
+     * supplied, and both are construction, not mutation).
+     */
+    public function test_system_account_cannot_change_tenant_through_any_current_public_api(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if (in_array($method->getName(), ['create', 'reconstitute'], true)) {
+                continue;
+            }
+
+            $parameterTypes = array_map(
+                static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                    ? $parameter->getType()->getName()
+                    : null,
+                $method->getParameters(),
+            );
+            $this->assertNotContains(
+                TenantId::class,
+                $parameterTypes,
+                sprintf('Method "%s" must not accept a TenantId (would allow cross-tenant reassignment).', $method->getName()),
+            );
+        }
+    }
+
+    /**
+     * COA-T049: a System Account's Account Type cannot be changed
+     * through any current public API — proven structurally: no method
+     * on `Account` accepts an `AccountType` after construction (`type()`
+     * is a read-only accessor; `create()` and `reconstitute()` are the
+     * only places an `AccountType` is ever supplied).
+     */
+    public function test_system_account_cannot_change_type_through_any_current_public_api(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if (in_array($method->getName(), ['create', 'reconstitute'], true)) {
+                continue;
+            }
+
+            $parameterTypes = array_map(
+                static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                    ? $parameter->getType()->getName()
+                    : null,
+                $method->getParameters(),
+            );
+            $this->assertNotContains(
+                AccountType::class,
+                $parameterTypes,
+                sprintf('Method "%s" must not accept an AccountType (would allow retyping).', $method->getName()),
+            );
+        }
+    }
+
+    /**
+     * COA-T048: a System Account's Account Code cannot be changed
+     * through any current public API — proven structurally: no method
+     * on `Account` accepts an `AccountCode` after construction (`code()`
+     * is a read-only accessor; `create()` and `reconstitute()` are the
+     * only places an `AccountCode` is ever supplied).
+     */
+    public function test_system_account_cannot_change_code_through_any_current_public_api(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if (in_array($method->getName(), ['create', 'reconstitute'], true)) {
+                continue;
+            }
+
+            $parameterTypes = array_map(
+                static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                    ? $parameter->getType()->getName()
+                    : null,
+                $method->getParameters(),
+            );
+            $this->assertNotContains(
+                AccountCode::class,
+                $parameterTypes,
+                sprintf('Method "%s" must not accept an AccountCode (would allow re-coding).', $method->getName()),
+            );
+        }
+    }
+
+    /**
+     * COA-T050: a System Account's Normal Balance cannot be altered by
+     * any user-facing operation — it is protected transitively through
+     * Account Type's own immutability (`test_system_account_cannot_change_type_through_any_current_public_api()`),
+     * since `normalBalance()` is always the value `AccountType::normalBalance()`
+     * derives and is never itself a settable field.
+     */
+    public function test_system_account_normal_balance_has_no_settable_path(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            $parameterTypes = array_map(
+                static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                    ? $parameter->getType()->getName()
+                    : null,
+                $method->getParameters(),
+            );
+            $this->assertNotContains(NormalBalance::class, $parameterTypes);
+        }
+    }
+
+    /**
+     * COA-T051: no delete API exists that could silently delete a
+     * System Account (or any Account) — proven by an exact inventory
+     * of the public API, which contains no method named or shaped like
+     * a deletion operation.
+     */
+    public function test_no_delete_api_exists(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        $publicMethodNames = array_map(
+            static fn (\ReflectionMethod $method): string => strtolower($method->getName()),
+            $reflection->getMethods(\ReflectionMethod::IS_PUBLIC),
+        );
+
+        foreach (['delete', 'remove', 'destroy', 'purge'] as $forbiddenMethodName) {
+            $this->assertNotContains($forbiddenMethodName, $publicMethodNames);
+        }
+    }
+
+    /**
+     * COA-T054: a User-Created Account still obeys the canonical
+     * Account Type -> Normal Balance rule, across every canonical
+     * Type — it carries no special authority to deviate from it.
+     */
+    public function test_user_created_account_obeys_canonical_type_to_normal_balance_rule(): void
+    {
+        foreach (AccountType::cases() as $type) {
+            $account = $this->createAccount(type: $type, origin: AccountOrigin::UserCreated);
+
+            $this->assertSame($type->normalBalance(), $account->normalBalance());
+        }
     }
 
     /**

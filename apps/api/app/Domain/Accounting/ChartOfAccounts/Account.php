@@ -35,10 +35,22 @@ use App\Domain\Shared\Tenancy\TenantId;
  * — see {@see reconstitute()}'s own docblock for why that is correct,
  * not a weakening of {@see AccountHierarchyPolicy}.
  *
- * The System-vs-User-Created distinction (§15, §16),
+ * This revision (M2-T7) adds the System-vs-User-Created distinction
+ * (§15, §16) as an explicit, required {@see AccountOrigin} — every
+ * Account now states its origin, never assumed. A System Account's
+ * protected semantics (Code/Type/Normal Balance immutability, no
+ * deletion, no cross-Tenant reassignment, §15) are not enforced by new
+ * runtime guards here: the current public API already exposes no
+ * delete, change-Tenant, change-Type, or change-Code operation for
+ * *any* Account, System or otherwise, so those protections hold
+ * structurally, by the absence of a violating path, not by an
+ * origin-conditional check. Whichever future method introduces such a
+ * mutation is responsible for enforcing them at that point — see
+ * M2-T7's report.
+ *
  * `activate()`/`rename()`/code or type changes, and persistence remain
- * deliberately unimplemented — see M2-T5.1B's, M2-T5.2's, and
- * M2-T5.3's reports.
+ * deliberately unimplemented — see M2-T5.1B's, M2-T5.2's, M2-T5.3's,
+ * and M2-T7's reports.
  *
  * Equality is identity-based (same {@see AccountId}), not value-based:
  * an Account is an entity with a stable identity Journal Line
@@ -64,6 +76,8 @@ final class Account
 
     private readonly bool $postingEligible;
 
+    private readonly AccountOrigin $origin;
+
     private readonly ?AccountId $parentId;
 
     private function __construct(
@@ -75,6 +89,7 @@ final class Account
         NormalBalance $normalBalance,
         bool $active,
         bool $postingEligible,
+        AccountOrigin $origin,
         ?AccountId $parentId,
     ) {
         $this->tenantId = $tenantId;
@@ -85,6 +100,7 @@ final class Account
         $this->normalBalance = $normalBalance;
         $this->active = $active;
         $this->postingEligible = $postingEligible;
+        $this->origin = $origin;
         $this->parentId = $parentId;
     }
 
@@ -106,6 +122,14 @@ final class Account
      * Always created with no parent (§12) — hierarchy is optional and
      * MUST NOT be required for every Account; the only way to a parent
      * is {@see withParent()}.
+     *
+     * `$origin` (§15, §16) is a required parameter with no default —
+     * AETS-005 names two distinct creation paths ("deterministic
+     * tenant-setup logic" for a System Account, versus "the ordinary,
+     * Tenant-scoped account-creation path" for a User-Created one) but
+     * does not state that this single factory method is exclusively
+     * either one, so no origin is silently assumed here; the caller
+     * must say which this Account is.
      */
     public static function create(
         TenantId $tenantId,
@@ -114,6 +138,7 @@ final class Account
         AccountName $name,
         AccountType $type,
         bool $isPostingEligible,
+        AccountOrigin $origin,
     ): self {
         return new self(
             $tenantId,
@@ -124,6 +149,7 @@ final class Account
             $type->normalBalance(),
             true,
             $isPostingEligible,
+            $origin,
             null,
         );
     }
@@ -146,11 +172,12 @@ final class Account
      *
      * Every other field this method accepts is restored exactly as
      * given — Active/Inactive state, the configured posting-eligibility
-     * flag, and the optional parent identifier — with no further
-     * validation, since this method's whole premise is that the
-     * supplied state was already validated once, at the point it was
-     * originally written (by `create()`/`withParent()`/`deactivate()`'s
-     * own checks), not that it is being decided now.
+     * flag, the {@see AccountOrigin} (§15, §16), and the optional
+     * parent identifier — with no further validation, since this
+     * method's whole premise is that the supplied state was already
+     * validated once, at the point it was originally written (by
+     * `create()`/`withParent()`/`deactivate()`'s own checks), not that
+     * it is being decided now.
      *
      * **Hierarchy note — read carefully.** Restoring `$parentId` here
      * is not, and cannot be, proof that the wider hierarchy graph is
@@ -179,6 +206,7 @@ final class Account
         AccountType $type,
         bool $active,
         bool $isPostingEligible,
+        AccountOrigin $origin,
         ?AccountId $parentId,
     ): self {
         return new self(
@@ -190,6 +218,7 @@ final class Account
             $type->normalBalance(),
             $active,
             $isPostingEligible,
+            $origin,
             $parentId,
         );
     }
@@ -264,6 +293,18 @@ final class Account
     }
 
     /**
+     * How this Account came to exist (§15, §16) — System or
+     * UserCreated, always explicit, never assumed. See this class's
+     * own docblock for how System Account protections are guaranteed
+     * given the current public API, rather than enforced by a runtime
+     * check keyed on this value.
+     */
+    public function origin(): AccountOrigin
+    {
+        return $this->origin;
+    }
+
+    /**
      * This Account's parent, by identifier only — `null` if it has
      * none. Hierarchy is optional (§12); a freshly {@see create()}d
      * Account always starts with no parent.
@@ -276,11 +317,11 @@ final class Account
     /**
      * Active -> Inactive (AETS-005 §14). Always returns a new Account
      * instance; every other field — Tenant, identifier, Code, Name,
-     * Type, Normal Balance, and the underlying posting-eligibility
-     * configuration — is preserved unchanged. Naturally idempotent:
-     * calling this on an already-Inactive Account deterministically
-     * produces another Inactive Account, equal in every observable
-     * respect.
+     * Type, Normal Balance, Origin, and the underlying
+     * posting-eligibility configuration — is preserved unchanged.
+     * Naturally idempotent: calling this on an already-Inactive
+     * Account deterministically produces another Inactive Account,
+     * equal in every observable respect.
      */
     public function deactivate(): self
     {
@@ -293,6 +334,7 @@ final class Account
             $this->normalBalance,
             false,
             $this->postingEligible,
+            $this->origin,
             $this->parentId,
         );
     }
@@ -302,8 +344,8 @@ final class Account
      * this Account never stores or otherwise holds onto the parent
      * Account object itself. Always returns a new Account instance;
      * every other field — Tenant, identifier, Code, Name, Type, Normal
-     * Balance, Active state, and posting-eligibility configuration —
-     * is preserved unchanged.
+     * Balance, Origin, Active state, and posting-eligibility
+     * configuration — is preserved unchanged.
      *
      * This is the *only* public path that can attach a parent, and it
      * always performs every hierarchy check in full — there is no way
@@ -352,6 +394,7 @@ final class Account
             $this->normalBalance,
             $this->active,
             $this->postingEligible,
+            $this->origin,
             $parent->id,
         );
     }
