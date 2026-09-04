@@ -9,20 +9,25 @@ use App\Domain\Accounting\ChartOfAccounts\AccountCode;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountName;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
+use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountHierarchyException;
 use App\Domain\Accounting\ChartOfAccounts\NormalBalance;
 use App\Domain\Shared\Tenancy\TenantId;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
 /**
- * Covers the Account-level ATS-005 cases this revision (M2-T5.1B)
- * supports, now that Tenant ownership and AccountName exist. `COA-T001`
- * is now fully coverable (a Tenant is present). `COA-T002`'s
+ * Covers the Account-level ATS-005 cases this revision (M2-T5.2)
+ * supports, now that optional parent/child hierarchy exists (§12).
+ * `COA-T001` is fully coverable (a Tenant is present). `COA-T002`'s
  * "immutable... for its lifetime" claim is still only partially
  * provable — no persistence exists yet to prove survival across a
- * write/read cycle. Hierarchy, System-vs-User-Created distinction,
+ * write/read cycle. Indirect/transitive cycle detection (`COA-T035`,
+ * `COA-T036`) is covered separately in
+ * {@see AccountHierarchyPolicyTest},
+ * since it requires graph context this Value Object alone cannot
+ * provide. System-vs-User-Created distinction,
  * `activate()`/`rename()`/code or type changes, and persistence remain
- * out of scope — see M2-T5.1B's report.
+ * out of scope — see M2-T5.2's report.
  */
 final class AccountTest extends TestCase
 {
@@ -312,7 +317,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            ['create', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'deactivate', 'equals'],
+            ['create', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'parentId', 'deactivate', 'withParent', 'equals'],
             $publicMethodNames,
         );
 
@@ -322,7 +327,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            ['tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'active', 'postingEligible'],
+            ['tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'active', 'postingEligible', 'parentId'],
             $propertyNames,
         );
     }
@@ -391,6 +396,202 @@ final class AccountTest extends TestCase
         $b = $this->createAccount(id: AccountId::of('account-0002'));
 
         $this->assertFalse($a->equals($b));
+    }
+
+    /**
+     * COA-T032 / COA-T038: a freshly created Account has no parent —
+     * hierarchy is optional and not required for any Account.
+     */
+    public function test_new_account_has_no_parent(): void
+    {
+        $account = $this->createAccount();
+
+        $this->assertNull($account->parentId());
+    }
+
+    /**
+     * COA-T033: an Account MAY be assigned exactly one parent Account
+     * belonging to the same Tenant.
+     */
+    public function test_with_parent_accepts_a_valid_same_tenant_parent(): void
+    {
+        $tenantId = $this->validTenantId();
+        $parent = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-parent'));
+        $child = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-child'));
+
+        $result = $child->withParent($parent, [$parent, $child]);
+
+        $this->assertInstanceOf(Account::class, $result);
+    }
+
+    /**
+     * Parent reference exact round-trip: `parentId()` returns exactly
+     * the assigned parent's identifier.
+     */
+    public function test_with_parent_round_trips_the_parent_identifier(): void
+    {
+        $tenantId = $this->validTenantId();
+        $parentId = AccountId::of('account-parent');
+        $parent = $this->createAccount(tenantId: $tenantId, id: $parentId);
+        $child = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-child'));
+
+        $result = $child->withParent($parent, [$parent, $child]);
+
+        $this->assertNotNull($result->parentId());
+        $this->assertTrue($parentId->equals($result->parentId()));
+    }
+
+    /**
+     * COA-T034: a direct self-cycle (an Account specified as its own
+     * parent) is rejected — via the public `withParent()` API, with a
+     * `$knownAccounts` set that would otherwise be sufficient, proving
+     * this specific rejection is not merely a side effect of an
+     * incomplete context.
+     */
+    public function test_with_parent_rejects_self_parenting(): void
+    {
+        $account = $this->createAccount();
+
+        $this->expectException(InvalidAccountHierarchyException::class);
+
+        $account->withParent($account, [$account]);
+    }
+
+    /**
+     * COA-T037: a parent/child relationship across two different
+     * Tenants is rejected.
+     */
+    public function test_with_parent_rejects_a_cross_tenant_parent(): void
+    {
+        $parent = $this->createAccount(tenantId: TenantId::of('tenant-0002'), id: AccountId::of('account-parent'));
+        $child = $this->createAccount(tenantId: TenantId::of('tenant-0001'), id: AccountId::of('account-child'));
+
+        $this->expectException(InvalidAccountHierarchyException::class);
+
+        $child->withParent($parent, [$parent, $child]);
+    }
+
+    /**
+     * COA-T035 (Account-level): an indirect, transitive cycle is
+     * rejected through the public `withParent()` API itself, not only
+     * through {@see AccountHierarchyPolicy} called directly — proving
+     * the public path cannot bypass the graph check.
+     */
+    public function test_with_parent_rejects_an_indirect_cycle(): void
+    {
+        $tenantId = $this->validTenantId();
+        $a = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-a'));
+        $b = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-b'))->withParent($a, [$a]);
+        $c = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-c'))->withParent($b, [$a, $b]);
+
+        $this->expectException(InvalidAccountHierarchyException::class);
+
+        $a->withParent($c, [$a, $b, $c]);
+    }
+
+    /**
+     * COA-T036 (Account-level): a deep, valid, cycle-free hierarchy
+     * (four levels) is accepted through the public `withParent()` API.
+     */
+    public function test_with_parent_accepts_a_deep_valid_hierarchy(): void
+    {
+        $tenantId = $this->validTenantId();
+        $level1 = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-level-1'));
+        $level2 = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-level-2'))->withParent($level1, [$level1]);
+        $level3 = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-level-3'))->withParent($level2, [$level1, $level2]);
+        $level4 = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-level-4'));
+
+        $result = $level4->withParent($level3, [$level1, $level2, $level3, $level4]);
+
+        $this->assertTrue($level3->id()->equals($result->parentId()));
+    }
+
+    /**
+     * Incomplete ancestry context is rejected — fails closed. The
+     * proposed parent has a parent of its own that is not included in
+     * `$knownAccounts`, so the assignment cannot be proven cycle-free
+     * and MUST NOT be accepted as safe by assumption.
+     */
+    public function test_with_parent_rejects_an_incomplete_ancestry_context(): void
+    {
+        $tenantId = $this->validTenantId();
+        $unknownAncestor = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-unknown-ancestor'));
+        $parent = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-parent'))->withParent($unknownAncestor, [$unknownAncestor]);
+        $child = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-child'));
+
+        $this->expectException(InvalidAccountHierarchyException::class);
+
+        // Deliberately omits $unknownAncestor from the supplied context.
+        $child->withParent($parent, [$parent, $child]);
+    }
+
+    /**
+     * Public parent assignment cannot bypass cycle validation: there
+     * is no overload, default, or alternate public method that attaches
+     * a parent without `$knownAccounts` — `withParent()` is the only
+     * public API that mutates the parent reference, and its
+     * `$knownAccounts` parameter is required (no default value), so a
+     * caller cannot omit the graph check even accidentally.
+     */
+    public function test_with_parent_cannot_be_called_without_supplying_known_accounts(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+
+        $publicMethodNames = array_map(
+            static fn (\ReflectionMethod $method): string => $method->getName(),
+            $reflection->getMethods(\ReflectionMethod::IS_PUBLIC),
+        );
+        $parentMutatingMethods = array_filter(
+            $publicMethodNames,
+            static fn (string $name): bool => str_contains(strtolower($name), 'parent'),
+        );
+        $this->assertSame(['parentId', 'withParent'], array_values($parentMutatingMethods));
+
+        $method = $reflection->getMethod('withParent');
+        $parameters = $method->getParameters();
+
+        $this->assertCount(2, $parameters);
+        $this->assertSame('knownAccounts', $parameters[1]->getName());
+        $this->assertFalse($parameters[1]->isOptional());
+        $this->assertFalse($parameters[1]->isDefaultValueAvailable());
+    }
+
+    /**
+     * `withParent()` returns a new instance and never mutates the
+     * original — the original Account remains parentless afterward.
+     */
+    public function test_with_parent_returns_a_new_instance_and_does_not_mutate_the_original(): void
+    {
+        $tenantId = $this->validTenantId();
+        $parent = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-parent'));
+        $child = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-child'));
+
+        $result = $child->withParent($parent, [$parent, $child]);
+
+        $this->assertNotSame($child, $result);
+        $this->assertNull($child->parentId());
+    }
+
+    /**
+     * Hierarchy mutation does not alter unrelated Account fields: every
+     * field other than the parent reference is preserved exactly.
+     */
+    public function test_with_parent_preserves_unrelated_fields(): void
+    {
+        $tenantId = $this->validTenantId();
+        $parent = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-parent'));
+        $child = $this->createAccount(tenantId: $tenantId, id: AccountId::of('account-child'), type: AccountType::Liability, isPostingEligible: false);
+
+        $result = $child->withParent($parent, [$parent, $child]);
+
+        $this->assertTrue($child->tenantId()->equals($result->tenantId()));
+        $this->assertTrue($child->id()->equals($result->id()));
+        $this->assertTrue($child->code()->equals($result->code()));
+        $this->assertTrue($child->name()->equals($result->name()));
+        $this->assertSame($child->type(), $result->type());
+        $this->assertSame($child->normalBalance(), $result->normalBalance());
+        $this->assertSame($child->isActive(), $result->isActive());
+        $this->assertSame($child->isPostingAllowed(), $result->isPostingAllowed());
     }
 
     /**
