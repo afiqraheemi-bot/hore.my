@@ -1,7 +1,7 @@
 # ATS-005: Chart of Accounts Test Specification
 
 - Status: Active
-- Version: 1.5.0
+- Version: 1.6.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-005: Chart of Accounts & Account Taxonomy](../AETS-005-Chart-of-Accounts.md). It exists so that Account domain implementation has a precise, testable, traceable target before any code is written — exactly the coverage AETS-005 §24 said a future Chart of Accounts ATS must provide.
 
-Every test defined here is identified by a stable ID (`COA-T001`–`COA-T147`) and traced to the `COA-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`COA-T001`–`COA-T164`) and traced to the `COA-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -62,24 +62,24 @@ Every `COA-NNN` invariant from [AETS-005 §21](../AETS-005-Chart-of-Accounts.md#
 | Invariant | Summary | Test IDs |
 | --- | --- | --- |
 | COA-001 | Tenant ownership | COA-T058, COA-T093, COA-T099, COA-T115, COA-T126 |
-| COA-002 | Stable identifier | COA-T002, COA-T093, COA-T100, COA-T109, COA-T112, COA-T113, COA-T114, COA-T116, COA-T122, COA-T127 |
-| COA-003 | Tenant-scoped code uniqueness | COA-T024, COA-T025, COA-T055, COA-T073, COA-T101, COA-T117, COA-T128, COA-T131, COA-T132, COA-T133 |
-| COA-004 | Exactly one Account Type | COA-T004, COA-T009, COA-T010, COA-T011, COA-T012, COA-T013, COA-T014, COA-T015, COA-T093, COA-T103, COA-T119, COA-T130 |
-| COA-005 | Canonical Normal Balance | COA-T005, COA-T016, COA-T017, COA-T018, COA-T019, COA-T020, COA-T021, COA-T054, COA-T070, COA-T090, COA-T093, COA-T104, COA-T105, COA-T123, COA-T124, COA-T144 |
-| COA-006 | No hierarchy cycles | COA-T034, COA-T035, COA-T071, COA-T072, COA-T083, COA-T098, COA-T110, COA-T111 |
-| COA-007 | Same-tenant parent/child | COA-T033, COA-T037, COA-T059 |
+| COA-002 | Stable identifier | COA-T002, COA-T093, COA-T100, COA-T109, COA-T112, COA-T113, COA-T114, COA-T116, COA-T122, COA-T127, COA-T148 |
+| COA-003 | Tenant-scoped code uniqueness | COA-T024, COA-T025, COA-T055, COA-T073, COA-T101, COA-T117, COA-T128, COA-T131, COA-T132, COA-T133, COA-T149, COA-T150, COA-T163, COA-T164 |
+| COA-004 | Exactly one Account Type | COA-T004, COA-T009, COA-T010, COA-T011, COA-T012, COA-T013, COA-T014, COA-T015, COA-T093, COA-T103, COA-T119, COA-T130, COA-T155, COA-T157 |
+| COA-005 | Canonical Normal Balance | COA-T005, COA-T016, COA-T017, COA-T018, COA-T019, COA-T020, COA-T021, COA-T054, COA-T070, COA-T090, COA-T093, COA-T104, COA-T105, COA-T123, COA-T124, COA-T144, COA-T161 |
+| COA-006 | No hierarchy cycles | COA-T034, COA-T035, COA-T071, COA-T072, COA-T083, COA-T098, COA-T110, COA-T111, COA-T152 |
+| COA-007 | Same-tenant parent/child | COA-T033, COA-T037, COA-T059, COA-T151, COA-T153, COA-T154 |
 | COA-008 | Posting only to posting-eligible accounts | COA-T040, COA-T042, COA-T067, COA-T085 |
 | COA-009 | Inactive account rejects new posting | COA-T041, COA-T066, COA-T084, COA-T095 |
 | COA-010 | Non-posting/group account rejects posting | COA-T039, COA-T042, COA-T067, COA-T085 |
 | COA-011 | Posted history survives deactivation | COA-T043, COA-T064, COA-T075 |
-| COA-012 | No authoritative mutable balance on Account | COA-T008, COA-T069, COA-T074, COA-T125 |
-| COA-013 | System account protection | COA-T048, COA-T049, COA-T050, COA-T134, COA-T135, COA-T136, COA-T137, COA-T138, COA-T139, COA-T141, COA-T142, COA-T145, COA-T146, COA-T147 |
+| COA-012 | No authoritative mutable balance on Account | COA-T008, COA-T069, COA-T074, COA-T125, COA-T162 |
+| COA-013 | System account protection | COA-T048, COA-T049, COA-T050, COA-T134, COA-T135, COA-T136, COA-T137, COA-T138, COA-T139, COA-T141, COA-T142, COA-T145, COA-T146, COA-T147, COA-T156, COA-T158 |
 | COA-014 | No hard delete after posted reference | COA-T051, COA-T063, COA-T143 |
 | COA-015 | Journal Line/Journal tenant match | COA-T060, COA-T068, COA-T086 |
 | COA-016 | System account tenant immutability | COA-T052, COA-T061, COA-T140 |
 | COA-017 | Account name presence | COA-T003, COA-T102, COA-T118, COA-T129 |
-| COA-018 | Explicit posting-eligibility state | COA-T006, COA-T093, COA-T108, COA-T121 |
-| COA-019 | Explicit active/inactive state | COA-T007, COA-T044, COA-T091, COA-T092, COA-T094, COA-T096, COA-T097, COA-T106, COA-T107, COA-T120 |
+| COA-018 | Explicit posting-eligibility state | COA-T006, COA-T093, COA-T108, COA-T121, COA-T160 |
+| COA-019 | Explicit active/inactive state | COA-T007, COA-T044, COA-T091, COA-T092, COA-T094, COA-T096, COA-T097, COA-T106, COA-T107, COA-T120, COA-T159 |
 | COA-020 | Account Code is not a raw identifier | COA-T026, COA-T087 |
 
 ## 6. Test Data Strategy
@@ -366,6 +366,28 @@ A future Account persistence integration suite MUST prove:
 | COA-T146 | Account Origin round-trips exactly, across every canonical origin — read restores exactly what was written. | Unit |
 | COA-T147 | An unsupported persisted Account Origin value is rejected, through a hore.my-owned infrastructure exception. | Unit |
 
+**Production schema coverage** — `database/migrations/2026_09_04_030000_create_accounts_table.php` (M2-T8.1) now exists, a real `accounts` table mapped exactly to `AccountPersistenceAdapter`'s row shape, with defense-in-depth `CHECK`/`UNIQUE`/composite-foreign-key constraints mirroring the already-settled domain rules above. Every ID below is proven against a real PostgreSQL instance, through the real Laravel migrator (`migrate` / `migrate:rollback`), never a hand-copied re-implementation of the schema and never SQLite:
+
+| ID | Test | Level |
+| --- | --- | --- |
+| COA-T148 | Database enforces global `account_id` uniqueness, via the table's own primary-key constraint. | Integration |
+| COA-T149 | Database enforces tenant-scoped `account_code` uniqueness on the production schema itself, via `UNIQUE (tenant_id, account_code)`. | Integration |
+| COA-T150 | The same `account_code` is permitted across two different Tenants, on the production schema itself. | Integration |
+| COA-T151 | Database rejects a cross-tenant parent reference, via the composite `(tenant_id, parent_id) REFERENCES accounts (tenant_id, account_id)` foreign key. | Integration |
+| COA-T152 | Database rejects direct self-parenting (`parent_id = account_id` on the same row), via a `CHECK` constraint. | Integration |
+| COA-T153 | Database accepts a nullable `parent_id` — hierarchy remains optional at the schema level. | Integration |
+| COA-T154 | Database accepts a valid same-tenant parent reference. | Integration |
+| COA-T155 | Database rejects an unsupported `account_type` value, via a `CHECK` constraint naming exactly the five canonical Account Types. | Integration |
+| COA-T156 | Database rejects an unsupported `account_origin` value, via a `CHECK` constraint naming exactly the two canonical Account Origins. | Integration |
+| COA-T157 | `account_type` is `NOT NULL` at the database level. | Integration |
+| COA-T158 | `account_origin` is `NOT NULL` at the database level. | Integration |
+| COA-T159 | `active` is `NOT NULL` at the database level. | Integration |
+| COA-T160 | `posting_eligible` is `NOT NULL` at the database level. | Integration |
+| COA-T161 | The production schema contains no `normal_balance` column. | Integration |
+| COA-T162 | The production schema contains no authoritative balance, debit-total, or credit-total column. | Integration |
+| COA-T163 | The production migration is reversible through Laravel's own migrator: `migrate:rollback` drops the table cleanly, and the migration re-applies cleanly afterward. | Integration |
+| COA-T164 | Every proof above is run against a real PostgreSQL instance, never SQLite. | Integration |
+
 ## 24. Exit Criteria
 
 Account/Chart of Accounts implementation **cannot** be considered complete unless, at minimum:
@@ -397,6 +419,7 @@ This document follows [AETS-000](../AETS-000.md)'s governance rules in full — 
 
 ## Changelog
 
+- **1.6.0 (2026-09-04):** Added `COA-T148`–`COA-T164` (§23, new "Production schema coverage" table) — the production-schema traceability gap identified while implementing `database/migrations/2026_09_04_030000_create_accounts_table.php` (M2-T8.1): the real `accounts` table now enforces, at the database level itself (not only via the M2-T6 test-owned fixture table or adapter/domain-level checks), global `account_id` uniqueness, tenant-scoped `account_code` uniqueness and its cross-tenant permission counterpart, cross-tenant parent rejection via a composite foreign key, self-parenting rejection via a `CHECK` constraint, nullable/valid same-tenant parent acceptance, canonical-value `CHECK` constraints for `account_type` and `account_origin` (defense-in-depth mirrors of the already-settled domain enums — neither converted to a backed enum, no PostgreSQL `ENUM` type introduced), `NOT NULL` on `account_type`/`account_origin`/`active`/`posting_eligible`, absence of any `normal_balance` or monetary balance/debit/credit column, and migration reversibility through Laravel's own migrator — every one of the above proven against a real PostgreSQL instance, never SQLite. Mapped into the existing traceability matrix (§5) under `COA-002`, `COA-003`, `COA-004`, `COA-005`, `COA-006`, `COA-007`, `COA-012`, `COA-013`, `COA-018`, and `COA-019` — no new `COA-NNN` invariant was needed; every one of these is a database-level, defense-in-depth mirror of a rule an existing invariant already states, not a distinct rule. No existing test ID (`COA-T001`–`COA-T147`) was renumbered, altered, or removed.
 - **1.5.0 (2026-09-04):** Added `COA-T134`–`COA-T147` — the Account Origin traceability gap identified while implementing `AccountOrigin` (M2-T7): explicit-origin-required construction, `System`- and `UserCreated`-origin constructibility, origin preserved unchanged through `deactivate()`/`withParent()`/`reconstitute()` (§7, new "Account Origin" subsection); structural proof that the current `Account` public API exposes no Tenant-reassignment, Account-Type-change, Account-Code-change, or delete/removal path for a System Account (§15); a User-Created Account's Normal Balance remaining exclusively derived from Account Type regardless of Origin (§16); and Account Origin's inclusion in, and exact round-trip through, the persistence mapping, plus rejection of an unsupported persisted value (§23, "Concrete coverage" table). Mapped into the existing traceability matrix (§5) under `COA-005`, `COA-013`, `COA-014`, and `COA-016` — no new `COA-NNN` invariant was needed; explicit Account Origin and the structural absence of a violating public API are the mechanism by which those existing invariants hold, not a distinct rule. `COA-T056` (cross-origin Account Code collision within one Tenant) remains deferred — it requires repository/database-level uniqueness enforcement, out of scope for this change. No existing test ID (`COA-T001`–`COA-T133`) was renumbered, altered, or removed.
 - **1.4.0 (2026-09-04):** Added `COA-T113`–`COA-T133` (§23, Persistence Expectations — a new "Concrete coverage" table) — the persistence-adapter traceability gap identified while implementing `AccountPersistenceAdapter` (M2-T6): domain-to-persisted and persisted-to-domain mapping, exact round-trip for every field (TenantId, AccountId, AccountCode, AccountName, AccountType, Active/Inactive, configured posting-eligibility, nullable parentId), Normal Balance never an independent persisted field and always re-derived on read, no monetary balance/debit/credit field, malformed-input rejection for every persisted field, and real-PostgreSQL proof of tenant-scoped Account Code uniqueness (and its cross-tenant permission counterpart). Mapped into the existing traceability matrix (§5) under `COA-001`, `COA-002`, `COA-003`, `COA-004`, `COA-005`, `COA-012`, `COA-017`, `COA-018`, and `COA-019` — no new `COA-NNN` invariant was needed. No existing test ID (`COA-T001`–`COA-T112`) was renumbered, altered, or removed.
 - **1.3.0 (2026-09-04):** Added `COA-T099`–`COA-T112` (§7, Account Construction Tests — a new "Reconstitution" subsection) — coverage for `Account::reconstitute()` (M2-T5.3): exact restoration of TenantId, AccountId, AccountCode, AccountName, AccountType, Active/Inactive state, configured posting-eligibility, and an optional parentId; Normal Balance still derived exclusively from Account Type with no caller-suppliable override; and two architectural-boundary tests proving reconstitution neither invokes hierarchy assignment validation nor acts as a business parent-assignment path, leaving `withParent()` as the sole such path. Mapped into the existing traceability matrix (§5) under `COA-001`, `COA-002`, `COA-003`, `COA-004`, `COA-005`, `COA-006`, `COA-017`, `COA-018`, and `COA-019` — no new `COA-NNN` invariant was needed. No existing test ID (`COA-T001`–`COA-T098`) was renumbered, altered, or removed.
