@@ -222,10 +222,36 @@ final class AccountsTableMigrationTest extends TestCase
      * actually drops the table, and the migration can then be re-applied
      * cleanly. Restores the table afterward so class-level state remains
      * consistent regardless of test execution order.
+     *
+     * `migrate:rollback --path=X` only rolls back the most recent
+     * *batch*, using `--path` to filter which files within that batch
+     * are eligible — it does not target a specific migration
+     * regardless of batch. Since journal_lines' migration (M3-T9) is
+     * almost always a separate, later batch than this one, this test
+     * first force-remigrates this table fresh (guaranteeing it is the
+     * newest batch at the moment `migrate:rollback` is called below) —
+     * otherwise the rollback call could silently no-op.
      */
     public function test_migration_rollback_succeeds_cleanly(): void
     {
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::TABLE));
+
+        // journal_lines (M3-T9) carries a composite foreign key onto
+        // this table — PostgreSQL correctly refuses to drop `accounts`
+        // while it is still referenced. Force it out of the way first
+        // (not this test's own migration to manage) and restore it
+        // afterward, so this test's own "restores state afterward"
+        // guarantee still holds regardless of whether journal_lines
+        // existed when this test started.
+        $journalMigrationPath = 'database/migrations/2026_09_04_150000_create_journals_and_journal_lines_tables.php';
+        $journalLinesExistedBefore = Schema::connection('pgsql')->hasTable('journal_lines');
+        if ($journalLinesExistedBefore) {
+            self::forceCleanState($journalMigrationPath, ['journal_lines', 'journals']);
+        }
+
+        // Guarantee this table's migration is the newest batch before
+        // testing rollback against it.
+        self::forceCleanState(self::MIGRATION_PATH, [self::TABLE]);
 
         Artisan::call('migrate:rollback', [
             '--database' => 'pgsql',
@@ -244,6 +270,41 @@ final class AccountsTableMigrationTest extends TestCase
         ]);
 
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::TABLE));
+
+        if ($journalLinesExistedBefore) {
+            self::forceCleanState($journalMigrationPath, ['journal_lines', 'journals']);
+        }
+    }
+
+    /**
+     * Drops the given tables directly and clears the migration's own
+     * tracking row (if any) before re-running it — guaranteeing both
+     * that the tables actually exist afterward (never silently skipped
+     * because the tracking table believes the migration already ran)
+     * and that it becomes the newest migration batch, which
+     * `migrate:rollback`'s batch-oriented semantics require for a
+     * deterministic, unambiguous rollback target.
+     *
+     * @param  list<string>  $tables
+     */
+    private static function forceCleanState(string $migrationPath, array $tables): void
+    {
+        foreach ($tables as $table) {
+            Schema::connection('pgsql')->dropIfExists($table);
+        }
+
+        if (Schema::connection('pgsql')->hasTable('migrations')) {
+            DB::connection('pgsql')->table('migrations')
+                ->where('migration', pathinfo($migrationPath, PATHINFO_FILENAME))
+                ->delete();
+        }
+
+        Artisan::call('migrate', [
+            '--database' => 'pgsql',
+            '--path' => $migrationPath,
+            '--realpath' => false,
+            '--force' => true,
+        ]);
     }
 
     /**
@@ -282,23 +343,25 @@ final class AccountsTableMigrationTest extends TestCase
             return;
         }
 
+        // journal_lines (M3-T9) carries a composite foreign key onto
+        // this table's (tenant_id, account_id) — if it already exists
+        // from a prior test run against this same persistent database,
+        // PostgreSQL correctly refuses to drop `accounts` while it is
+        // still referenced. Drop it defensively first; this class owns
+        // no opinion about that table's own tests, it just cannot leave
+        // a downstream dependent blocking its own reconciliation. Its
+        // own migration's tracking row is left alone — whichever test
+        // class owns that migration reconciles it independently the
+        // next time it runs.
+        Schema::connection('pgsql')->dropIfExists('journal_lines');
+
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across
-        // repeated suite runs against the same persistent database.
-        Artisan::call('migrate:rollback', [
-            '--database' => 'pgsql',
-            '--path' => self::MIGRATION_PATH,
-            '--realpath' => false,
-            '--force' => true,
-        ]);
-        Schema::connection('pgsql')->dropIfExists(self::TABLE);
-
-        Artisan::call('migrate', [
-            '--database' => 'pgsql',
-            '--path' => self::MIGRATION_PATH,
-            '--realpath' => false,
-            '--force' => true,
-        ]);
+        // repeated suite runs against the same persistent database —
+        // see {@see forceCleanState()} for why a plain
+        // `migrate:rollback` call cannot be relied on here once more
+        // than one migration batch exists.
+        self::forceCleanState(self::MIGRATION_PATH, [self::TABLE]);
 
         self::$migrated = true;
     }

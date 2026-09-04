@@ -500,16 +500,37 @@ final class AccountRepositoryIntegrationTest extends TestCase
             return;
         }
 
+        // journal_lines (M3-T9) carries a composite foreign key onto
+        // this table's (tenant_id, account_id) — if it already exists
+        // from a prior test run against this same persistent database,
+        // PostgreSQL correctly refuses to drop `accounts` while it is
+        // still referenced. Drop it defensively first; this class owns
+        // no opinion about that table's own tests, it just cannot leave
+        // a downstream dependent blocking its own reconciliation. Its
+        // own migration's tracking row is left alone — whichever test
+        // class owns that migration reconciles it independently the
+        // next time it runs.
+        Schema::connection('pgsql')->dropIfExists('journal_lines');
+
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across
         // repeated suite runs against the same persistent database.
-        Artisan::call('migrate:rollback', [
-            '--database' => 'pgsql',
-            '--path' => self::MIGRATION_PATH,
-            '--realpath' => false,
-            '--force' => true,
-        ]);
+        // `migrate:rollback --path=X` only rolls back the most recent
+        // *batch*, using `--path` merely to filter which files within
+        // that batch are eligible — it does not target a specific
+        // migration regardless of batch. Once any later migration
+        // (e.g. M3-T9's journals/journal_lines migration) has run in a
+        // separate batch, this table's own migration is no longer the
+        // last batch, and `migrate:rollback` here would silently
+        // no-op. Dropping the table directly and clearing its tracking
+        // row is unambiguous regardless of batch history.
         Schema::connection('pgsql')->dropIfExists(self::TABLE);
+
+        if (Schema::connection('pgsql')->hasTable('migrations')) {
+            DB::connection('pgsql')->table('migrations')
+                ->where('migration', pathinfo(self::MIGRATION_PATH, PATHINFO_FILENAME))
+                ->delete();
+        }
 
         Artisan::call('migrate', [
             '--database' => 'pgsql',
