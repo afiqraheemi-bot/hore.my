@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Accounting\Journal;
 
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
+use App\Domain\Accounting\Journal\Exception\JournalAlreadyPostedException;
 use App\Domain\Accounting\Journal\Exception\MixedCurrencyJournalException;
 use App\Domain\Accounting\Journal\Exception\UnbalancedJournalException;
 use App\Domain\Accounting\Money\MinorUnits;
@@ -29,14 +30,18 @@ use App\Domain\Shared\Tenancy\TenantId;
  * single-Currency — there is no intermediate, partially-assembled, or
  * unbalanced state this type can ever represent.
  *
- * **Not the Posting Engine.** {@see JournalState::Posted} is a valid
- * enum case, but nothing in this class can produce one: there is no
- * `post()` method and no other path to a Posted Journal. The
- * Draft -> Posted transition — the actual Posting Command, its
- * validation pipeline (§11), idempotency (§14), Tenant/Actor/Evidence
- * checks (§18, §19), and atomic persistence (§13) — is deliberately
- * left for a future task, so posting lifecycle is not mixed into
- * aggregate construction here.
+ * **Not the Posting Engine.** This revision (M3-T6) adds
+ * {@see post()}: the sole Draft -> Posted transition, as a pure
+ * domain state change. It performs no I/O of any kind — no database
+ * write, no transaction, no network call, no Audit Event, no Outbox
+ * publish, no idempotency-key handling. Those are the actual Posting
+ * Command's concerns (§10–§14, §18, §19) — the deterministic
+ * validation-and-persistence orchestration, Tenant/Actor/Evidence
+ * checks, and atomic effect a future Posting Engine task owns.
+ * {@see post()} only represents that a Journal already known to be
+ * valid has had its lifecycle state advanced; it decides nothing about
+ * *whether* posting should be allowed beyond the one check this class
+ * can make on its own (§9): the Journal must currently be Draft.
  *
  * **Balance validation, at the aggregate level, not inferred.**
  * {@see isBalanced()} sums Debit Journal Lines' Money and Credit
@@ -128,6 +133,39 @@ final class Journal
         }
 
         return $journal;
+    }
+
+    /**
+     * The sole Draft -> Posted transition (AETS-004 §9). Returns a
+     * *new* Journal instance in the Posted state; this instance is
+     * completely unaffected and remains Draft. TenantId, JournalId,
+     * and the Journal Line list are carried over exactly — the same
+     * {@see JournalLine} instances, same order, no line added,
+     * removed, or replaced.
+     *
+     * Posted is terminal: only a Draft Journal may transition. Calling
+     * this on a Journal that is already Posted throws
+     * {@see JournalAlreadyPostedException} rather than silently
+     * re-posting or silently accepting the call as a no-op
+     * (`JRN-T024`) — there is no path back to Draft, and no path to
+     * Posted a second time.
+     *
+     * This method performs no I/O: no persistence, no database
+     * transaction, no network call, no Audit Event, no Outbox publish,
+     * no idempotency-key check. Those belong to the future Posting
+     * Engine, which is expected to call this method only after its own
+     * validation pipeline (§11) has already succeeded.
+     *
+     * @throws JournalAlreadyPostedException if this Journal is already
+     *                                       Posted.
+     */
+    public function post(): self
+    {
+        if ($this->state === JournalState::Posted) {
+            throw JournalAlreadyPostedException::forJournal();
+        }
+
+        return new self($this->tenantId, $this->id, $this->lines, JournalState::Posted);
     }
 
     public function tenantId(): TenantId

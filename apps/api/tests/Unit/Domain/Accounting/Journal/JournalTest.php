@@ -7,6 +7,7 @@ namespace Tests\Unit\Domain\Accounting\Journal;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\NormalBalance;
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
+use App\Domain\Accounting\Journal\Exception\JournalAlreadyPostedException;
 use App\Domain\Accounting\Journal\Exception\MixedCurrencyJournalException;
 use App\Domain\Accounting\Journal\Exception\UnbalancedJournalException;
 use App\Domain\Accounting\Journal\Journal;
@@ -38,6 +39,17 @@ use ReflectionClass;
  * successfully" half of those IDs awaits the future Posting Engine
  * task. `JRN-T075` (the unbalanced golden case) is reproduced exactly
  * as a construction-time rejection.
+ *
+ * This revision (M3-T6) also covers the Draft -> Posted transition
+ * {@see Journal::post()} implements: `JRN-T024` ("attempting to post
+ * an already-Posted Journal is rejected with a typed 'already posted'
+ * failure") is covered directly and completely, since it is a pure
+ * domain state check. `JRN-T023` ("a Posting Command may transition
+ * only a Draft Journal to Posted") is covered for its domain-
+ * transition half only — this class's `post()` is not itself a
+ * Posting Command, so the Tenant/Actor/Evidence/idempotency
+ * validation a real Posting Command would also perform (§11) is not
+ * exercised here and awaits the future Posting Engine task.
  */
 final class JournalTest extends TestCase
 {
@@ -78,6 +90,191 @@ final class JournalTest extends TestCase
         ]);
 
         $this->assertSame(JournalState::Draft, $journal->state());
+    }
+
+    /**
+     * A Draft Journal posts successfully.
+     */
+    public function test_draft_journal_posts_successfully(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $posted = $draft->post();
+
+        $this->assertInstanceOf(Journal::class, $posted);
+        $this->assertSame(JournalState::Posted, $posted->state());
+    }
+
+    /**
+     * `post()` returns a new instance, distinct from the one it was
+     * called on.
+     */
+    public function test_post_returns_a_new_instance(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $posted = $draft->post();
+
+        $this->assertNotSame($draft, $posted);
+    }
+
+    /**
+     * The original Draft Journal `post()` was called on remains Draft
+     * — posting never mutates it in place.
+     */
+    public function test_original_draft_remains_draft_after_posting(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $draft->post();
+
+        $this->assertSame(JournalState::Draft, $draft->state());
+    }
+
+    /**
+     * The Posted instance preserves TenantId exactly.
+     */
+    public function test_posted_preserves_tenant_id(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $posted = $draft->post();
+
+        $this->assertTrue($this->tenantId->equals($posted->tenantId()));
+    }
+
+    /**
+     * The Posted instance preserves JournalId exactly.
+     */
+    public function test_posted_preserves_journal_id(): void
+    {
+        $id = JournalId::of('journal-0001');
+        $draft = Journal::create($this->tenantId, $id, [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $posted = $draft->post();
+
+        $this->assertTrue($id->equals($posted->id()));
+    }
+
+    /**
+     * The Posted instance preserves the exact Journal Line list — same
+     * count, same instances (never cloned, never replaced), same
+     * order.
+     */
+    public function test_posted_preserves_exact_journal_line_list(): void
+    {
+        $debit = $this->debitLine('account-cash', '100.00');
+        $credit = $this->creditLine('account-income', '100.00');
+
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
+        $posted = $draft->post();
+
+        $this->assertSame([$debit, $credit], $posted->lines());
+    }
+
+    /**
+     * The Posted instance remains balanced.
+     */
+    public function test_posted_remains_balanced(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $posted = $draft->post();
+
+        $this->assertTrue($posted->isBalanced());
+    }
+
+    /**
+     * The Posted instance remains single-Currency — every line still
+     * carries the same Currency it was constructed with, since posting
+     * never touches the line set.
+     */
+    public function test_posted_remains_single_currency(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+
+        $posted = $draft->post();
+
+        $currencies = array_map(
+            static fn (JournalLine $line): string => $line->money()->currency()->identifier(),
+            $posted->lines(),
+        );
+
+        $this->assertSame(['MYR', 'MYR'], $currencies);
+    }
+
+    /**
+     * No JournalLine is mutated or replaced during the transition: the
+     * Posted instance's lines are the identical objects the Draft
+     * instance held, not new or altered ones.
+     */
+    public function test_journal_lines_remain_unchanged_by_posting(): void
+    {
+        $debit = $this->debitLine('account-cash', '100.00');
+        $credit = $this->creditLine('account-income', '100.00');
+
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
+        $posted = $draft->post();
+
+        $this->assertSame($debit, $posted->lines()[0]);
+        $this->assertSame($credit, $posted->lines()[1]);
+    }
+
+    /**
+     * JRN-T024: attempting to post an already-Posted Journal is
+     * rejected with a typed "already posted" failure — not silently
+     * re-posted, not silently accepted as a no-op.
+     */
+    public function test_reposting_an_already_posted_journal_is_rejected(): void
+    {
+        $posted = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ])->post();
+
+        $this->expectException(JournalAlreadyPostedException::class);
+
+        $posted->post();
+    }
+
+    /**
+     * No Posted -> Draft path exists: no `reopen()`, `draft()`,
+     * `unpost()`, `reset()`, `cancel()`, `delete()`, `updateLines()`,
+     * or `replaceLines()` method — Posted is terminal.
+     */
+    public function test_no_posted_to_draft_or_mutation_path_exists(): void
+    {
+        $reflection = new ReflectionClass(Journal::class);
+
+        $publicMethodNames = array_map(
+            static fn (\ReflectionMethod $method): string => $method->getName(),
+            $reflection->getMethods(\ReflectionMethod::IS_PUBLIC),
+        );
+
+        foreach (['reopen', 'draft', 'unpost', 'reset', 'cancel', 'delete', 'updateLines', 'replaceLines'] as $forbiddenMethodName) {
+            $this->assertNotContains($forbiddenMethodName, $publicMethodNames);
+        }
     }
 
     /**
@@ -412,10 +609,12 @@ final class JournalTest extends TestCase
     }
 
     /**
-     * No path to a Posted Journal exists: no `post()` method, and no
-     * other public method beyond the fixed, minimal, intended API.
+     * The only path to a Posted Journal is `post()` itself — no
+     * alternately-named posting method exists, and no other public
+     * method beyond the fixed, minimal, intended API (which now
+     * includes `post()`, per M3-T6).
      */
-    public function test_no_posted_creation_path_and_only_the_intended_public_api(): void
+    public function test_only_the_intended_public_api_including_post_exists(): void
     {
         $reflection = new ReflectionClass(Journal::class);
 
@@ -426,11 +625,11 @@ final class JournalTest extends TestCase
         sort($publicMethodNames);
 
         $this->assertSame(
-            ['create', 'equals', 'id', 'isBalanced', 'lines', 'state', 'tenantId'],
+            ['create', 'equals', 'id', 'isBalanced', 'lines', 'post', 'state', 'tenantId'],
             $publicMethodNames,
         );
 
-        foreach (['post', 'postJournal', 'transition', 'markPosted'] as $forbiddenMethodName) {
+        foreach (['postJournal', 'transition', 'markPosted'] as $forbiddenMethodName) {
             $this->assertNotContains($forbiddenMethodName, $publicMethodNames);
         }
     }
