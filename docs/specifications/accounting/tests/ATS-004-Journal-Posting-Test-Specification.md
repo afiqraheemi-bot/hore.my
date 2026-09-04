@@ -1,7 +1,7 @@
 # ATS-004: Journal & Posting Test Specification
 
 - Status: Active
-- Version: 1.4.0
+- Version: 1.5.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-004: Journal & Posting Model](../AETS-004-Journal-Posting-Model.md). It exists so that Journal/Posting implementation work has a precise, testable, traceable target before any code is written — exactly the coverage AETS-004 §25 said a future Journal & Posting ATS must provide.
 
-Every test defined here is identified by a stable ID (`JRN-T001`–`JRN-T161`) and traced to the `JRN-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`JRN-T001`–`JRN-T192`) and traced to the `JRN-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -64,21 +64,21 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 
 | Invariant | Summary | Test IDs |
 | --- | --- | --- |
-| JRN-001 | Tenant ownership | JRN-T016, JRN-T056, JRN-T057, JRN-T058, JRN-T076, JRN-T086, JRN-T101, JRN-T102, JRN-T120, JRN-T139, JRN-T149, JRN-T151, JRN-T152 |
+| JRN-001 | Tenant ownership | JRN-T016, JRN-T056, JRN-T057, JRN-T058, JRN-T076, JRN-T086, JRN-T101, JRN-T102, JRN-T120, JRN-T139, JRN-T149, JRN-T151, JRN-T152, JRN-T166, JRN-T167, JRN-T171 |
 | JRN-002 | At least two lines | JRN-T002, JRN-T003, JRN-T004, JRN-T088, JRN-T093, JRN-T100, JRN-T106, JRN-T112, JRN-T113, JRN-T114, JRN-T118, JRN-T141, JRN-T142, JRN-T143, JRN-T144, JRN-T145, JRN-T156 |
 | JRN-003 | Stable opaque identifier | JRN-T014, JRN-T087, JRN-T098, JRN-T103, JRN-T121, JRN-T134, JRN-T135 |
-| JRN-004 | Recorded lifecycle state | JRN-T001, JRN-T015, JRN-T023, JRN-T024, JRN-T089, JRN-T090, JRN-T091, JRN-T092, JRN-T099, JRN-T104, JRN-T105, JRN-T115, JRN-T116, JRN-T117, JRN-T125, JRN-T136, JRN-T137, JRN-T138, JRN-T140 |
-| JRN-005 | Immutable posted Journal | JRN-T010, JRN-T017, JRN-T044, JRN-T048, JRN-T077 |
-| JRN-006 | No direct posted-Journal mutation | JRN-T018, JRN-T019, JRN-T020, JRN-T077 |
+| JRN-004 | Recorded lifecycle state | JRN-T001, JRN-T015, JRN-T023, JRN-T024, JRN-T089, JRN-T090, JRN-T091, JRN-T092, JRN-T099, JRN-T104, JRN-T105, JRN-T115, JRN-T116, JRN-T117, JRN-T125, JRN-T136, JRN-T137, JRN-T138, JRN-T140, JRN-T180, JRN-T181, JRN-T182 |
+| JRN-005 | Immutable posted Journal | JRN-T010, JRN-T017, JRN-T044, JRN-T048, JRN-T077, JRN-T172, JRN-T173, JRN-T174, JRN-T175, JRN-T176, JRN-T177, JRN-T178, JRN-T179, JRN-T181, JRN-T182, JRN-T183 |
+| JRN-006 | No direct posted-Journal mutation | JRN-T018, JRN-T019, JRN-T020, JRN-T077, JRN-T164, JRN-T179, JRN-T183 |
 | JRN-007 | Exact debit/credit balance | JRN-T025, JRN-T026, JRN-T045, JRN-T049, JRN-T062, JRN-T063, JRN-T067, JRN-T075, JRN-T095, JRN-T096, JRN-T097, JRN-T108, JRN-T119, JRN-T123, JRN-T128, JRN-T129, JRN-T132, JRN-T154, JRN-T155, JRN-T158, JRN-T159, JRN-T160 |
 | JRN-008 | No dual-direction line | JRN-T005, JRN-T006, JRN-T007, JRN-T008, JRN-T110, JRN-T111, JRN-T126, JRN-T130, JRN-T133, JRN-T146, JRN-T161 |
 | JRN-009 | No binary float | JRN-T012, JRN-T068, JRN-T127, JRN-T131, JRN-T147, JRN-T153, JRN-T157 |
 | JRN-010 | Single Account reference | JRN-T009, JRN-T013, JRN-T107, JRN-T122, JRN-T150 |
 | JRN-011 | Single Currency per Journal | JRN-T011, JRN-T094, JRN-T109, JRN-T124, JRN-T148 |
-| JRN-012 | Atomic posting | JRN-T030, JRN-T031, JRN-T083, JRN-T085 |
-| JRN-013 | No network call inside the posting transaction | JRN-T032 |
+| JRN-012 | Atomic posting | JRN-T030, JRN-T031, JRN-T083, JRN-T085, JRN-T168, JRN-T169, JRN-T170 |
+| JRN-013 | No network call inside the posting transaction | JRN-T032, JRN-T192 |
 | JRN-014 | Idempotent posting | JRN-T033, JRN-T034, JRN-T035, JRN-T036, JRN-T065, JRN-T074, JRN-T084 |
-| JRN-015 | Duplicate-effect prevention | JRN-T037, JRN-T038, JRN-T084 |
+| JRN-015 | Duplicate-effect prevention | JRN-T037, JRN-T038, JRN-T084, JRN-T185, JRN-T186 |
 | JRN-016 | Full pre-persistence validation | JRN-T027, JRN-T028, JRN-T029, JRN-T031 |
 | JRN-017 | Tenant ownership validated at posting | JRN-T027, JRN-T056, JRN-T057 |
 | JRN-018 | Reversal neutrality | JRN-T042, JRN-T043, JRN-T064, JRN-T072 |
@@ -371,6 +371,48 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 
 > **Note on minimum-two-lines/single-Currency/exact-balance at the schema level.** These remain aggregate/Posting-Engine invariants, not row-level `CHECK` constraints (a single row cannot express a fact about the whole Journal) — see the migration's own docblock. No test ID above claims schema-level enforcement of them; `Journal::create()`/`Journal::reconstitute()` remain the sole enforcement point, exactly as already established (`JRN-002`, `JRN-007`, `JRN-011`).
 
+**Journal Repository (M3-T10)** — `app/Infrastructure/Accounting/Journal/JournalRepository.php` now exists: the controlled write/read boundary onto the production `journals`/`journal_lines` schema above, using `JournalPersistenceAdapter` as its sole domain <-> persistence mapping. `JournalRepository` is a persistence primitive, not posting authority — it may persist a Journal whose domain state already arrives Posted (a future Posting Engine must be able to persist a fully-validated Posted Journal atomically with its own Audit/Outbox effects), but `save()` itself is not a Posting Command, grants no posting authorization, and enforces no idempotency (`JRN-014` remains entirely deferred to the future Posting Engine). Every ID below is proven against a real PostgreSQL instance, never SQLite, mirroring the precedent already established for `AccountRepository`/`AccountRepositoryIntegrationTest`.
+
+| ID | Test |
+| --- | --- |
+| JRN-T162 | `JournalRepository::save(Journal $journal): void` exists, exactly as declared — no additional or missing parameter. |
+| JRN-T163 | `JournalRepository::findById(TenantId $tenantId, JournalId $journalId): ?Journal` exists, exactly as declared. |
+| JRN-T164 | No `delete`/`remove`/`destroy`/`purge` method exists on `JournalRepository` — no hard-delete path for Journal history. |
+| JRN-T165 | *(Architecture)* Neither `save()` nor `findById()` ever returns a raw database row; `findById()` returns only a `Journal` or `null`. |
+| JRN-T166 | `findById()`'s header lookup is scoped by both `TenantId` and `JournalId` together — no public Journal lookup relies on `JournalId` alone. |
+| JRN-T167 | Against real PostgreSQL: `findById(Tenant A, JournalId belonging to Tenant B)` returns `null`; `findById(Tenant B, that same JournalId)` returns the Journal. |
+| JRN-T168 | Against real PostgreSQL: a new Journal's header insert and every Journal Line insert commit together inside one transaction. |
+| JRN-T169 | Against real PostgreSQL: a fault injected during the Journal Line insert (a Line referencing a nonexistent Account — a domain-valid but real, unavoidable failure, since `AccountId` is opaque to the Domain layer) rolls back the already-issued header insert too. |
+| JRN-T170 | Against real PostgreSQL: after the rolled-back `save()` in `JRN-T169`, zero `journals` rows and zero `journal_lines` rows exist for that `JournalId` — no partial Journal persistence remains. |
+| JRN-T171 | `TenantId` cannot change for an existing `JournalId`; `save()` rejects the attempt and the existing row is left unchanged. |
+| JRN-T172 | An existing Journal Line's `AccountId` cannot change via `save()`. |
+| JRN-T173 | An existing Journal Line's Money amount cannot change via `save()`. |
+| JRN-T174 | An existing Journal Line's Currency cannot change via `save()`. |
+| JRN-T175 | An existing Journal Line's Direction cannot change via `save()`. |
+| JRN-T176 | An existing Journal's Line order cannot change via `save()`. |
+| JRN-T177 | A Line cannot be silently added to an existing Journal via `save()`. |
+| JRN-T178 | A Line cannot be silently removed from an existing Journal via `save()`. |
+| JRN-T179 | Any rejected immutable-state `save()` attempt (a Posted -> Draft reversal, or a Draft content change) leaves the existing persisted header and every existing Journal Line row byte-for-byte unchanged, checked directly against real PostgreSQL after each rejection. |
+| JRN-T180 | An existing Draft Journal's valid Draft -> Posted transition persists successfully via `save()`. |
+| JRN-T181 | The exact Journal Line set (content and order) remains unchanged across a persisted Draft -> Posted transition. |
+| JRN-T182 | Persisting a Posted -> Draft transition is rejected by `save()`. |
+| JRN-T183 | An existing Posted Journal cannot be rewritten by any subsequent `save()` call — Posted is terminal at the repository, regardless of what the incoming data claims. |
+| JRN-T184 | The existing Journal's header row is locked (`SELECT ... FOR UPDATE`) inside `save()`'s transaction before its persisted state is compared against or updated. |
+| JRN-T185 | Against real PostgreSQL, using two genuinely independent connections: a concurrent conflicting `save()` blocks on the row lock held by an in-flight `save()`/comparison for the same Journal, then fails — never silently overwriting authoritative history. |
+| JRN-T186 | After the blocked/failed concurrent `save()` attempt in `JRN-T185`, the final persisted Journal (header and lines) remains exactly what it was before the conflict — coherent, never partially applied, and no duplicate Line row was created. |
+| JRN-T187 | Against real PostgreSQL: `findById()` restores the exact Journal Line order. |
+| JRN-T188 | Against real PostgreSQL: `findById()` restores a large, exact `BIGINT` Money amount with no precision loss. |
+| JRN-T189 | A row satisfying every database constraint but carrying a value one of the Value Objects' own validation rejects (e.g. an unsupported Currency identifier) still fails on read, propagated unmodified from `JournalPersistenceAdapter`/the Domain — never swallowed by the repository. |
+| JRN-T190 | *(Architecture)* `JournalPersistenceAdapter` remains the sole domain <-> persistence mapping boundary — `JournalRepository` never assembles a `Journal` or a persisted row shape independently of it. |
+| JRN-T191 | *(Architecture)* `JournalRepository` contains no Posting Engine, idempotency, Audit Event, Actor/Source/Evidence, or Outbox behavior — a pure persistence boundary, proven by the absence of any such dependency in its source. |
+| JRN-T192 | *(Architecture)* `JournalRepository::save()`'s transaction body performs no network call or queue publication — proven by the absence of any HTTP/queue/mail/notification dependency in its source, mirroring `JRN-T032`'s existing technique one layer down. |
+
+> **Note on `JRN-T172`–`JRN-T179` and `JRN-005`.** `JRN-005`'s literal text ("Once a Journal is Posted...") scopes immutability to a *Posted* Journal. `JournalRepository` enforces the same no-silent-change guarantee for an existing *Draft* row's Lines too, because the current Journal domain exposes no line-mutation API at all for either state (§9) — persistence must not invent one regardless of lifecycle state. This is a repository-level guarantee stricter than `JRN-005`'s minimum, not a contradiction of it; no new `JRN-NNN` invariant was created for it, since `JRN-005` remains the closest existing statement of intent and AETS-004 §9 already establishes that no line-mutation path exists at any state.
+>
+> **Note on `JRN-T185`–`JRN-T186` and `JRN-015`.** `JRN-015` ("duplicate-effect prevention") is, at the Posting Command level, an idempotency-key-based guarantee (`JRN-014`) this repository deliberately does not implement (idempotency remains entirely deferred to the future Posting Engine, per this task's explicit scope). What `JournalRepository`'s row-level locking does prove is a structural precondition duplicate-effect prevention depends on: two concurrent writers can never both silently apply conflicting or duplicate changes to the same Journal at the storage layer. This is a partial, repository-level contribution to `JRN-015`'s overall guarantee, not a claim of full duplicate-effect prevention — that claim still requires the Posting Engine's Idempotency Key mechanism.
+>
+> **Note on the Posting Engine boundary.** No test above treats `save()` itself as a valid Posting Command or as granting posting authorization. A Journal already Posted in memory (constructible today only through `Journal::create(...)->post()`, a real domain operation) may be persisted by `save()` on its first write — this is `JournalRepository` faithfully persisting already-decided domain state, not `JournalRepository` deciding to post anything. No test claims otherwise, and no repository rule restricts insertion to Draft-only Journals, per this task's explicit instruction.
+
 ## 22. Performance Expectations
 
 This section states expected behaviors only. It does not define benchmarks, latency targets, or throughput numbers — those belong to a later performance/SLO specification, not this ATS.
@@ -394,6 +436,7 @@ This section states expected behaviors only. It does not define benchmarks, late
 
 ## 24. Changelog
 
+- **1.5.0 (2026-09-04):** Added `JRN-T162`–`JRN-T192` (§21, new "Journal Repository" subsection) — the repository-level traceability gap identified and explicitly reported while implementing and reviewing `JournalRepository` (M3-T10): public contract shape (no delete, no raw-row leakage), tenant-scoped lookup, atomic header-plus-lines persistence (including real fault-injected rollback), immutable persisted-Journal protection (TenantId, and every Journal Line field/order/addition/removal, on an existing row of either lifecycle state), the sole Draft -> Posted persisted lifecycle transition (and rejection of every other transition), row-lock-based concurrency (two independent real PostgreSQL connections), exact read-path round-trip (line order, `BIGINT` amount), malformed-state read rejection, and architecture-level absence of any Posting Engine/idempotency/Audit/Outbox/network dependency. Mapped into the existing traceability matrix (§5) under `JRN-001`, `JRN-004`, `JRN-005`, `JRN-006`, `JRN-012`, `JRN-013`, and `JRN-015` — no new `JRN-NNN` invariant was created; two inline notes document where the repository's guarantee is deliberately broader than (`JRN-005`, for Draft-row Line immutability) or only a partial contribution to (`JRN-015`, absent the Posting Engine's Idempotency Key) the invariant it is mapped under. A third inline note reaffirms `JournalRepository` is a persistence primitive, not posting authority — `save()` may persist an already-Posted Journal faithfully, but is never itself a Posting Command. No existing test ID (`JRN-T001`–`JRN-T161`) was renumbered, altered, or removed.
 - **1.4.0 (2026-09-04):** Added `JRN-T158`–`JRN-T161` (§21, "Production schema" subsection) — the non-negative-magnitude schema gap identified while hardening `journal_lines.amount` (M3-T9): `CHECK (amount >= 0)` added to the production schema, mirroring the non-negative-only guarantee `Money`/`MinorUnits` already enforce at construction (AETS-003 §9). Zero remains permitted (AETS-004 does not prohibit it, and no minimum monetary value is invented); a positive `BIGINT` magnitude remains accepted; a negative `amount` is now rejected by the database itself; and Direction remains the sole Debit/Credit polarity representation the database permits — no second, sign-encoded representation via `amount` exists. Mapped into the existing traceability matrix (§5) under `JRN-007` and `JRN-008` — no new `JRN-NNN` invariant was needed. No existing test ID (`JRN-T001`–`JRN-T157`) was renumbered, altered, or removed.
 - **1.3.0 (2026-09-04):** Added `JRN-T134`–`JRN-T157` (§21, new "Production schema" subsection) — the production-schema traceability gap identified while implementing `database/migrations/..._create_journals_and_journal_lines_tables.php` (M3-T9): the real `journals`/`journal_lines` tables now enforce, at the database level itself, `journal_id` uniqueness, Draft/Posted state acceptance and a `CHECK`-constrained rejection of any other value, `tenant_id`/`state`/`amount`/`currency` `NOT NULL`, `(journal_id, line_position)` as the primary key (rejecting a duplicate position within one Journal while permitting the same position across different Journals, and rejecting a negative position via `CHECK`), a `CHECK`-constrained Direction, the composite foreign keys `(tenant_id, journal_id) -> journals` and `(tenant_id, account_id) -> accounts` (the latter pair together enforcing that a Journal Line's Account can never belong to a different Tenant than its own Journal, mirroring the same technique already established for Account's own same-Tenant parent integrity, M2-T8.1), exact `BIGINT` precision, absence of any signed-amount or balance-total column, multi-line acceptance, and migration reversibility — every one of the above proven against a real PostgreSQL instance, never SQLite. Mapped into the existing traceability matrix (§5) under `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-007`, `JRN-008`, `JRN-009`, `JRN-010`, and `JRN-011` — no new `JRN-NNN` invariant was needed; every new ID is a database-level, defense-in-depth mirror of a rule an existing invariant already states. Minimum-two-lines, single-Currency, and exact-balance remain explicitly *not* claimed as schema-enforced (documented inline, §21) — they are aggregate-level facts a single row cannot express, and remain `Journal::create()`/`Journal::reconstitute()`'s sole responsibility. No existing test ID (`JRN-T001`–`JRN-T133`) was renumbered, altered, or removed.
 - **1.2.0 (2026-09-04):** Added `JRN-T101`–`JRN-T133` (§7, new "Persistence Adapter" subsection, plus three integration IDs appended to §21) — the persistence-adapter traceability gap identified while implementing `JournalPersistenceAdapter` (M3-T8): Journal header (TenantId/JournalId/state) and Journal Line (AccountId/Money amount/Currency/Direction) mapping and exact round-trip, explicit `line_position` as the adapter-confined stand-in for order (`JournalLine` has no identifier of its own, and none is invented here), line order restored correctly even from out-of-order rows, multi-line round-trip, Draft/Posted reconstruction via `Journal::reconstitute()` (never `create(...)->post()`), rejection of insufficient lines, unbalanced Lines (including a row falsely claiming Posted), and every malformed/unsupported persisted value (TenantId, JournalId, AccountId, Money amount, Currency, Journal state, Direction); absence of any native float, signed-amount field, or balance-total field in either persisted shape; Direction persisted independently from Money; and real-PostgreSQL proof of the full round trip, exact `BIGINT` precision, and state/direction fidelity. Mapped into the existing traceability matrix (§5) under `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-007`, `JRN-008`, `JRN-009`, `JRN-010`, and `JRN-011` — no new `JRN-NNN` invariant was needed; every new ID is a persistence-layer mirror of an already-settled domain guarantee. A genuinely mixed-Currency adapter integration test remains deferred, documented inline (§7), since `Currency` currently supports only `MYR` and no second Currency is invented here to force the scenario. No existing test ID (`JRN-T001`–`JRN-T100`) was renumbered, altered, or removed.
