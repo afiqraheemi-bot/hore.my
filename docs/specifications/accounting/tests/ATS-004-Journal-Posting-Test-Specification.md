@@ -1,7 +1,7 @@
 # ATS-004: Journal & Posting Test Specification
 
 - Status: Active
-- Version: 1.1.0
+- Version: 1.2.0
 - Effective date: 2026-09-04
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -11,7 +11,7 @@
 
 This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-004: Journal & Posting Model](../AETS-004-Journal-Posting-Model.md). It exists so that Journal/Posting implementation work has a precise, testable, traceable target before any code is written — exactly the coverage AETS-004 §25 said a future Journal & Posting ATS must provide.
 
-Every test defined here is identified by a stable ID (`JRN-T001`–`JRN-T100`) and traced to the `JRN-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
+Every test defined here is identified by a stable ID (`JRN-T001`–`JRN-T133`) and traced to the `JRN-NNN` invariant(s) it proves (§5). This document does not implement any test; it specifies what must be proven, at what level, and with what data, so that an implementer or an automated agent can build the actual test suite against it.
 
 ## 2. Scope
 
@@ -64,17 +64,17 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 
 | Invariant | Summary | Test IDs |
 | --- | --- | --- |
-| JRN-001 | Tenant ownership | JRN-T016, JRN-T056, JRN-T057, JRN-T058, JRN-T076, JRN-T086 |
-| JRN-002 | At least two lines | JRN-T002, JRN-T003, JRN-T004, JRN-T088, JRN-T093, JRN-T100 |
-| JRN-003 | Stable opaque identifier | JRN-T014, JRN-T087, JRN-T098 |
-| JRN-004 | Recorded lifecycle state | JRN-T001, JRN-T015, JRN-T023, JRN-T024, JRN-T089, JRN-T090, JRN-T091, JRN-T092, JRN-T099 |
+| JRN-001 | Tenant ownership | JRN-T016, JRN-T056, JRN-T057, JRN-T058, JRN-T076, JRN-T086, JRN-T101, JRN-T102, JRN-T120 |
+| JRN-002 | At least two lines | JRN-T002, JRN-T003, JRN-T004, JRN-T088, JRN-T093, JRN-T100, JRN-T106, JRN-T112, JRN-T113, JRN-T114, JRN-T118 |
+| JRN-003 | Stable opaque identifier | JRN-T014, JRN-T087, JRN-T098, JRN-T103, JRN-T121 |
+| JRN-004 | Recorded lifecycle state | JRN-T001, JRN-T015, JRN-T023, JRN-T024, JRN-T089, JRN-T090, JRN-T091, JRN-T092, JRN-T099, JRN-T104, JRN-T105, JRN-T115, JRN-T116, JRN-T117, JRN-T125 |
 | JRN-005 | Immutable posted Journal | JRN-T010, JRN-T017, JRN-T044, JRN-T048, JRN-T077 |
 | JRN-006 | No direct posted-Journal mutation | JRN-T018, JRN-T019, JRN-T020, JRN-T077 |
-| JRN-007 | Exact debit/credit balance | JRN-T025, JRN-T026, JRN-T045, JRN-T049, JRN-T062, JRN-T063, JRN-T067, JRN-T075, JRN-T095, JRN-T096, JRN-T097 |
-| JRN-008 | No dual-direction line | JRN-T005, JRN-T006, JRN-T007, JRN-T008 |
-| JRN-009 | No binary float | JRN-T012, JRN-T068 |
-| JRN-010 | Single Account reference | JRN-T009, JRN-T013 |
-| JRN-011 | Single Currency per Journal | JRN-T011, JRN-T094 |
+| JRN-007 | Exact debit/credit balance | JRN-T025, JRN-T026, JRN-T045, JRN-T049, JRN-T062, JRN-T063, JRN-T067, JRN-T075, JRN-T095, JRN-T096, JRN-T097, JRN-T108, JRN-T119, JRN-T123, JRN-T128, JRN-T129, JRN-T132 |
+| JRN-008 | No dual-direction line | JRN-T005, JRN-T006, JRN-T007, JRN-T008, JRN-T110, JRN-T111, JRN-T126, JRN-T130, JRN-T133 |
+| JRN-009 | No binary float | JRN-T012, JRN-T068, JRN-T127, JRN-T131 |
+| JRN-010 | Single Account reference | JRN-T009, JRN-T013, JRN-T107, JRN-T122 |
+| JRN-011 | Single Currency per Journal | JRN-T011, JRN-T094, JRN-T109, JRN-T124 |
 | JRN-012 | Atomic posting | JRN-T030, JRN-T031, JRN-T083, JRN-T085 |
 | JRN-013 | No network call inside the posting transaction | JRN-T032 |
 | JRN-014 | Idempotent posting | JRN-T033, JRN-T034, JRN-T035, JRN-T036, JRN-T065, JRN-T074, JRN-T084 |
@@ -138,6 +138,43 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 | JRN-T098 | Identity equality remains based on JournalId regardless of which factory produced a Journal — a `create()`d Journal and a `reconstitute()`d Journal sharing the same identifier are equal. |
 | JRN-T099 | `reconstitute()` introduces no posting, Audit Event, Outbox, or idempotency-key side effect of any kind — it performs no I/O. |
 | JRN-T100 | Journal Line order is preserved exactly through `reconstitute()` — order is part of what "exact" restoration means, not merely count and content. |
+
+**Persistence Adapter** — `JournalPersistenceAdapter` (M3-T8) maps a Journal (header + Lines) to and from a persistence-safe representation. Since `JournalLine` carries no identifier of its own, each persisted line row carries an explicit `line_position` standing in for order at the adapter level only — the production schema's own line-identity/order decision remains deferred. The read path never trusts persisted data: it reconstructs every value through its own Value Object's validated factory and completes reconstruction through `Journal::reconstitute()`, never `create(...)->post()`:
+
+| ID | Test |
+| --- | --- |
+| JRN-T101 | A Journal maps to its persisted header representation (`tenant_id`, `journal_id`, `state`). |
+| JRN-T102 | TenantId round-trips exactly through the persisted header. |
+| JRN-T103 | JournalId round-trips exactly through the persisted header. |
+| JRN-T104 | Draft state round-trips exactly through the persisted header. |
+| JRN-T105 | Posted state round-trips exactly through the persisted header. |
+| JRN-T106 | A Journal's Lines map to persisted line rows, one row per Line. |
+| JRN-T107 | AccountId round-trips exactly through a persisted line. |
+| JRN-T108 | Money's exact minor-units amount round-trips through a persisted line. |
+| JRN-T109 | Currency round-trips exactly through a persisted line. |
+| JRN-T110 | Debit direction round-trips exactly through a persisted line. |
+| JRN-T111 | Credit direction round-trips exactly through a persisted line. |
+| JRN-T112 | Each persisted line row carries an explicit `line_position` reflecting the Line's original position. |
+| JRN-T113 | Line order is restored from `line_position` exactly, even when persisted rows are supplied out of order. |
+| JRN-T114 | A multi-line Journal round-trips exactly, preserving every Line. |
+| JRN-T115 | A persisted Draft Journal reconstructs as Draft. |
+| JRN-T116 | A persisted Posted Journal reconstructs as Posted. |
+| JRN-T117 | Reconstructing a Posted Journal uses `Journal::reconstitute()`, never `Journal::post()` — no re-posting side effect, and no "already posted" failure. |
+| JRN-T118 | A persisted Journal with fewer than two Lines is rejected on reconstruction. |
+| JRN-T119 | A persisted Journal whose Lines do not balance exactly is rejected on reconstruction, even when the row claims to already be Posted. |
+| JRN-T120 | A malformed persisted TenantId is rejected, via TenantId's own existing validation. |
+| JRN-T121 | A malformed persisted JournalId is rejected, via JournalId's own existing validation. |
+| JRN-T122 | A malformed persisted AccountId is rejected, via AccountId's own existing validation. |
+| JRN-T123 | A malformed persisted Money amount is rejected, via MinorUnits' own existing validation. |
+| JRN-T124 | A malformed persisted Currency is rejected, via Currency's own existing validation. |
+| JRN-T125 | An unsupported persisted Journal state is rejected. |
+| JRN-T126 | An unsupported persisted Journal Line direction is rejected. |
+| JRN-T127 | The persisted representation, header and lines alike, carries no native binary float anywhere. |
+| JRN-T128 | No persisted line carries a signed-amount field — Direction alone carries the accounting sign; Money remains a non-negative magnitude. |
+| JRN-T129 | No persisted representation, header or lines, carries a debit-total, credit-total, or other authoritative balance-total field. |
+| JRN-T130 | Direction is persisted as a field independent from Money's amount and Currency — never inferred from, or embedded in, the Money value. |
+
+> **Note on mixed-Currency adapter coverage.** `Currency`'s registry currently supports only `MYR` (M1-T2), so a genuinely mixed-Currency persisted line pair — two lines each carrying a *different*, both-otherwise-valid Currency — cannot be expressed through this adapter's string-based read path today; any second identifier is rejected as malformed (`JRN-T124`) before a mismatch could even be compared. The single-Currency invariant itself (`JRN-011`) remains enforced by `Journal::reconstitute()` regardless. A genuine cross-currency adapter integration test is deferred until a second Currency becomes an approved supported domain currency — this is not invented here merely to exercise the adapter.
 
 ## 8. Aggregate Tests
 
@@ -295,6 +332,9 @@ Every `JRN-NNN` invariant from [AETS-004 §22](../AETS-004-Journal-Posting-Model
 | JRN-T083 | A fault injected mid-transaction against a real PostgreSQL instance causes a real, verifiable rollback — confirmed by querying the database directly afterward for zero resulting rows. |
 | JRN-T084 | Two concurrent Posting Commands with the same Idempotency Key, executed against a real PostgreSQL instance under genuine concurrent connections, produce exactly one committed Journal. |
 | JRN-T085 | The outbox event associated with a committed Journal is durably present in the same real-database transaction as the Journal itself, verified by querying the outbox table immediately after commit, before any dispatcher runs. |
+| JRN-T131 | The Journal persistence adapter's shape (header and lines) round-trips through a real PostgreSQL instance, not SQLite. |
+| JRN-T132 | A large, exact `BIGINT` Money amount round-trips through real PostgreSQL with no precision loss. |
+| JRN-T133 | Journal state and Journal Line direction each survive a real PostgreSQL round-trip exactly. |
 
 ## 22. Performance Expectations
 
@@ -319,5 +359,6 @@ This section states expected behaviors only. It does not define benchmarks, late
 
 ## 24. Changelog
 
+- **1.2.0 (2026-09-04):** Added `JRN-T101`–`JRN-T133` (§7, new "Persistence Adapter" subsection, plus three integration IDs appended to §21) — the persistence-adapter traceability gap identified while implementing `JournalPersistenceAdapter` (M3-T8): Journal header (TenantId/JournalId/state) and Journal Line (AccountId/Money amount/Currency/Direction) mapping and exact round-trip, explicit `line_position` as the adapter-confined stand-in for order (`JournalLine` has no identifier of its own, and none is invented here), line order restored correctly even from out-of-order rows, multi-line round-trip, Draft/Posted reconstruction via `Journal::reconstitute()` (never `create(...)->post()`), rejection of insufficient lines, unbalanced Lines (including a row falsely claiming Posted), and every malformed/unsupported persisted value (TenantId, JournalId, AccountId, Money amount, Currency, Journal state, Direction); absence of any native float, signed-amount field, or balance-total field in either persisted shape; Direction persisted independently from Money; and real-PostgreSQL proof of the full round trip, exact `BIGINT` precision, and state/direction fidelity. Mapped into the existing traceability matrix (§5) under `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-007`, `JRN-008`, `JRN-009`, `JRN-010`, and `JRN-011` — no new `JRN-NNN` invariant was needed; every new ID is a persistence-layer mirror of an already-settled domain guarantee. A genuinely mixed-Currency adapter integration test remains deferred, documented inline (§7), since `Currency` currently supports only `MYR` and no second Currency is invented here to force the scenario. No existing test ID (`JRN-T001`–`JRN-T100`) was renumbered, altered, or removed.
 - **1.1.0 (2026-09-04):** Added `JRN-T086`–`JRN-T100` (§7, new "Reconstitution" subsection) — the reconstitution traceability gap identified while implementing `Journal::reconstitute()` (M3-T7): exact TenantId/JournalId/Journal-Line-list/line-order restoration; Draft and Posted state each restorable exactly; reconstituting a Posted Journal never calls `post()` and never throws the "already posted" failure `post()` itself raises; the minimum-two-lines, single-Currency, and exact-balance requirements all still enforced on reconstitution, including when the supplied state claims Posted; identity equality unaffected; and no posting/Audit/Outbox/idempotency side effect of any kind. Mapped into the existing traceability matrix (§5) under `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-007`, and `JRN-011` — no new `JRN-NNN` invariant was needed; reconstitution re-uses the same financial invariants `create()` already proves, restoring only the lifecycle state as an additional supplied fact. No existing test ID (`JRN-T001`–`JRN-T085`) was renumbered, altered, or removed.
 - **1.0.0 (2026-09-04):** Initial creation. Reviewed and marked `Active`. `JRN-002`'s minimum-line-count requirement (at least two Journal Lines) is confirmed final for the current specification baseline; the drafting-stage note flagging it for Founder confirmation is resolved and removed from both this document and [AETS-004](../AETS-004-Journal-Posting-Model.md). No test ID was added, removed, or renumbered.
