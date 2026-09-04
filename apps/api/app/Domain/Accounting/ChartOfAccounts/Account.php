@@ -25,9 +25,20 @@ use App\Domain\Shared\Tenancy\TenantId;
  * step; there is no other public API that mutates the parent
  * reference. See M2-T5.2's report.
  *
+ * This revision (M2-T5.3) also adds {@see reconstitute()}: the
+ * domain-owned counterpart to {@see create()} a future persistence
+ * adapter uses to load an already-existing Account, rather than
+ * replaying `create()` → `deactivate()` → `withParent()` transitions
+ * to arrive back at previously-persisted state. It restores
+ * Active/Inactive state, posting-eligibility, and an optional
+ * `parentId` exactly, but performs no hierarchy validation of its own
+ * — see {@see reconstitute()}'s own docblock for why that is correct,
+ * not a weakening of {@see AccountHierarchyPolicy}.
+ *
  * The System-vs-User-Created distinction (§15, §16),
  * `activate()`/`rename()`/code or type changes, and persistence remain
- * deliberately unimplemented — see M2-T5.1B's and M2-T5.2's reports.
+ * deliberately unimplemented — see M2-T5.1B's, M2-T5.2's, and
+ * M2-T5.3's reports.
  *
  * Equality is identity-based (same {@see AccountId}), not value-based:
  * an Account is an entity with a stable identity Journal Line
@@ -114,6 +125,72 @@ final class Account
             true,
             $isPostingEligible,
             null,
+        );
+    }
+
+    /**
+     * Reconstruct an Account from previously-persisted state (M2-T5.3)
+     * — the domain-owned counterpart to {@see create()} a future
+     * persistence adapter uses to load an *existing* Account, instead
+     * of forcing it to replay `create()` → `deactivate()` →
+     * `withParent()` transitions to arrive back at the same state.
+     * `create()`'s own semantics are unchanged: it remains the only
+     * path to a genuinely *new* Account, always Active, always
+     * parentless.
+     *
+     * Like `create()`, Normal Balance is never a parameter — it is
+     * always the single canonical value {@see AccountType::normalBalance()}
+     * derives from `$type`, so reconstruction can no more produce an
+     * inconsistent Account Type/Normal Balance pairing than `create()`
+     * can (AETS-005 §11, `COA-005`).
+     *
+     * Every other field this method accepts is restored exactly as
+     * given — Active/Inactive state, the configured posting-eligibility
+     * flag, and the optional parent identifier — with no further
+     * validation, since this method's whole premise is that the
+     * supplied state was already validated once, at the point it was
+     * originally written (by `create()`/`withParent()`/`deactivate()`'s
+     * own checks), not that it is being decided now.
+     *
+     * **Hierarchy note — read carefully.** Restoring `$parentId` here
+     * is not, and cannot be, proof that the wider hierarchy graph is
+     * still cycle-free: unlike {@see withParent()}, this method takes
+     * no `$knownAccounts` and performs no self-parenting, same-Tenant,
+     * or cycle check at all — {@see AccountHierarchyPolicy} is
+     * deliberately not consulted here, and none of that validation is
+     * weakened or reproduced by this method. That is by design, not an
+     * oversight: proving graph-wide cycle-freedom on every single
+     * reconstruction would require loading the entire hierarchy on
+     * every read, which this domain-only method must not require and
+     * has no way to do. Full hierarchy integrity for the reconstructed
+     * graph remains the responsibility of whatever repository or
+     * orchestration layer reconstructs a whole set of Accounts (a
+     * concern this task deliberately does not implement). This method
+     * is therefore never a substitute for {@see withParent()} as a
+     * business operation — it MUST NOT be used to assign or change a
+     * parent as a decision; it only replays an already-decided,
+     * already-persisted fact.
+     */
+    public static function reconstitute(
+        TenantId $tenantId,
+        AccountId $id,
+        AccountCode $code,
+        AccountName $name,
+        AccountType $type,
+        bool $active,
+        bool $isPostingEligible,
+        ?AccountId $parentId,
+    ): self {
+        return new self(
+            $tenantId,
+            $id,
+            $code,
+            $name,
+            $type,
+            $type->normalBalance(),
+            $active,
+            $isPostingEligible,
+            $parentId,
         );
     }
 

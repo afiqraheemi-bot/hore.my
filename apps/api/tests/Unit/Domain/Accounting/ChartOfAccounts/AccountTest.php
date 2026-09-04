@@ -221,6 +221,181 @@ final class AccountTest extends TestCase
         $this->assertTrue($account->isActive());
     }
 
+    /**
+     * `create()`'s own semantics are unchanged by `reconstitute()`'s
+     * existence: a genuinely new Account still always starts Active
+     * and parentless.
+     */
+    public function test_create_still_always_produces_an_active_parentless_account(): void
+    {
+        $account = $this->createAccount();
+
+        $this->assertTrue($account->isActive());
+        $this->assertNull($account->parentId());
+    }
+
+    /**
+     * Reconstitution of a previously-persisted Active Account restores
+     * every field exactly: Tenant, identifier, Code, Name, Type, and
+     * the Active state itself.
+     */
+    public function test_reconstitute_restores_an_active_account(): void
+    {
+        $tenantId = $this->validTenantId();
+        $id = $this->validId();
+        $code = $this->validCode();
+        $name = $this->validName();
+
+        $account = Account::reconstitute($tenantId, $id, $code, $name, AccountType::Asset, true, true, null);
+
+        $this->assertTrue($tenantId->equals($account->tenantId()));
+        $this->assertTrue($id->equals($account->id()));
+        $this->assertTrue($code->equals($account->code()));
+        $this->assertTrue($name->equals($account->name()));
+        $this->assertSame(AccountType::Asset, $account->type());
+        $this->assertTrue($account->isActive());
+    }
+
+    /**
+     * Reconstitution of a previously-persisted Inactive Account
+     * restores the Inactive state exactly — proving `reconstitute()`
+     * does not force every Account back to Active the way `create()`
+     * does.
+     */
+    public function test_reconstitute_restores_an_inactive_account(): void
+    {
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, false, true, null);
+
+        $this->assertFalse($account->isActive());
+    }
+
+    /**
+     * Reconstitution with a persisted parentId restores it exactly.
+     */
+    public function test_reconstitute_restores_a_parent_id(): void
+    {
+        $parentId = AccountId::of('account-parent');
+
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, $parentId);
+
+        $this->assertNotNull($account->parentId());
+        $this->assertTrue($parentId->equals($account->parentId()));
+    }
+
+    /**
+     * Reconstitution without a persisted parentId restores no parent —
+     * hierarchy remains optional through this path too.
+     */
+    public function test_reconstitute_without_a_parent_id_restores_no_parent(): void
+    {
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, null);
+
+        $this->assertNull($account->parentId());
+    }
+
+    /**
+     * COA-005: Normal Balance is derived exactly the same way through
+     * `reconstitute()` as through `create()` — across every Account
+     * Type — never restored as an independently persisted value.
+     */
+    public function test_reconstitute_derives_normal_balance_from_type(): void
+    {
+        foreach (AccountType::cases() as $type) {
+            $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), $type, true, true, null);
+
+            $this->assertSame($type->normalBalance(), $account->normalBalance());
+        }
+    }
+
+    /**
+     * The caller cannot supply Normal Balance to `reconstitute()` —
+     * proven structurally, since the method declares no Normal Balance
+     * parameter at all, exactly like `create()`.
+     */
+    public function test_reconstitute_has_no_caller_suppliable_normal_balance(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+        $method = $reflection->getMethod('reconstitute');
+
+        $parameterTypes = array_map(
+            static fn (\ReflectionParameter $parameter): ?string => $parameter->getType() instanceof \ReflectionNamedType
+                ? $parameter->getType()->getName()
+                : null,
+            $method->getParameters(),
+        );
+
+        $this->assertNotContains(NormalBalance::class, $parameterTypes);
+    }
+
+    /**
+     * Reconstitution preserves the configured posting-eligibility flag
+     * exactly, and the effective `isPostingAllowed()` answer still
+     * combines it with Active state — `active && postingEligible` —
+     * exactly as it does for an Account built via `create()`.
+     */
+    public function test_reconstitute_preserves_posting_eligibility_and_effective_posting_allowed(): void
+    {
+        $activeEligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, null);
+        $activeIneligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, false, null);
+        $inactiveEligible = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, false, true, null);
+
+        $this->assertTrue($activeEligible->isPostingAllowed());
+        $this->assertFalse($activeIneligible->isPostingAllowed());
+        $this->assertFalse($inactiveEligible->isPostingAllowed());
+    }
+
+    /**
+     * Identity equality is unaffected by which factory produced an
+     * Account: a `create()`d Account and a `reconstitute()`d Account
+     * sharing the same identifier are equal.
+     */
+    public function test_reconstitute_identity_equality_matches_create(): void
+    {
+        $id = $this->validId();
+
+        $created = $this->createAccount(id: $id);
+        $reconstituted = Account::reconstitute($this->validTenantId(), $id, AccountCode::of('9999'), AccountName::of('Different Name'), AccountType::Liability, false, false, null);
+
+        $this->assertTrue($created->equals($reconstituted));
+    }
+
+    /**
+     * `reconstitute()` performs no hierarchy validation of its own —
+     * it never calls {@see AccountHierarchyPolicy} and accepts no
+     * `$knownAccounts`, since restoring a persisted `parentId` is not a
+     * business decision, only a replay of one already made. This is
+     * proven structurally: the method has exactly eight parameters and
+     * none of them is a `$knownAccounts`-shaped array.
+     */
+    public function test_reconstitute_has_no_knownaccounts_parameter(): void
+    {
+        $reflection = new ReflectionClass(Account::class);
+        $method = $reflection->getMethod('reconstitute');
+
+        $this->assertCount(8, $method->getParameters());
+
+        $parameterNames = array_map(
+            static fn (\ReflectionParameter $parameter): string => $parameter->getName(),
+            $method->getParameters(),
+        );
+        $this->assertNotContains('knownAccounts', $parameterNames);
+    }
+
+    /**
+     * `withParent()`'s own hierarchy validation is completely
+     * unaffected by `reconstitute()`'s existence: it still requires
+     * `$knownAccounts` and still rejects self-parenting exactly as
+     * before.
+     */
+    public function test_with_parent_validation_is_unchanged_by_reconstitute(): void
+    {
+        $account = Account::reconstitute($this->validTenantId(), $this->validId(), $this->validCode(), $this->validName(), AccountType::Asset, true, true, null);
+
+        $this->expectException(InvalidAccountHierarchyException::class);
+
+        $account->withParent($account, [$account]);
+    }
+
     public function test_posting_eligible_true_is_honored(): void
     {
         $account = $this->createAccount(isPostingEligible: true);
@@ -317,7 +492,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            ['create', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'parentId', 'deactivate', 'withParent', 'equals'],
+            ['create', 'reconstitute', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'parentId', 'deactivate', 'withParent', 'equals'],
             $publicMethodNames,
         );
 
