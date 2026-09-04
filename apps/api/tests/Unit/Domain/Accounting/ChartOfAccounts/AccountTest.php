@@ -422,6 +422,27 @@ final class AccountTest extends TestCase
     }
 
     /**
+     * `isPostingEligible()` reports the configured value independent
+     * of Active state — unlike `isPostingAllowed()`, deactivating an
+     * Account does not change what `isPostingEligible()` reports (M2-T6:
+     * this is exactly the distinct fact a persistence adapter needs to
+     * round-trip an Account exactly).
+     */
+    public function test_is_posting_eligible_reports_configuration_independent_of_active_state(): void
+    {
+        $eligible = $this->createAccount(isPostingEligible: true);
+        $ineligible = $this->createAccount(isPostingEligible: false);
+
+        $this->assertTrue($eligible->isPostingEligible());
+        $this->assertFalse($ineligible->isPostingEligible());
+
+        $deactivatedEligible = $eligible->deactivate();
+
+        $this->assertTrue($deactivatedEligible->isPostingEligible());
+        $this->assertFalse($deactivatedEligible->isPostingAllowed());
+    }
+
+    /**
      * `deactivate()` returns a new Account instance, distinct from the
      * original — and the original is left untouched.
      */
@@ -492,7 +513,7 @@ final class AccountTest extends TestCase
         );
 
         $this->assertSame(
-            ['create', 'reconstitute', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'parentId', 'deactivate', 'withParent', 'equals'],
+            ['create', 'reconstitute', 'tenantId', 'id', 'code', 'name', 'type', 'normalBalance', 'isActive', 'isPostingAllowed', 'isPostingEligible', 'parentId', 'deactivate', 'withParent', 'equals'],
             $publicMethodNames,
         );
 

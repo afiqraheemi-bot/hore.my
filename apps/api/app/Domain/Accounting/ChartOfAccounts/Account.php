@@ -243,6 +243,27 @@ final class Account
     }
 
     /**
+     * The posting-eligibility state as configured (§13) — independent
+     * of Active state, unlike {@see isPostingAllowed()}, which
+     * combines the two into the single effective answer a Posting
+     * Command would check. An Inactive Account still reports its
+     * originally-configured value here, even though
+     * `isPostingAllowed()` always answers `false` for any Inactive
+     * Account regardless of it.
+     *
+     * Added in M2-T6 as a genuine gap fix: a persistence adapter needs
+     * this distinct value to round-trip an Account exactly —
+     * `isPostingAllowed()`'s combined answer alone cannot be inverted
+     * back to the original configuration once Active is `false`, since
+     * `active && postingEligible` is `false` whether `postingEligible`
+     * was `true` or `false` in that case.
+     */
+    public function isPostingEligible(): bool
+    {
+        return $this->postingEligible;
+    }
+
+    /**
      * This Account's parent, by identifier only — `null` if it has
      * none. Hierarchy is optional (§12); a freshly {@see create()}d
      * Account always starts with no parent.
