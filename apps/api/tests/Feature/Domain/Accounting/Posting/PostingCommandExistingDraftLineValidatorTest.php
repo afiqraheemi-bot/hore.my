@@ -418,6 +418,13 @@ final class PostingCommandExistingDraftLineValidatorTest extends TestCase
             return;
         }
 
+        // `posting_idempotency_keys` (M4-T15) holds a composite foreign
+        // key on (tenant_id, journal_id) referencing this table, so it
+        // must be dropped first or PostgreSQL refuses to drop `journals`.
+        // It is not this test's concern and is intentionally not
+        // recreated here.
+        Schema::connection('pgsql')->dropIfExists('posting_idempotency_keys');
+
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {

@@ -475,6 +475,13 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         // migration is not the latest batch. Dropping the tables
         // directly and clearing their tracking rows is unambiguous
         // regardless of batch history.
+        // `posting_idempotency_keys` (M4-T15) holds a composite foreign
+        // key on (tenant_id, journal_id) referencing this table, so it
+        // must be dropped first or PostgreSQL refuses to drop `journals`.
+        // It is not this test's concern and is intentionally not
+        // recreated here.
+        Schema::connection('pgsql')->dropIfExists('posting_idempotency_keys');
+
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
 
         // journal_lines' composite foreign key depends on accounts
