@@ -7,8 +7,10 @@ namespace App\Infrastructure\Accounting\Journal;
 use App\Domain\Accounting\Journal\Journal;
 use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Infrastructure\Accounting\Journal\Exception\DuplicateJournalIdentityException;
 use App\Infrastructure\Accounting\Journal\Exception\ImmutableJournalStateException;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 
 /**
  * Persists and retrieves the Journal aggregate — header and Journal
@@ -32,6 +34,19 @@ use Illuminate\Database\ConnectionInterface;
  * No idempotency, Audit Event, Outbox, Actor/Source/Evidence, or
  * Posting Engine concern is implemented here — those belong to a
  * future task; this repository is a pure persistence boundary.
+ *
+ * **Concurrency on a brand-new identity (M4-T18B).** {@see save()}'s
+ * own existence check and lock apply only to a JournalId that is
+ * already persisted — two genuinely concurrent `save()` calls for the
+ * exact same, brand-new JournalId can both observe no existing row
+ * before either commits. The real `journals_pkey`/
+ * `journals_tenant_id_journal_id_unique` constraints are the final,
+ * race-safe authority for that specific case, and this repository
+ * translates only that one known race into
+ * {@see DuplicateJournalIdentityException} — narrowly, by checking
+ * the failing constraint's own name, exactly mirroring
+ * `AccountRepository::save()`'s already-established Account Code
+ * translation. No other {@see QueryException} is touched.
  */
 final class JournalRepository
 {
@@ -40,6 +55,12 @@ final class JournalRepository
     private const LINE_TABLE = 'journal_lines';
 
     private const POSTED_STATE = 'Posted';
+
+    private const JOURNAL_PRIMARY_KEY_CONSTRAINT = 'journals_pkey';
+
+    private const JOURNAL_TENANT_UNIQUE_CONSTRAINT = 'journals_tenant_id_journal_id_unique';
+
+    private const UNIQUE_VIOLATION_SQLSTATE = '23505';
 
     private readonly JournalPersistenceAdapter $adapter;
 
@@ -111,52 +132,76 @@ final class JournalRepository
      *                                        persisted under `$journal`'s identifier is already Posted,
      *                                        or disagrees with `$journal` on TenantId or its exact
      *                                        Journal Line set.
+     * @throws DuplicateJournalIdentityException if a genuinely
+     *                                           concurrent `save()` call for the exact same, brand-new
+     *                                           JournalId has already committed — detected via the real
+     *                                           `journals_pkey`/`journals_tenant_id_journal_id_unique`
+     *                                           database constraints, not an application-level pre-check.
+     *                                           Every other persistence failure (a foreign key violation on
+     *                                           a Journal Line's Account, a `CHECK` violation, a lock
+     *                                           timeout, a serialization failure) propagates as a raw
+     *                                           {@see QueryException}, unmodified.
      */
     public function save(Journal $journal): void
     {
         $header = $this->adapter->toPersistedHeader($journal);
         $lines = $this->adapter->toPersistedLines($journal);
 
-        $this->connection->transaction(function () use ($journal, $header, $lines): void {
-            /** @var object{tenant_id: string, journal_id: string, state: string}|null $existingHeader */
-            $existingHeader = $this->connection->table(self::JOURNAL_TABLE)
-                ->where('journal_id', $header['journal_id'])
-                ->lockForUpdate()
-                ->first();
+        try {
+            $this->connection->transaction(function () use ($journal, $header, $lines): void {
+                /** @var object{tenant_id: string, journal_id: string, state: string}|null $existingHeader */
+                $existingHeader = $this->connection->table(self::JOURNAL_TABLE)
+                    ->where('journal_id', $header['journal_id'])
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($existingHeader === null) {
-                $this->connection->table(self::JOURNAL_TABLE)->insert($header);
-                $this->connection->table(self::LINE_TABLE)->insert(array_map(
-                    static fn (array $line): array => ['tenant_id' => $header['tenant_id'], ...$line],
-                    $lines,
-                ));
+                if ($existingHeader === null) {
+                    $this->connection->table(self::JOURNAL_TABLE)->insert($header);
+                    $this->connection->table(self::LINE_TABLE)->insert(array_map(
+                        static fn (array $line): array => ['tenant_id' => $header['tenant_id'], ...$line],
+                        $lines,
+                    ));
 
-                return;
+                    return;
+                }
+
+                if ($existingHeader->state === self::POSTED_STATE) {
+                    throw ImmutableJournalStateException::forPostedJournal($journal->id());
+                }
+
+                if ($existingHeader->tenant_id !== $header['tenant_id']) {
+                    throw ImmutableJournalStateException::forField($journal->id(), 'TenantId');
+                }
+
+                $existingLines = $this->connection->table(self::LINE_TABLE)
+                    ->where('journal_id', $header['journal_id'])
+                    ->orderBy('line_position')
+                    ->get()
+                    ->map(fn (object $row): array => $this->lineRowToArray($row))
+                    ->all();
+
+                if ($lines !== $existingLines) {
+                    throw ImmutableJournalStateException::forField($journal->id(), 'Journal Line set');
+                }
+
+                $this->connection->table(self::JOURNAL_TABLE)
+                    ->where('journal_id', $header['journal_id'])
+                    ->update(['state' => $header['state']]);
+            });
+        } catch (QueryException $e) {
+            if ($this->isDuplicateJournalIdentityViolation($e)) {
+                throw DuplicateJournalIdentityException::forJournalId($journal->id());
             }
 
-            if ($existingHeader->state === self::POSTED_STATE) {
-                throw ImmutableJournalStateException::forPostedJournal($journal->id());
-            }
+            throw $e;
+        }
+    }
 
-            if ($existingHeader->tenant_id !== $header['tenant_id']) {
-                throw ImmutableJournalStateException::forField($journal->id(), 'TenantId');
-            }
-
-            $existingLines = $this->connection->table(self::LINE_TABLE)
-                ->where('journal_id', $header['journal_id'])
-                ->orderBy('line_position')
-                ->get()
-                ->map(fn (object $row): array => $this->lineRowToArray($row))
-                ->all();
-
-            if ($lines !== $existingLines) {
-                throw ImmutableJournalStateException::forField($journal->id(), 'Journal Line set');
-            }
-
-            $this->connection->table(self::JOURNAL_TABLE)
-                ->where('journal_id', $header['journal_id'])
-                ->update(['state' => $header['state']]);
-        });
+    private function isDuplicateJournalIdentityViolation(QueryException $e): bool
+    {
+        return $e->getCode() === self::UNIQUE_VIOLATION_SQLSTATE
+            && (str_contains($e->getMessage(), self::JOURNAL_PRIMARY_KEY_CONSTRAINT)
+                || str_contains($e->getMessage(), self::JOURNAL_TENANT_UNIQUE_CONSTRAINT));
     }
 
     /**

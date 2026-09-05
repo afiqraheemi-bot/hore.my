@@ -14,6 +14,7 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Exception\InvalidCurrencyException;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Infrastructure\Accounting\Journal\Exception\DuplicateJournalIdentityException;
 use App\Infrastructure\Accounting\Journal\Exception\ImmutableJournalStateException;
 use App\Infrastructure\Accounting\Journal\JournalPersistenceAdapter;
 use App\Infrastructure\Accounting\Journal\JournalRepository;
@@ -514,6 +515,159 @@ final class JournalRepositoryIntegrationTest extends TestCase
         }
 
         $this->assertSame($before, $this->snapshot('journal-0001'));
+    }
+
+    /**
+     * (M4-T18B) A genuine race between two *fresh* inserts of the same
+     * JournalId — the case `save()`'s own existing-row lock cannot
+     * cover, since both sides observe no existing row before either
+     * commits. Reaching a real (non-blocking) duplicate-key error at
+     * the actual `INSERT` statement, rather than a mere lock timeout,
+     * requires the winning transaction to genuinely commit while the
+     * losing one is still in-flight — impossible to sequence
+     * deterministically with two connections in one process (the
+     * technique every other concurrency test in this suite already
+     * uses only ever proves *blocking*, never resolves it into a real
+     * duplicate-key error). A forked child process gives the winner an
+     * independent execution timeline that can commit mid-flight,
+     * exactly the smallest mechanism available for this specific case.
+     */
+    public function test_fresh_duplicate_journal_identity_is_translated_into_a_focused_exception(): void
+    {
+        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
+            $this->markTestSkipped('The pcntl and posix extensions are required to genuinely race two fresh inserts of the same JournalId.');
+        }
+
+        $journalId = 'journal-race-identity';
+        $readyMarker = sys_get_temp_dir().'/journal-race-ready-'.$journalId;
+        @unlink($readyMarker);
+
+        $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            $this->fail('pcntl_fork() failed.');
+        }
+
+        if ($pid === 0) {
+            // A forked child's inherited STDOUT/STDERR, still shared
+            // with the parent's own pipe, has been observed to confuse
+            // the test runner's own output handling. Closing them
+            // prevents that — but the freed fd slots (1, 2) must be
+            // reclaimed immediately, or a subsequent socket (this
+            // child's own fresh Postgres connection) can silently be
+            // assigned one of them instead.
+            fclose(STDOUT);
+            fclose(STDERR);
+            $devNullOut = fopen('/dev/null', 'w');
+            $devNullErr = fopen('/dev/null', 'w');
+
+            // Everything below MUST reach the final `posix_kill()`, no
+            // matter what — this is a full fork of the running PHPUnit
+            // process, so any exception left to propagate uncaught here
+            // would fall through to PHPUnit's own exception-to-failure
+            // handling within this copy, corrupting or duplicating this
+            // test's own result reporting. A plain `exit()` has the same
+            // problem via PHP's normal shutdown sequence, which also
+            // re-runs PHPUnit's inherited shutdown hooks. Only a direct
+            // signal bypasses all of that.
+            try {
+                // An independent connection (never the parent's
+                // inherited, already-open socket) holds a fresh,
+                // uncommitted insert open for a bounded window, then
+                // commits — giving the parent's own blocked insert a
+                // real, committed conflict to discover once it unblocks.
+                // `save()` opens its own transaction internally, which
+                // would otherwise commit immediately on return — this
+                // explicit outer transaction is what actually holds the
+                // row open across the sleep below.
+                DB::purge('pgsql');
+                $connection = DB::connection('pgsql');
+                $connection->beginTransaction();
+                (new JournalRepository($connection))->save(Journal::create($this->tenantA, JournalId::of($journalId), [
+                    $this->debitLine('account-cash', '100.00'),
+                    $this->creditLine('account-income', '100.00'),
+                ]));
+                // Only now does the parent below know it is safe to
+                // attempt its own insert — without this explicit
+                // handshake, which side inserts first is an unbounded
+                // race against process-scheduling and connection-setup
+                // overhead, not a deterministic test.
+                file_put_contents($readyMarker, '1');
+                usleep(2_000_000);
+                $connection->commit();
+            } catch (\Throwable) {
+                // Deliberately swallowed — see above.
+            } finally {
+                posix_kill(posix_getpid(), SIGKILL);
+            }
+        }
+
+        // Parent: the loser. Waits for the child's own explicit signal
+        // that its insert is in place before attempting the same
+        // JournalId — never a fixed sleep guessing at relative timing.
+        $this->waitForMarker($readyMarker);
+
+        config(['database.connections.pgsql_secondary' => config('database.connections.pgsql')]);
+        DB::purge('pgsql_secondary');
+        $secondConnection = DB::connection('pgsql_secondary');
+        $secondConnection->statement("set lock_timeout = '10000ms'");
+        $secondRepository = new JournalRepository($secondConnection);
+
+        try {
+            $secondRepository->save(Journal::create($this->tenantA, JournalId::of($journalId), [
+                $this->debitLine('account-cash', '250.00'),
+                $this->creditLine('account-income', '250.00'),
+            ]));
+            $this->fail('Expected a genuine duplicate Journal identity violation.');
+        } catch (DuplicateJournalIdentityException $e) {
+            $this->assertStringContainsString($journalId, $e->getMessage());
+        } finally {
+            $this->waitForChild($pid);
+            DB::purge('pgsql_secondary');
+        }
+
+        $this->assertSame(1, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', $journalId)->count());
+    }
+
+    /**
+     * Bounded wait for a forked child's own explicit readiness signal —
+     * never a fixed sleep guessing at relative process-scheduling
+     * timing, and never an indefinite wait if the child never signals.
+     */
+    private function waitForMarker(string $path): void
+    {
+        for ($i = 0; $i < 100; $i++) {
+            if (file_exists($path)) {
+                return;
+            }
+
+            usleep(50_000);
+        }
+
+        $this->fail("Timed out waiting for the forked child's readiness marker: {$path}");
+    }
+
+    /**
+     * Bounded reap of a forked child — never an indefinite
+     * `pcntl_waitpid()` block. The child in
+     * {@see test_fresh_duplicate_journal_identity_is_translated_into_a_focused_exception()}
+     * always exits promptly on its own; this only guards against that
+     * assumption ever silently becoming false.
+     */
+    private function waitForChild(int $pid): void
+    {
+        for ($i = 0; $i < 80; $i++) {
+            $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+            if ($result !== 0) {
+                return;
+            }
+
+            usleep(100_000);
+        }
+
+        posix_kill($pid, SIGKILL);
+        pcntl_waitpid($pid, $status);
     }
 
     /**
