@@ -840,11 +840,13 @@ final class JournalTest extends TestCase
      * The only path to a Posted Journal is `post()` itself — no
      * alternately-named posting method exists, and no other public
      * method beyond the fixed, minimal, intended API (which now
-     * includes `post()`, per M3-T6, and `reconstitute()`, per M3-T7).
-     * In particular, none of the forbidden shortcuts this task warns
-     * against exist: no arbitrary state setter, no `fromDatabase()`,
-     * `hydrateRaw()`, or `bypassValidation()`, no unsafe constructor,
-     * no `reopen()`/`unpost()`.
+     * includes `post()`, per M3-T6; `reconstitute()`, per M3-T7; and
+     * `reverse()`/`createReplacement()`/`correctionType()`/
+     * `correctedJournalId()`, per M5). In particular, none of the
+     * forbidden shortcuts this task warns against exist: no arbitrary
+     * state setter, no `fromDatabase()`, `hydrateRaw()`, or
+     * `bypassValidation()`, no unsafe constructor, no
+     * `reopen()`/`unpost()`.
      */
     public function test_only_the_intended_public_api_including_reconstitute_exists(): void
     {
@@ -857,7 +859,11 @@ final class JournalTest extends TestCase
         sort($publicMethodNames);
 
         $this->assertSame(
-            ['create', 'equals', 'id', 'isBalanced', 'lines', 'post', 'reconstitute', 'state', 'tenantId'],
+            [
+                'correctedJournalId', 'correctionType', 'create', 'createReplacement',
+                'equals', 'id', 'isBalanced', 'lines', 'post', 'reconstitute', 'reverse',
+                'state', 'tenantId',
+            ],
             $publicMethodNames,
         );
 

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Accounting\Journal;
 
+use App\Domain\Accounting\Journal\Exception\InconsistentCorrectionMetadataException;
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
+use App\Domain\Accounting\Journal\Exception\InvalidReplacementTargetException;
+use App\Domain\Accounting\Journal\Exception\InvalidReversalTargetException;
 use App\Domain\Accounting\Journal\Exception\JournalAlreadyPostedException;
 use App\Domain\Accounting\Journal\Exception\MixedCurrencyJournalException;
 use App\Domain\Accounting\Journal\Exception\UnbalancedJournalException;
@@ -73,10 +76,24 @@ use App\Domain\Shared\Tenancy\TenantId;
  * every structural financial invariant rather than trusting persisted
  * data.
  *
- * Deliberately absent from this revision: Reversal, Replacement,
- * Actor/Source/Evidence, Audit Event, Outbox, persistence, repository,
- * and any migration — none of them are part of what AETS-004 §6/§7
- * defines a Journal's construction-time shape to be.
+ * **Correction chain (M5, AETS-004 §16, §17).** A Journal that is a
+ * Reversal or a Replacement additionally carries a {@see CorrectionType}
+ * and the `JournalId` of the Journal it corrects (§6: "an ordinary
+ * Journal carries none"). {@see reverse()} is the *only* way to
+ * produce a Reversal — it derives every line automatically from this
+ * Journal's own lines (neutralized: same Account, same exact Money,
+ * opposite Direction), so `JRN-018` is guaranteed structurally, never
+ * by trusting a caller-supplied line set. {@see createReplacement()}
+ * is the *only* way to produce a Replacement — its lines remain
+ * caller-supplied (the corrected effect is not something this class
+ * can derive), but the correction-chain reference and the
+ * Reversal-only target rule (`JRN-020`) are enforced here, not left to
+ * a caller.
+ *
+ * Deliberately absent from this revision: Actor/Source/Evidence,
+ * Audit Event, Outbox, persistence, repository, and any migration —
+ * none of them are part of what AETS-004 §6/§7 defines a Journal's
+ * construction-time shape to be.
  */
 final class Journal
 {
@@ -98,15 +115,27 @@ final class Journal
 
     private readonly JournalState $state;
 
+    private readonly ?CorrectionType $correctionType;
+
+    private readonly ?JournalId $correctedJournalId;
+
     /**
      * @param  list<JournalLine>  $lines
      */
-    private function __construct(TenantId $tenantId, JournalId $id, array $lines, JournalState $state)
-    {
+    private function __construct(
+        TenantId $tenantId,
+        JournalId $id,
+        array $lines,
+        JournalState $state,
+        ?CorrectionType $correctionType,
+        ?JournalId $correctedJournalId,
+    ) {
         $this->tenantId = $tenantId;
         $this->id = $id;
         $this->lines = $lines;
         $this->state = $state;
+        $this->correctionType = $correctionType;
+        $this->correctedJournalId = $correctedJournalId;
     }
 
     /**
@@ -132,7 +161,7 @@ final class Journal
      */
     public static function create(TenantId $tenantId, JournalId $id, array $lines): self
     {
-        return self::assembleValidated($tenantId, $id, $lines, JournalState::Draft);
+        return self::assembleValidated($tenantId, $id, $lines, JournalState::Draft, null, null);
     }
 
     /**
@@ -171,19 +200,28 @@ final class Journal
      *                                       share the same Currency.
      * @throws UnbalancedJournalException if total Debit Money does
      *                                    not exactly equal total Credit Money.
+     * @throws InconsistentCorrectionMetadataException if `$correctionType`
+     *                                                 and `$correctedJournalId` disagree on whether this Journal
+     *                                                 is a correction (M5) — one present without the other.
      */
-    public static function reconstitute(TenantId $tenantId, JournalId $id, array $lines, JournalState $state): self
-    {
-        return self::assembleValidated($tenantId, $id, $lines, $state);
+    public static function reconstitute(
+        TenantId $tenantId,
+        JournalId $id,
+        array $lines,
+        JournalState $state,
+        ?CorrectionType $correctionType = null,
+        ?JournalId $correctedJournalId = null,
+    ): self {
+        return self::assembleValidated($tenantId, $id, $lines, $state, $correctionType, $correctedJournalId);
     }
 
     /**
      * The sole Draft -> Posted transition (AETS-004 §9). Returns a
      * *new* Journal instance in the Posted state; this instance is
      * completely unaffected and remains Draft. TenantId, JournalId,
-     * and the Journal Line list are carried over exactly — the same
-     * {@see JournalLine} instances, same order, no line added,
-     * removed, or replaced.
+     * the Journal Line list, and any correction-chain metadata (M5)
+     * are carried over exactly — the same {@see JournalLine} instances,
+     * same order, no line added, removed, or replaced.
      *
      * Posted is terminal: only a Draft Journal may transition. Calling
      * this on a Journal that is already Posted throws
@@ -207,7 +245,115 @@ final class Journal
             throw JournalAlreadyPostedException::forJournal();
         }
 
-        return new self($this->tenantId, $this->id, $this->lines, JournalState::Posted);
+        return new self(
+            $this->tenantId,
+            $this->id,
+            $this->lines,
+            JournalState::Posted,
+            $this->correctionType,
+            $this->correctedJournalId,
+        );
+    }
+
+    /**
+     * Produce this Journal's Reversal (AETS-004 §16) — the *only*
+     * legitimate way to create one. `$newJournalId` is supplied by the
+     * caller, never generated here: exactly the same convention
+     * {@see create()} already establishes for a fresh identifier — no
+     * self-generation policy exists in this codebase for `JournalId`
+     * (AETS-004 §11), and this method does not invent one.
+     *
+     * **Neutrality is structural, not caller-trusted (`JRN-018`).**
+     * Every line of the returned Reversal is derived automatically
+     * from `$this->lines()` — same Account, same exact Money, opposite
+     * Direction — in the same order. There is no parameter through
+     * which a caller could supply a different line set; this is what
+     * makes exact neutralization a guarantee of this method's own
+     * structure, not a discipline a caller must uphold correctly.
+     *
+     * The returned Journal is Draft — posting it (and persisting it
+     * atomically alongside its own idempotency mapping) remains a
+     * separate, later concern this method has no part in, exactly as
+     * {@see create()} itself never posts or persists.
+     *
+     * @throws InvalidReversalTargetException if this Journal is not
+     *                                        currently Posted, or is itself already a correction
+     *                                        (a Reversal or a Replacement).
+     */
+    public function reverse(JournalId $newJournalId): self
+    {
+        if ($this->state !== JournalState::Posted) {
+            throw InvalidReversalTargetException::forNotPosted($this->id);
+        }
+
+        if ($this->correctionType !== null) {
+            throw InvalidReversalTargetException::forAlreadyACorrection($this->id);
+        }
+
+        $neutralizedLines = array_map(
+            static fn (JournalLine $line): JournalLine => JournalLine::create(
+                $line->accountId(),
+                $line->money(),
+                $line->direction() === JournalDirection::Debit ? JournalDirection::Credit : JournalDirection::Debit,
+            ),
+            $this->lines,
+        );
+
+        return self::assembleValidated(
+            $this->tenantId,
+            $newJournalId,
+            $neutralizedLines,
+            JournalState::Draft,
+            CorrectionType::Reversal,
+            $this->id,
+        );
+    }
+
+    /**
+     * Produce a Replacement referencing `$reversal` (AETS-004 §17) —
+     * the *only* legitimate way to create one. Unlike {@see reverse()},
+     * a Replacement's lines are **not** derived automatically: they are
+     * the caller-supplied corrected accounting effect (§17 — "the
+     * corrected accounting effect"), since no domain rule can derive
+     * what the *correct* amount should have been. What this method
+     * does enforce, rather than leaving to a caller, is the
+     * correction-chain reference itself and its one legitimate target:
+     * a Replacement MUST reference a Reversal (`JRN-020`), never the
+     * Original directly and never another Replacement.
+     *
+     * `$newJournalId` is caller-supplied, for the same reason
+     * {@see reverse()}'s own docblock already states.
+     *
+     * @param  list<JournalLine>  $lines  The caller-supplied corrected
+     *                                    Journal Lines.
+     *
+     * @throws InvalidReplacementTargetException if `$reversal` is not
+     *                                           itself a Reversal, or is not currently Posted.
+     * @throws InsufficientJournalLinesException if fewer than two
+     *                                           lines are given.
+     * @throws MixedCurrencyJournalException if the lines do not all
+     *                                       share the same Currency.
+     * @throws UnbalancedJournalException if total Debit Money does
+     *                                    not exactly equal total Credit Money.
+     */
+    public static function createReplacement(TenantId $tenantId, JournalId $newJournalId, array $lines, self $reversal): self
+    {
+        if ($reversal->correctionType !== CorrectionType::Reversal) {
+            throw InvalidReplacementTargetException::forNotAReversal($reversal->id);
+        }
+
+        if ($reversal->state !== JournalState::Posted) {
+            throw InvalidReplacementTargetException::forReversalNotPosted($reversal->id);
+        }
+
+        return self::assembleValidated(
+            $tenantId,
+            $newJournalId,
+            $lines,
+            JournalState::Draft,
+            CorrectionType::Replacement,
+            $reversal->id,
+        );
     }
 
     public function tenantId(): TenantId
@@ -218,6 +364,26 @@ final class Journal
     public function id(): JournalId
     {
         return $this->id;
+    }
+
+    /**
+     * The kind of correction this Journal represents, or `null` if it
+     * is an ordinary Journal (M5, AETS-004 §6).
+     */
+    public function correctionType(): ?CorrectionType
+    {
+        return $this->correctionType;
+    }
+
+    /**
+     * The `JournalId` this Journal corrects — the Original for a
+     * Reversal, or the Reversal for a Replacement — or `null` if this
+     * is an ordinary Journal (M5, AETS-004 §6). Always present exactly
+     * when {@see correctionType()} is non-`null`, never independently.
+     */
+    public function correctedJournalId(): ?JournalId
+    {
+        return $this->correctedJournalId;
     }
 
     /**
@@ -290,16 +456,27 @@ final class Journal
      * @throws InsufficientJournalLinesException
      * @throws MixedCurrencyJournalException
      * @throws UnbalancedJournalException
+     * @throws InconsistentCorrectionMetadataException
      */
-    private static function assembleValidated(TenantId $tenantId, JournalId $id, array $lines, JournalState $state): self
-    {
+    private static function assembleValidated(
+        TenantId $tenantId,
+        JournalId $id,
+        array $lines,
+        JournalState $state,
+        ?CorrectionType $correctionType,
+        ?JournalId $correctedJournalId,
+    ): self {
         if (count($lines) < self::MINIMUM_LINE_COUNT) {
             throw InsufficientJournalLinesException::forCount(count($lines));
         }
 
         self::assertSingleCurrency($lines);
 
-        $journal = new self($tenantId, $id, $lines, $state);
+        if (($correctionType === null) !== ($correctedJournalId === null)) {
+            throw InconsistentCorrectionMetadataException::forJournalId($id);
+        }
+
+        $journal = new self($tenantId, $id, $lines, $state, $correctionType, $correctedJournalId);
 
         if (! $journal->isBalanced()) {
             throw UnbalancedJournalException::forDifference();
