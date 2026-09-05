@@ -4,29 +4,36 @@ declare(strict_types=1);
 
 namespace App\Domain\Accounting\Posting;
 
+use App\Domain\Accounting\Audit\AuditAction;
+use App\Domain\Accounting\Audit\AuditEvent;
 use App\Domain\Accounting\Journal\Journal;
+use App\Infrastructure\Accounting\Audit\AuditEventRepository;
 use App\Infrastructure\Accounting\Journal\Exception\DuplicateJournalIdentityException;
 use App\Infrastructure\Accounting\Posting\Exception\DuplicatePostingIdempotencyKeyException;
+use App\Infrastructure\Accounting\Posting\JournalEvidenceLinkRepository;
 use App\Infrastructure\Accounting\Posting\PostingIdempotencyRepository;
 use Illuminate\Database\ConnectionInterface;
 
 /**
  * The smallest transactional orchestration providing atomic
- * first-submission Posting (M4-T18, AETS-007 §15, §17, §19): a first
- * submission posts a new Journal and records its idempotency mapping
- * together, in one transaction; an exact replay performs zero writes;
- * a conflicting reuse is a deterministic rejection; and a genuinely
- * concurrent race resolves without ever creating a second Journal for
- * the same (TenantId, Idempotency Key).
+ * first-submission Posting (M4-T18, AETS-007 §15, §17, §19; Audit Event
+ * and Evidence linkage per AETS-010, M6): a first submission posts a
+ * new Journal, records its idempotency mapping, its Audit Event, and
+ * any Evidence linkage together, in one transaction; an exact replay
+ * performs zero writes; a conflicting reuse is a deterministic
+ * rejection; and a genuinely concurrent race resolves without ever
+ * creating a second Journal for the same (TenantId, Idempotency Key).
  *
  * **Still not the full Posting Engine, and not full LED-003.** The
- * transaction this class opens covers exactly three things: the
- * Journal header, its Journal Lines, and the `posting_idempotency_keys`
- * mapping row. Evidence linkage, Audit Event, and Outbox event writes
- * (AETS-007 §17) are entirely absent — this class makes no claim
- * toward `POST-T070`/`POST-T127`'s full atomic-posting requirement, no
- * Source Fingerprint deduplication, and no Actor/Tenant resolution.
- * Every one of those remains later work.
+ * transaction this class opens covers exactly five things: the Journal
+ * header, its Journal Lines, the `posting_idempotency_keys` mapping
+ * row, the `audit_events` row, and any `journal_evidence_links` rows.
+ * Outbox event writes (AETS-007 §17; AETS-010 §2.2) remain entirely
+ * absent — no workflow in the current system requires one (AETS-010's
+ * own deferral) — so this class still makes no claim toward
+ * `POST-T070`/`POST-T127`'s full atomic-posting requirement in the
+ * Outbox dimension, and still performs no Source Fingerprint
+ * deduplication. Every one of those remains later work.
  *
  * **Decision before write, always.** {@see PostingCommandIdempotencyResolver::resolve()}
  * runs first, before any transaction opens (`POST-T066`) — a replay or
@@ -86,6 +93,8 @@ final class PostingCommandTransactionalExecutor
         private readonly PostingCommandIdempotencyResolver $idempotencyResolver,
         private readonly PostingCommandJournalExecutor $journalExecutor,
         private readonly PostingIdempotencyRepository $idempotencyRepository,
+        private readonly AuditEventRepository $auditEventRepository,
+        private readonly JournalEvidenceLinkRepository $evidenceLinkRepository,
     ) {}
 
     public function execute(PostingCommand $command): PostingCommandExecutionResult
@@ -104,6 +113,23 @@ final class PostingCommandTransactionalExecutor
                 $journal = $this->journalExecutor->execute($command);
 
                 $this->idempotencyRepository->record($command->tenantId(), $command->idempotencyKey(), $journal->id());
+
+                $this->auditEventRepository->record(new AuditEvent(
+                    $command->tenantId(),
+                    $command->actor(),
+                    $command->source(),
+                    AuditAction::JournalPosted,
+                    $journal->id(),
+                ));
+
+                $this->evidenceLinkRepository->link(
+                    $command->tenantId(),
+                    $journal->id(),
+                    array_map(
+                        static fn (string $reference): EvidenceReference => EvidenceReference::of($reference),
+                        $command->evidenceReferences(),
+                    ),
+                );
 
                 return $journal;
             });

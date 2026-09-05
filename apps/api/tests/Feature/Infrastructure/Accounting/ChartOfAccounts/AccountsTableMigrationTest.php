@@ -248,6 +248,16 @@ final class AccountsTableMigrationTest extends TestCase
         $journalMigrationPath = 'database/migrations/2026_09_04_150000_create_journals_and_journal_lines_tables.php';
         $journalLinesExistedBefore = Schema::connection('pgsql')->hasTable('journal_lines');
         if ($journalLinesExistedBefore) {
+            // `posting_idempotency_keys`, `audit_events` (M6), and
+            // `journal_evidence_links` (M6) each carry a composite
+            // foreign key onto `journals` too — dropped here, not
+            // recreated: any test class that needs one detects its
+            // absence via its own `hasTable()` guard and creates it
+            // fresh, exactly as it already would on a clean database.
+            Schema::connection('pgsql')->dropIfExists('posting_idempotency_keys');
+            Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
+            Schema::connection('pgsql')->dropIfExists('audit_events');
+            Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
             self::forceCleanState($journalMigrationPath, ['journal_lines', 'journals']);
         }
 

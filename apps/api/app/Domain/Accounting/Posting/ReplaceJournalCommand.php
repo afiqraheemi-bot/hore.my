@@ -20,6 +20,12 @@ use App\Domain\Shared\Tenancy\TenantId;
  * not a Posting Command, and none of its fields are ever added to
  * `PostingCommand` (M5 architecture decision #1).
  *
+ * **Actor and Source (M6, AETS-010 §10).** Every successful Replacement
+ * MUST produce an Audit Event capturing Actor and Source (AETS-010
+ * §7, §10) — reusing exactly the same `ActorReference`/`SourceReference`
+ * contract `PostingCommand` already carries (§6), never a second
+ * representation.
+ *
  * Pure data carrier — construction-level only, mirroring
  * `PostingCommand`'s own line-membership guarantee (every member of
  * `$lines` MUST be a {@see JournalLine} instance). It performs no
@@ -45,6 +51,8 @@ final class ReplaceJournalCommand
     public function __construct(
         private readonly IdempotencyKey $idempotencyKey,
         private readonly TenantId $tenantId,
+        private readonly ActorReference $actor,
+        private readonly SourceReference $source,
         private readonly JournalId $newJournalId,
         private readonly JournalId $reversalJournalId,
         array $lines,
@@ -60,6 +68,16 @@ final class ReplaceJournalCommand
     public function tenantId(): TenantId
     {
         return $this->tenantId;
+    }
+
+    public function actor(): ActorReference
+    {
+        return $this->actor;
+    }
+
+    public function source(): SourceReference
+    {
+        return $this->source;
     }
 
     public function newJournalId(): JournalId

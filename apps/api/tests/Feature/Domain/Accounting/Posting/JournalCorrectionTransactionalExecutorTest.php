@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Domain\Accounting\Posting;
 
+use App\Domain\Accounting\Audit\AuditAction;
+use App\Domain\Accounting\Audit\AuditEvent;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Journal\CorrectionType;
 use App\Domain\Accounting\Journal\Exception\InvalidReplacementTargetException;
@@ -15,6 +17,7 @@ use App\Domain\Accounting\Journal\JournalLine;
 use App\Domain\Accounting\Journal\JournalState;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
 use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
 use App\Domain\Accounting\Posting\Exception\UnresolvedCorrectionTargetException;
@@ -26,11 +29,14 @@ use App\Domain\Accounting\Posting\JournalCorrectionTransactionalExecutor;
 use App\Domain\Accounting\Posting\PostingCommandAccountValidator;
 use App\Domain\Accounting\Posting\ReplaceJournalCommand;
 use App\Domain\Accounting\Posting\ReverseJournalCommand;
+use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Infrastructure\Accounting\Audit\AuditEventRepository;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountRepository;
 use App\Infrastructure\Accounting\Journal\JournalRepository;
 use App\Infrastructure\Accounting\Posting\PostingIdempotencyRepository;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -76,6 +82,10 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
 
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
+    private const AUDIT_EVENT_TABLE = 'audit_events';
+
+    private const AUDIT_EVENT_MIGRATION_PATH = 'database/migrations/2026_09_06_200000_create_audit_events_table.php';
+
     private static ?string $skipReason = null;
 
     private static bool $migrated = false;
@@ -101,6 +111,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         }
 
         DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->delete();
+        DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
@@ -370,6 +381,71 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         $this->assertSame(0, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
     }
 
+    // --- M6: Audit Event ------------------------------------------------
+
+    /**
+     * Mirrors {@see PostingCommandTransactionalExecutorTest::test_forced_audit_event_failure_rolls_back_the_entire_transaction()}
+     * for the M5 correction executor: a forced, non-duplicate constraint
+     * failure on the `audit_events` insert rolls back the entire
+     * transaction — the Reversal Journal and the idempotency mapping
+     * together, never just the Audit Event (`AUD-004`).
+     */
+    public function test_forced_audit_event_failure_rolls_back_the_entire_reversal_transaction(): void
+    {
+        $original = $this->postOrdinaryJournal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
+
+        $connection = DB::connection('pgsql');
+        $connection->statement(
+            'ALTER TABLE audit_events ADD CONSTRAINT force_test_correction_audit_failure CHECK (1 = 0)'
+        );
+
+        try {
+            try {
+                $this->executor->executeReversal($this->reverseCommand($this->tenantA, JournalId::of('journal-reversal-atomic'), $original->id()));
+                $this->fail('Expected the forced CHECK constraint to reject the Audit Event insert.');
+            } catch (QueryException) {
+                // Expected: a non-duplicate constraint violation,
+                // propagated unmodified.
+            }
+        } finally {
+            $connection->statement('ALTER TABLE audit_events DROP CONSTRAINT force_test_correction_audit_failure');
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-reversal-atomic')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->count());
+    }
+
+    public function test_reversal_produces_an_audit_event_with_the_minimum_captured_fields(): void
+    {
+        $original = $this->postOrdinaryJournal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
+
+        $result = $this->executor->executeReversal($this->reverseCommand($this->tenantA, JournalId::of('journal-reversal-audit'), $original->id()));
+
+        /** @var object{tenant_id: string, actor: string, source: string, action: string} $row */
+        $row = DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)
+            ->where('journal_id', $result->journal()->id()->toString())
+            ->firstOrFail();
+
+        $this->assertSame($this->tenantA->toString(), $row->tenant_id);
+        $this->assertSame('actor-0001', $row->actor);
+        $this->assertSame('source-0001', $row->source);
+        $this->assertSame('JournalReversed', $row->action);
+    }
+
+    public function test_replacement_produces_an_audit_event_with_action_journal_replaced(): void
+    {
+        $original = $this->postOrdinaryJournal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
+        $reversal = $this->executor->executeReversal($this->reverseCommand($this->tenantA, JournalId::of('journal-reversal'), $original->id()))->journal();
+
+        $result = $this->executor->executeReplacement($this->replaceCommand($this->tenantA, JournalId::of('journal-replacement-audit'), $reversal->id(), $this->balancedLines()));
+
+        $this->assertSame(
+            'JournalReplaced',
+            DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->where('journal_id', $result->journal()->id()->toString())->value('action'),
+        );
+    }
+
     // --- Concurrency: genuine multi-process races --------------------------
 
     /**
@@ -468,6 +544,14 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         $posted = $candidate->post();
         $journalRepository->save($posted);
         $idempotencyRepository->record($command->tenantId(), $command->idempotencyKey(), $posted->id());
+
+        (new AuditEventRepository($connection))->record(new AuditEvent(
+            $command->tenantId(),
+            $command->actor(),
+            $command->source(),
+            AuditAction::JournalReversed,
+            $posted->id(),
+        ));
     }
 
     private function waitForMarker(string $path): void
@@ -543,6 +627,8 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         return new ReverseJournalCommand(
             $idempotencyKey ?? IdempotencyKey::of('key-'.$newJournalId->toString()),
             $tenantId,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-0001'),
             $newJournalId,
             $originalJournalId,
         );
@@ -556,6 +642,8 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         return new ReplaceJournalCommand(
             $idempotencyKey ?? IdempotencyKey::of('key-'.$newJournalId->toString()),
             $tenantId,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-0001'),
             $newJournalId,
             $reversalJournalId,
             $lines,
@@ -583,6 +671,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
             $assembler,
             $journalRepository,
             $idempotencyRepository,
+            new AuditEventRepository($connection),
         );
     }
 
@@ -629,6 +718,10 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         }
 
         self::forceCleanMigration(self::IDEMPOTENCY_MIGRATION_PATH, [self::IDEMPOTENCY_TABLE]);
+
+        if (! Schema::connection('pgsql')->hasTable(self::AUDIT_EVENT_TABLE)) {
+            self::forceCleanMigration(self::AUDIT_EVENT_MIGRATION_PATH, [self::AUDIT_EVENT_TABLE]);
+        }
 
         self::$migrated = true;
     }

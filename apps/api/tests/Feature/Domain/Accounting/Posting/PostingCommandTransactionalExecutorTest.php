@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Domain\Accounting\Posting;
 
+use App\Domain\Accounting\Audit\AuditAction;
+use App\Domain\Accounting\Audit\AuditEvent;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Journal\Journal;
 use App\Domain\Accounting\Journal\JournalDirection;
@@ -14,6 +16,7 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\DraftJournalAssembler;
+use App\Domain\Accounting\Posting\EvidenceReference;
 use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
 use App\Domain\Accounting\Posting\Exception\RejectedJournalIdentityUnavailableException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
@@ -27,8 +30,10 @@ use App\Domain\Accounting\Posting\PostingCommandLogicalEquivalence;
 use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Infrastructure\Accounting\Audit\AuditEventRepository;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountRepository;
 use App\Infrastructure\Accounting\Journal\JournalRepository;
+use App\Infrastructure\Accounting\Posting\JournalEvidenceLinkRepository;
 use App\Infrastructure\Accounting\Posting\PostingIdempotencyRepository;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
@@ -75,6 +80,14 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
 
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
+    private const AUDIT_EVENT_TABLE = 'audit_events';
+
+    private const EVIDENCE_LINK_TABLE = 'journal_evidence_links';
+
+    private const AUDIT_EVENT_MIGRATION_PATH = 'database/migrations/2026_09_06_200000_create_audit_events_table.php';
+
+    private const EVIDENCE_LINK_MIGRATION_PATH = 'database/migrations/2026_09_06_210000_create_journal_evidence_links_table.php';
+
     private static ?string $skipReason = null;
 
     private static bool $migrated = false;
@@ -102,6 +115,8 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         }
 
         DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->delete();
+        DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->delete();
+        DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
@@ -359,6 +374,143 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         $this->assertSame(0, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
     }
 
+    /**
+     * The M6 counterpart of the idempotency-record fault-injection test
+     * above, proving `AUD-004`/`POST-024`: a forced, non-duplicate
+     * constraint failure on the `audit_events` insert rolls back the
+     * entire transaction — Journal header, Journal Lines, and the
+     * idempotency mapping insert together, not just the Audit Event
+     * itself.
+     */
+    public function test_forced_audit_event_failure_rolls_back_the_entire_transaction(): void
+    {
+        $connection = DB::connection('pgsql');
+        $connection->statement(
+            'ALTER TABLE audit_events ADD CONSTRAINT force_test_audit_failure CHECK (1 = 0)'
+        );
+
+        try {
+            try {
+                $this->executor->execute($this->makeCommand($this->tenantA, JournalId::of('journal-audit-atomic'), $this->balancedLines()));
+                $this->fail('Expected the forced CHECK constraint to reject the Audit Event insert.');
+            } catch (QueryException) {
+                // Expected: a non-duplicate constraint violation,
+                // propagated unmodified.
+            }
+        } finally {
+            $connection->statement('ALTER TABLE audit_events DROP CONSTRAINT force_test_audit_failure');
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-audit-atomic')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::LINE_TABLE)->where('journal_id', 'journal-audit-atomic')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->count());
+    }
+
+    /**
+     * The M6 counterpart proving `AUD-008`: a forced, non-duplicate
+     * constraint failure on the `journal_evidence_links` insert rolls
+     * back the entire transaction — including the Audit Event that was
+     * already written earlier in the same transaction body, never one
+     * without the other.
+     */
+    public function test_forced_evidence_link_failure_rolls_back_the_entire_transaction(): void
+    {
+        $connection = DB::connection('pgsql');
+        $connection->statement(
+            'ALTER TABLE journal_evidence_links ADD CONSTRAINT force_test_evidence_link_failure CHECK (1 = 0)'
+        );
+
+        $command = new PostingCommand(
+            IdempotencyKey::of('key-evidence-atomic'),
+            $this->tenantA,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-0001'),
+            JournalId::of('journal-evidence-atomic'),
+            $this->balancedLines(),
+            null,
+            ['evidence-0001'],
+        );
+
+        try {
+            try {
+                $this->executor->execute($command);
+                $this->fail('Expected the forced CHECK constraint to reject the Evidence Linkage insert.');
+            } catch (QueryException) {
+                // Expected: a non-duplicate constraint violation,
+                // propagated unmodified.
+            }
+        } finally {
+            $connection->statement('ALTER TABLE journal_evidence_links DROP CONSTRAINT force_test_evidence_link_failure');
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-evidence-atomic')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->count());
+        $this->assertSame(0, DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->count());
+    }
+
+    // --- M6: Audit Event and Evidence Linkage -------------------------------
+
+    public function test_successful_command_produces_an_audit_event_with_the_minimum_captured_fields(): void
+    {
+        $command = $this->makeCommand($this->tenantA, JournalId::of('journal-audit-content'), $this->balancedLines());
+
+        $result = $this->executor->execute($command);
+
+        /** @var object{tenant_id: string, actor: string, source: string, action: string, journal_id: string} $row */
+        $row = DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)
+            ->where('journal_id', $result->journal()->id()->toString())
+            ->firstOrFail();
+
+        $this->assertSame($this->tenantA->toString(), $row->tenant_id);
+        $this->assertSame('actor-0001', $row->actor);
+        $this->assertSame('source-0001', $row->source);
+        $this->assertSame('JournalPosted', $row->action);
+        $this->assertNotNull(DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->where('journal_id', $result->journal()->id()->toString())->value('occurred_at'));
+    }
+
+    public function test_successful_command_with_evidence_references_links_them_atomically(): void
+    {
+        $command = new PostingCommand(
+            IdempotencyKey::of('key-evidence-linkage'),
+            $this->tenantA,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-0001'),
+            JournalId::of('journal-evidence-linkage'),
+            $this->balancedLines(),
+            null,
+            ['evidence-0001', 'evidence-0002'],
+        );
+
+        $result = $this->executor->execute($command);
+
+        $linkedReferences = DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)
+            ->where('journal_id', $result->journal()->id()->toString())
+            ->orderBy('evidence_reference')
+            ->pluck('evidence_reference')
+            ->all();
+
+        $this->assertSame(['evidence-0001', 'evidence-0002'], $linkedReferences);
+    }
+
+    public function test_a_journal_with_no_evidence_references_produces_no_linkage_rows(): void
+    {
+        $result = $this->executor->execute($this->makeCommand($this->tenantA, JournalId::of('journal-no-evidence'), $this->balancedLines()));
+
+        $this->assertSame(0, DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->where('journal_id', $result->journal()->id()->toString())->count());
+    }
+
+    public function test_replay_produces_no_additional_audit_event(): void
+    {
+        $command = $this->makeCommand($this->tenantA, JournalId::of('journal-audit-replay'), $this->balancedLines(), idempotencyKey: IdempotencyKey::of('key-audit-replay'));
+
+        $this->executor->execute($command);
+        $this->executor->execute($command);
+
+        $this->assertSame(1, DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->where('journal_id', 'journal-audit-replay')->count());
+    }
+
     // --- Concurrency: two real PostgreSQL connections, genuine race ---------
 
     /**
@@ -592,6 +744,23 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
 
         $journal = $journalExecutor->execute($command);
         $idempotencyRepository->record($command->tenantId(), $command->idempotencyKey(), $journal->id());
+
+        (new AuditEventRepository($connection))->record(new AuditEvent(
+            $command->tenantId(),
+            $command->actor(),
+            $command->source(),
+            AuditAction::JournalPosted,
+            $journal->id(),
+        ));
+
+        (new JournalEvidenceLinkRepository($connection))->link(
+            $command->tenantId(),
+            $journal->id(),
+            array_map(
+                static fn (string $reference): EvidenceReference => EvidenceReference::of($reference),
+                $command->evidenceReferences(),
+            ),
+        );
     }
 
     /**
@@ -698,6 +867,8 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
             $idempotencyResolver,
             $journalExecutor,
             $idempotencyRepository,
+            new AuditEventRepository($connection),
+            new JournalEvidenceLinkRepository($connection),
         );
     }
 
@@ -748,6 +919,14 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         }
 
         self::forceCleanMigration(self::IDEMPOTENCY_MIGRATION_PATH, [self::IDEMPOTENCY_TABLE]);
+
+        if (! Schema::connection('pgsql')->hasTable(self::AUDIT_EVENT_TABLE)) {
+            self::forceCleanMigration(self::AUDIT_EVENT_MIGRATION_PATH, [self::AUDIT_EVENT_TABLE]);
+        }
+
+        if (! Schema::connection('pgsql')->hasTable(self::EVIDENCE_LINK_TABLE)) {
+            self::forceCleanMigration(self::EVIDENCE_LINK_MIGRATION_PATH, [self::EVIDENCE_LINK_TABLE]);
+        }
 
         self::$migrated = true;
     }

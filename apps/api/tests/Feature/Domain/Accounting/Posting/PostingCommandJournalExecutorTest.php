@@ -460,6 +460,8 @@ final class PostingCommandJournalExecutorTest extends TestCase
         // recreated here.
         Schema::connection('pgsql')->dropIfExists('posting_idempotency_keys');
         Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
+        Schema::connection('pgsql')->dropIfExists('audit_events');
+        Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);

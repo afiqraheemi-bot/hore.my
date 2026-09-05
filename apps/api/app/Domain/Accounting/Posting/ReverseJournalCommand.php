@@ -19,6 +19,12 @@ use App\Domain\Shared\Tenancy\TenantId;
  * #1) — correction metadata rides entirely on the Journal aggregate
  * this command's execution eventually produces.
  *
+ * **Actor and Source (M6, AETS-010 §10).** Every successful Reversal
+ * MUST produce an Audit Event capturing Actor and Source (AETS-010
+ * §7, §10) — reusing exactly the same `ActorReference`/`SourceReference`
+ * contract `PostingCommand` already carries (§6), never a second
+ * representation.
+ *
  * Pure data carrier — construction-level only. It performs no I/O,
  * validates no Tenant ownership, does not confirm the referenced
  * Journal exists or is eligible to be reversed, and decides nothing
@@ -31,6 +37,8 @@ final class ReverseJournalCommand
     public function __construct(
         private readonly IdempotencyKey $idempotencyKey,
         private readonly TenantId $tenantId,
+        private readonly ActorReference $actor,
+        private readonly SourceReference $source,
         private readonly JournalId $newJournalId,
         private readonly JournalId $originalJournalId,
     ) {}
@@ -43,6 +51,16 @@ final class ReverseJournalCommand
     public function tenantId(): TenantId
     {
         return $this->tenantId;
+    }
+
+    public function actor(): ActorReference
+    {
+        return $this->actor;
+    }
+
+    public function source(): SourceReference
+    {
+        return $this->source;
     }
 
     public function newJournalId(): JournalId

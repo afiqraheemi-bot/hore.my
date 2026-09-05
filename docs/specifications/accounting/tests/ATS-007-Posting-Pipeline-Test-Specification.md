@@ -1,7 +1,7 @@
 # ATS-007: Accounting Commands & Posting Pipeline Test Specification
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-05
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -395,7 +395,7 @@ Dedicated, real-PostgreSQL integration test IDs, each an end-to-end aggregate pr
 ## 29. Deferred tests
 
 - **Idempotency Key and Source Fingerprint derivation-mechanism-specific tests** — this document tests the conceptual contract (§9, §10); the concrete derivation and storage mechanism is deferred pending its own implementation decision ([AETS-007 §6](../AETS-007-Posting-Command.md#6-command-identity-and-idempotency), §26 of that document).
-- **Concrete Actor, Source, Evidence, and Audit Event schema-specific tests** — this document tests presence, Tenant-match, and atomicity only (§11, §12, §22); detailed schema tests are deferred pending a future Identity/Access specification and AETS-010 (Audit Trail), neither yet created.
+- **Concrete Actor and Source schema-specific tests** — this document tests presence, Tenant-match, and atomicity only (§11, §12, §22); detailed schema tests remain deferred pending a future Identity/Access specification, not yet created. **Concrete Audit Event schema and Evidence Reference/Linkage tests are no longer deferred**: [AETS-010](../AETS-010-Audit-Trail-Evidence-Linkage.md) (Audit Trail & Evidence Linkage) now exists and is `Active` (M6) — `POST-T093`–`POST-T095` are implemented against it, traced in full by [ATS-010](ATS-010-Audit-Trail-Test-Specification.md#5-traceability-matrix).
 - **Outbox delivery/dispatcher tests** — this document tests only that the Outbox event is written atomically and never published from inside the transaction (§23); dispatcher, consumer, retry, and dead-letter tests are deferred to [ADR-0006](../../../adr/0006-transactional-outbox-pattern.md)'s own scope, unchanged here.
 - **Business-specific Accounting Command tests** — invoicing, payment allocation, and other domain-specific commands remain deferred future subsections of AETS-007 itself ([AETS-007 §1](../AETS-007-Posting-Command.md#1-purpose), §26); this document tests the Posting Command only.
 - **Detailed correction-workflow tests** — Reversal/Replacement frequency limits, approval requirements, and period-close interaction with posting — deferred pending AETS-006 (Posting Rules), exactly as [ATS-004 §23](ATS-004-Journal-Posting-Test-Specification.md#23-deferred-tests) already defers for the Journal side of the same boundary.
@@ -404,6 +404,7 @@ Dedicated, real-PostgreSQL integration test IDs, each an end-to-end aggregate pr
 
 ## 30. Changelog
 
+- **1.1.0 (2026-09-06):** M6 close: [AETS-010](../AETS-010-Audit-Trail-Evidence-Linkage.md) (Audit Trail & Evidence Linkage) now exists, resolving the forward-reference §29 previously carried. `POST-T093`–`POST-T095` (Audit Event) are implemented; `POST-T096`–`POST-T098` (Outbox) remain deferred, unchanged, since AETS-010 deliberately excludes the Outbox Event schema (AETS-010 §2.2). No test ID, invariant mapping, or other requirement changed — this is a deferred-item status update only, classified MINOR per [AETS-000 §9.1](../AETS-000.md#91-per-document-version) (a clarification, no previously specified behavior changed).
 - **1.0.0 (2026-09-05):** Initial creation. Drafted per the task defining the normative test specification for AETS-007 (Accounting Commands & Posting Pipeline) before Posting Engine implementation begins. Introduces `POST-T001`–`POST-T131`, tracing every `POST-001`–`POST-027` invariant to at least one test ID (§6). No `JRN-T` ID reused, and no existing `POST-NNN` invariant renumbered. Mirrors the established structure and conventions of [ATS-004](ATS-004-Journal-Posting-Test-Specification.md) and [ATS-005](ATS-005-Chart-of-Accounts-Test-Specification.md) throughout.
 
   **Activation (2026-09-05, M4-T1 Close):** The Founder/CTO/Accounting Domain Reviewer review this document required, per [AETS-000 §8.3](../AETS-000.md#83-lifecycle), is complete. Status changes from `Draft` to `Active`; this document now governs Posting Engine test coverage. No test ID, invariant mapping, or other content changed as part of activation — `POST-T001`–`POST-T131` are preserved exactly as drafted.

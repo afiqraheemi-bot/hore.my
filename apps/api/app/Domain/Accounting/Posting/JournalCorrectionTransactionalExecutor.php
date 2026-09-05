@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Accounting\Posting;
 
+use App\Domain\Accounting\Audit\AuditAction;
+use App\Domain\Accounting\Audit\AuditEvent;
 use App\Domain\Accounting\Journal\Journal;
 use App\Domain\Accounting\Posting\Exception\CorruptPostingIdempotencyMappingException;
 use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
 use App\Domain\Accounting\Posting\Exception\UnresolvedCorrectionTargetException;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Infrastructure\Accounting\Audit\AuditEventRepository;
 use App\Infrastructure\Accounting\Journal\Exception\DuplicateJournalIdentityException;
 use App\Infrastructure\Accounting\Journal\JournalRepository;
 use App\Infrastructure\Accounting\Posting\Exception\DuplicatePostingIdempotencyKeyException;
+use App\Infrastructure\Accounting\Posting\JournalEvidenceLinkRepository;
 use App\Infrastructure\Accounting\Posting\PostingIdempotencyRepository;
 use Illuminate\Database\ConnectionInterface;
 
@@ -42,6 +46,16 @@ use Illuminate\Database\ConnectionInterface;
  * is already generic (a Journal plus an isNewlyPosted flag), so no new
  * result type is introduced.
  *
+ * **Audit Event, atomically (M6, AETS-010 §10).** Every first-submission
+ * Reversal or Replacement also records exactly one {@see AuditEvent}
+ * (`JournalReversed`/`JournalReplaced` respectively) inside the same
+ * transaction, via {@see AuditEventRepository} — the same collaborator
+ * {@see PostingCommandTransactionalExecutor} now uses for ordinary
+ * Posting. A Journal Correction command carries no Evidence References
+ * of its own (AETS-010 §9) — its evidentiary basis is the Journal it
+ * corrects — so, unlike the M4 executor, this class never calls
+ * {@see JournalEvidenceLinkRepository}.
+ *
  * **Decision (and assembly) before write, always.** For each entry
  * point, {@see JournalCorrectionCandidateAssembler} first builds the
  * candidate Journal (loading and validating whatever it references),
@@ -64,6 +78,7 @@ final class JournalCorrectionTransactionalExecutor
         private readonly JournalCorrectionCandidateAssembler $assembler,
         private readonly JournalRepository $journalRepository,
         private readonly PostingIdempotencyRepository $idempotencyRepository,
+        private readonly AuditEventRepository $auditEventRepository,
     ) {}
 
     /**
@@ -76,6 +91,9 @@ final class JournalCorrectionTransactionalExecutor
         return $this->execute(
             $command->tenantId(),
             $command->idempotencyKey(),
+            $command->actor(),
+            $command->source(),
+            AuditAction::JournalReversed,
             fn (): Journal => $this->assembler->assembleReversal($command),
         );
     }
@@ -90,6 +108,9 @@ final class JournalCorrectionTransactionalExecutor
         return $this->execute(
             $command->tenantId(),
             $command->idempotencyKey(),
+            $command->actor(),
+            $command->source(),
+            AuditAction::JournalReplaced,
             fn (): Journal => $this->assembler->assembleReplacement($command),
         );
     }
@@ -97,8 +118,14 @@ final class JournalCorrectionTransactionalExecutor
     /**
      * @param  \Closure(): Journal  $assembleCandidate
      */
-    private function execute(TenantId $tenantId, IdempotencyKey $idempotencyKey, \Closure $assembleCandidate): PostingCommandExecutionResult
-    {
+    private function execute(
+        TenantId $tenantId,
+        IdempotencyKey $idempotencyKey,
+        ActorReference $actor,
+        SourceReference $source,
+        AuditAction $auditAction,
+        \Closure $assembleCandidate,
+    ): PostingCommandExecutionResult {
         $candidate = $assembleCandidate();
 
         $decision = $this->idempotencyResolver->resolve($tenantId, $idempotencyKey, $candidate);
@@ -111,11 +138,19 @@ final class JournalCorrectionTransactionalExecutor
         }
 
         try {
-            $journal = $this->connection->transaction(function () use ($candidate, $tenantId, $idempotencyKey) {
+            $journal = $this->connection->transaction(function () use ($candidate, $tenantId, $idempotencyKey, $actor, $source, $auditAction) {
                 $posted = $candidate->post();
 
                 $this->journalRepository->save($posted);
                 $this->idempotencyRepository->record($tenantId, $idempotencyKey, $posted->id());
+
+                $this->auditEventRepository->record(new AuditEvent(
+                    $tenantId,
+                    $actor,
+                    $source,
+                    $auditAction,
+                    $posted->id(),
+                ));
 
                 return $posted;
             });

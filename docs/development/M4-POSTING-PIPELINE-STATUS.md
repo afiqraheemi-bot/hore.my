@@ -2,8 +2,9 @@
 
 - Status: Closed for MVP scope — remaining items are explicitly blocked, not oversights
 - Date: 2026-09-06
+- **Updated 2026-09-06 (M6 close):** POST-007, POST-019, POST-020, and POST-024 below are corrected from their M4-close status — [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md) (Audit Trail & Evidence Linkage) now exists and resolves the Audit Event and minimal Evidence Reference/Linkage gaps this document originally recorded as blocked/deferred. See §7 for the full M6 delta. Every other row is unchanged from M4 close.
 - Governs: `App\Domain\Accounting\Posting`, `App\Infrastructure\Accounting\Posting`, `App\Infrastructure\Accounting\Journal`
-- Authoritative specs: [AETS-007](../specifications/accounting/AETS-007-Posting-Command.md), [ATS-007](../specifications/accounting/tests/ATS-007-Posting-Pipeline-Test-Specification.md)
+- Authoritative specs: [AETS-007](../specifications/accounting/AETS-007-Posting-Command.md), [ATS-007](../specifications/accounting/tests/ATS-007-Posting-Pipeline-Test-Specification.md), [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md), [ATS-010](../specifications/accounting/tests/ATS-010-Audit-Trail-Test-Specification.md)
 
 ## Purpose
 
@@ -29,7 +30,7 @@ A first-submission Posting Command reaches durable, atomic, idempotent Posted st
 | POST-004 | Conflicting idempotency reuse rejected | **Done** | `PostingCommandTransactionalExecutorTest`, `PostingCommandIdempotencyResolverTest`. |
 | POST-005 | Valid Actor and Source required | **Partial** | Presence: done (constructor-level). "Authorized": **blocked** — no Identity/Access system exists to authorize against. |
 | POST-006 | AI cannot be recorded as Actor | **Blocked** | No AI/proposal-producing integration exists in this codebase yet. |
-| POST-007 | Evidence traceability where applicable | **Blocked** | AETS-007 §26: Evidence's reference contract is "entirely deferred... no minimal contract is defined." Nothing to build against. |
+| POST-007 | Evidence traceability where applicable | **Partial (was Blocked)** | M6: `EvidenceReference` (minimal opaque contract) and atomic linkage are done and fault-injection proven (`AUD-T010`, `AUD-T011`). Evidence's own full schema/retention and tenant-ownership validation remain deferred (AETS-010 §2.2, §11). |
 | POST-008 | Account existence required | **Done** | `PostingCommandAccountValidatorTest`. |
 | POST-009 | Account same-Tenant ownership | **Done** | `PostingCommandAccountValidatorTest` (shares one rejection category with POST-008 per `COA-001`, by design). |
 | POST-010 | Account must be Active | **Done** | `PostingCommandAccountValidatorTest`. |
@@ -41,17 +42,19 @@ A first-submission Posting Command reaches durable, atomic, idempotent Posted st
 | POST-016 | Exact Debit == Credit | **Done** | `Journal::create()`'s `UnbalancedJournalException`. |
 | POST-017 | No binary float anywhere | **Done** | Enforced at `Money` construction (AETS-003). |
 | POST-018 | Draft-only candidate input | **Done** | `PostingCommandJournalStateResolverTest` — including the M4-T19 correction for cross-tenant identity collision. |
-| POST-019 | Atomic posting | **Partial** | Journal header + Lines + idempotency mapping: done, fault-injection proven (`PostingCommandTransactionalExecutorTest`). Evidence linkage, Audit Event, Outbox event: **not built** (§4). Full LED-003 remains incomplete by design. |
-| POST-020 | Rollback on failure | **Partial** | Same split as POST-019 — proven for the three writes that exist. |
+| POST-019 | Atomic posting | **Partial (narrowed at M6)** | Journal header + Lines + idempotency mapping + Audit Event + Evidence linkage: done, fault-injection proven (`PostingCommandTransactionalExecutorTest`, M6). Outbox event: **not built** (§4) — the sole remaining gap in LED-003. |
+| POST-020 | Rollback on failure | **Partial (narrowed at M6)** | Same split as POST-019 — proven for the five writes that exist; Outbox remains the only unbuilt one. |
 | POST-021 | One authoritative Posted Journal | **Done** | `PostingCommandTransactionalExecutorTest`'s genuine forked-process concurrency tests — exactly one Journal survives both an identical and a conflicting real race. |
 | POST-022 | No network call inside the transaction | **Done** | `PostingNoNetworkInTransactionTest` (architecture/source-scan, mirroring `JRN-T032`/`JRN-T192`'s technique). |
 | POST-023 | No direct AI posting authority | **Blocked** | Same as POST-006. |
-| POST-024 | Audit traceability | **Deferred** | AETS-010 (Audit Trail spec) not yet created. |
+| POST-024 | Audit traceability | **Done (M6)** | [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md) created and implemented; `AuditEventRepository` records one Audit Event per successful Posting/Correction, atomically (`AUD-T001`–`AUD-T007`). |
 | POST-025 | Outbox consistency | **Deferred** | ADR-0006's own deferred scope; Outbox mechanism not yet built. |
 | POST-026 | Required Source Fingerprint fails safely | **Blocked** | Requirement-detection policy is explicitly a future calling module's decision (§6.2/§26) — no such module exists. |
 | POST-027 | No fabricated Source Fingerprint | **Partial** | Architecture half (pipeline never self-generates one): done, `PostingCommandNeverGeneratesSourceFingerprintTest` (POST-T030). Runtime-rejection half (POST-T029): **blocked**, same reason as POST-026. |
 
-**Tally:** 16 fully done, 5 partial (each with a concretely done sub-part), 4 blocked, 2 deferred to named future specs, out of 27.
+**Tally at M4 close:** 16 fully done, 5 partial (each with a concretely done sub-part), 4 blocked, 2 deferred to named future specs, out of 27.
+
+**Tally after M6:** 17 fully done (POST-024 moved from deferred to done), 5 partial (POST-007's status improved; POST-019/POST-020 narrowed to the Outbox gap alone), 4 blocked (unchanged — Actor/AI/Source-Fingerprint-policy items), 1 deferred (Outbox, POST-025, unchanged), out of 27.
 
 ## 3. What was found and fixed during closure (not part of the original plan)
 
@@ -68,11 +71,10 @@ Every item below requires a specification, contract, or module this codebase doe
 | --- | --- | --- |
 | Actor → Tenant resolution, Actor authorization | A future Identity/Access specification | AETS-007 §8.1: Actor is "an opaque, immutable reference... once an Identity/Access system exists to resolve it further" |
 | AI-cannot-be-Actor, AI-authority parity | An AI/proposal-producing integration | No such integration exists anywhere in this codebase yet |
-| Evidence references, Evidence traceability | Evidence's own reference contract | AETS-007 §26: "Evidence's reference contract remains entirely deferred alongside its schema — no minimal contract is defined for it here" |
+| Evidence's own full schema, retention, storage; Evidence tenant-ownership validation | A future Document Processing specification | AETS-010 §2.2, §11 (M6): the minimal reference/linkage contract is now built; the full aggregate and its tenant check remain deferred, honestly tracked, not silently dropped |
 | Source Fingerprint requirement-detection policy (when is one required) | A future calling module (Bank Reconciliation, Document Processing, etc.) | AETS-007 §6.2/§26: "determined by the calling module... this document does not enumerate every business context" |
-| Audit Event | AETS-010 (Audit Trail specification) | AETS-007 §22: "deferred to a future Audit Trail specification (AETS-010, not yet created)" |
-| Outbox Event | ADR-0006's own delivery/dispatcher design | AETS-007 §22/§26: "ADR-0006's own deferred scope, unchanged here" |
-| Full atomicity (LED-003 / AETS-002 invariant 2, in full) | All of the above (Evidence + Audit + Outbox) | Cannot be satisfied until each of the above exists |
+| Outbox Event | ADR-0006's own delivery/dispatcher design | AETS-007 §22/§26: "ADR-0006's own deferred scope, unchanged here"; AETS-010 §2.2 (M6) confirms no current workflow requires one yet |
+| Full atomicity (LED-003 / AETS-002 invariant 2, in full) | Outbox alone, as of M6 | Journal, Lines, idempotency, Audit Event, and Evidence linkage all commit atomically (M6) — only a required Outbox event, when one is ever needed, remains outside that transaction's proven scope |
 
 ## 5. Explicitly not built, and not implied by "M4 complete"
 
@@ -88,6 +90,19 @@ Every item below requires a specification, contract, or module this codebase doe
 - `pint --test`: passing.
 - `composer validate --strict`: valid.
 - `git diff --check`: clean.
+
+## 7. Post-M4 updates (M6 — Audit Trail & Evidence Linkage)
+
+M6 closed the single most-cited gap in this document: Audit Event and a minimal Evidence Reference/Linkage contract, per the new [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md).
+
+- `AuditEventRepository` and `JournalEvidenceLinkRepository` (new), wired into `PostingCommandTransactionalExecutor` (M4, extended) and `JournalCorrectionTransactionalExecutor` (M5, extended) — every successful, newly-posted Posting/Reversal/Replacement now records exactly one Audit Event, and any Posting Command carrying Evidence References now links them, all inside the same existing atomic transaction.
+- `EvidenceReference` (new Value Object, mirrors `ActorReference`/`SourceReference` exactly).
+- Two new tables: `audit_events`, `journal_evidence_links` — each a tenant-safe composite FK back to `journals`, mirroring the established `posting_idempotency_keys`/`posting_source_fingerprints` pattern.
+- `ReverseJournalCommand`/`ReplaceJournalCommand` (M5) extended with `ActorReference`/`SourceReference` fields, since Audit Event production requires them and M5 had deliberately omitted both as unused at the time.
+- **Not resolved by M6, deliberately:** Evidence's own full schema/retention/storage (Document Processing's future concern), Evidence tenant-ownership validation (blocked on the same prerequisite), and the Outbox Event schema (no current workflow needs one — building it now would be speculative, per ADR-0006's own rollout rule).
+- Full regression at M6 close: PostgreSQL suite 312/312 passing (654 assertions) for the Feature-level Accounting Posting/Journal/Audit suite, 656/656 Unit tests passing (2072 assertions); `phpstan analyse`: 0 errors; `pint --test`: passing; `composer validate --strict`: valid; `git diff --check`: clean.
+
+See the M6 closure report (delivered to the Founder alongside this update) for the full self-QA and acceptance-criteria walkthrough.
 
 ## 7. Recommendation for M5
 
