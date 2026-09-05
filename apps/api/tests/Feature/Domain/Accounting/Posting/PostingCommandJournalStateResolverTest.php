@@ -374,6 +374,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         // It is not this test's concern and is intentionally not
         // recreated here.
         Schema::connection('pgsql')->dropIfExists('posting_idempotency_keys');
+        Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
 
