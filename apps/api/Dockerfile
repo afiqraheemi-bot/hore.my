@@ -13,7 +13,7 @@ RUN apt-get update \
         libonig-dev \
         unzip \
         curl \
-    && docker-php-ext-install pdo_pgsql mbstring \
+    && docker-php-ext-install pdo_pgsql mbstring pcntl posix \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2.10.3 /usr/bin/composer /usr/bin/composer

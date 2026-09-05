@@ -55,6 +55,8 @@ final class PostingIdempotencyKeysTableMigrationTest extends TestCase
 
     private const JOURNAL_MIGRATION_PATH = 'database/migrations/2026_09_04_150000_create_journals_and_journal_lines_tables.php';
 
+    private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -314,6 +316,7 @@ final class PostingIdempotencyKeysTableMigrationTest extends TestCase
 
         if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
+            self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
         }
 
         // `migrate:rollback --path=X` only rolls back the most recent

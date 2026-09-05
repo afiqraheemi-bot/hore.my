@@ -149,7 +149,7 @@ final class JournalRepository
 
         try {
             $this->connection->transaction(function () use ($journal, $header, $lines): void {
-                /** @var object{tenant_id: string, journal_id: string, state: string}|null $existingHeader */
+                /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}|null $existingHeader */
                 $existingHeader = $this->connection->table(self::JOURNAL_TABLE)
                     ->where('journal_id', $header['journal_id'])
                     ->lockForUpdate()
@@ -171,6 +171,11 @@ final class JournalRepository
 
                 if ($existingHeader->tenant_id !== $header['tenant_id']) {
                     throw ImmutableJournalStateException::forField($journal->id(), 'TenantId');
+                }
+
+                if ($existingHeader->correction_type !== $header['correction_type']
+                    || $existingHeader->corrected_journal_id !== $header['corrected_journal_id']) {
+                    throw ImmutableJournalStateException::forField($journal->id(), 'correction-chain reference');
                 }
 
                 $existingLines = $this->connection->table(self::LINE_TABLE)
@@ -214,7 +219,7 @@ final class JournalRepository
      */
     public function findById(TenantId $tenantId, JournalId $journalId): ?Journal
     {
-        /** @var object{tenant_id: string, journal_id: string, state: string}|null $headerRow */
+        /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}|null $headerRow */
         $headerRow = $this->connection->table(self::JOURNAL_TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('journal_id', $journalId->toString())
@@ -239,6 +244,8 @@ final class JournalRepository
             'tenant_id' => $headerRow->tenant_id,
             'journal_id' => $headerRow->journal_id,
             'state' => $headerRow->state,
+            'correction_type' => $headerRow->correction_type,
+            'corrected_journal_id' => $headerRow->corrected_journal_id,
         ];
 
         $lines = array_values($lineRows->map(fn (object $row): array => $this->lineRowToArray($row))->all());

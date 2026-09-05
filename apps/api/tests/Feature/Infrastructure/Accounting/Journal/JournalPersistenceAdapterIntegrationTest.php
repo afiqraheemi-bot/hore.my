@@ -250,7 +250,7 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
 
     private function selectJournal(string $journalId): Journal
     {
-        /** @var object{tenant_id: string, journal_id: string, state: string} $headerRow */
+        /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null} $headerRow */
         $headerRow = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', $journalId)->firstOrFail();
 
         /** @var Collection<int, object{journal_id: string, line_position: int, account_id: string, amount: int|string, currency: string, direction: string}> $lineRows */
@@ -260,6 +260,8 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             'tenant_id' => $headerRow->tenant_id,
             'journal_id' => $headerRow->journal_id,
             'state' => $headerRow->state,
+            'correction_type' => $headerRow->correction_type,
+            'corrected_journal_id' => $headerRow->corrected_journal_id,
         ];
 
         $lines = $lineRows->map(static fn (object $row): array => [
@@ -300,6 +302,8 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             $table->string('tenant_id', 64);
             $table->string('journal_id', 64);
             $table->string('state', 32);
+            $table->string('correction_type', 32)->nullable();
+            $table->string('corrected_journal_id', 64)->nullable();
         });
 
         Schema::connection('pgsql')->create(self::LINE_TABLE, function (Blueprint $table): void {

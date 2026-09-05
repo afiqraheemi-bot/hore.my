@@ -81,7 +81,7 @@ final class JournalPersistenceAdapterTest extends TestCase
     public function test_persisted_draft_maps_back_to_a_journal(): void
     {
         $journal = $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $this->twoBalancedLineRows(),
         );
 
@@ -91,7 +91,7 @@ final class JournalPersistenceAdapterTest extends TestCase
     public function test_persisted_posted_maps_back_to_a_journal(): void
     {
         $journal = $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted', 'correction_type' => null, 'corrected_journal_id' => null],
             $this->twoBalancedLineRows(),
         );
 
@@ -234,7 +234,7 @@ final class JournalPersistenceAdapterTest extends TestCase
     public function test_posted_reconstruction_uses_reconstitute_not_post(): void
     {
         $journal = $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted', 'correction_type' => null, 'corrected_journal_id' => null],
             $this->twoBalancedLineRows(),
         );
         $this->assertSame(JournalState::Posted, $journal->state());
@@ -262,7 +262,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidPersistedJournalStateException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'NotACanonicalState'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'NotACanonicalState', 'correction_type' => null, 'corrected_journal_id' => null],
             $this->twoBalancedLineRows(),
         );
     }
@@ -275,7 +275,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidPersistedJournalDirectionException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $lines,
         );
     }
@@ -285,7 +285,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidTenantIdException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => '', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => '', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $this->twoBalancedLineRows(),
         );
     }
@@ -295,7 +295,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidJournalIdException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => '', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => '', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $this->twoBalancedLineRows(),
         );
     }
@@ -308,7 +308,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidAccountIdException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $lines,
         );
     }
@@ -321,7 +321,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidMinorUnitsException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $lines,
         );
     }
@@ -334,7 +334,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidCurrencyException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $lines,
         );
     }
@@ -347,7 +347,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(UnbalancedJournalException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             $lines,
         );
     }
@@ -387,7 +387,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InsufficientJournalLinesException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft'],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
             [$lines[0]],
         );
     }

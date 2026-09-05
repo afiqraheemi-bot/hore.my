@@ -8,6 +8,8 @@ use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountOrigin;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountIdException;
+use App\Domain\Accounting\Journal\CorrectionType;
+use App\Domain\Accounting\Journal\Exception\InconsistentCorrectionMetadataException;
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
 use App\Domain\Accounting\Journal\Exception\InvalidJournalIdException;
 use App\Domain\Accounting\Journal\Exception\MixedCurrencyJournalException;
@@ -22,6 +24,7 @@ use App\Domain\Accounting\Money\Exception\InvalidMinorUnitsException;
 use App\Domain\Shared\Tenancy\Exception\InvalidTenantIdException;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountPersistenceAdapter;
+use App\Infrastructure\Accounting\Journal\Exception\InvalidPersistedCorrectionTypeException;
 use App\Infrastructure\Accounting\Journal\Exception\InvalidPersistedJournalDirectionException;
 use App\Infrastructure\Accounting\Journal\Exception\InvalidPersistedJournalStateException;
 use App\Infrastructure\Accounting\Money\MoneyPersistenceAdapter;
@@ -107,9 +110,13 @@ final class JournalPersistenceAdapter
     }
 
     /**
-     * Extract a Journal's persistence-safe header representation.
+     * Extract a Journal's persistence-safe header representation,
+     * including its correction-chain (M5) — `null` for both fields on
+     * an ordinary Journal, both present together for a Reversal or
+     * Replacement, exactly as {@see Journal}'s own domain invariant
+     * already guarantees.
      *
-     * @return array{tenant_id: string, journal_id: string, state: string}
+     * @return array{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}
      */
     public function toPersistedHeader(Journal $journal): array
     {
@@ -117,6 +124,10 @@ final class JournalPersistenceAdapter
             'tenant_id' => $journal->tenantId()->toString(),
             'journal_id' => $journal->id()->toString(),
             'state' => self::toPersistedJournalState($journal->state()),
+            'correction_type' => $journal->correctionType() === null
+                ? null
+                : self::toPersistedCorrectionType($journal->correctionType()),
+            'corrected_journal_id' => $journal->correctedJournalId()?->toString(),
         ];
     }
 
@@ -155,25 +166,33 @@ final class JournalPersistenceAdapter
      * `line_position` before reconstruction, regardless of the order
      * they are supplied in.
      *
-     * @param  array{tenant_id: string, journal_id: string, state: string}  $header
+     * @param  array{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}  $header
      * @param  list<array{journal_id: string, line_position: int, account_id: string, amount: string, currency: string, direction: string}>  $lines
      *
      * @throws InvalidTenantIdException if `tenant_id` is not canonical.
-     * @throws InvalidJournalIdException if `journal_id` is not canonical.
+     * @throws InvalidJournalIdException if `journal_id` or `corrected_journal_id` is not canonical.
      * @throws InvalidAccountIdException if a line's `account_id` is not canonical.
      * @throws InvalidMinorUnitsException if a line's `amount` is not a canonical non-negative integer numeral.
      * @throws InvalidCurrencyException if a line's `currency` is not a supported canonical identifier.
      * @throws InvalidPersistedJournalStateException if `state` is not a canonical Journal state.
+     * @throws InvalidPersistedCorrectionTypeException if `correction_type` is not a canonical CorrectionType.
      * @throws InvalidPersistedJournalDirectionException if a line's `direction` is not a canonical Direction.
      * @throws InsufficientJournalLinesException if fewer than two lines are given.
      * @throws MixedCurrencyJournalException if the lines do not all share the same Currency.
      * @throws UnbalancedJournalException if total Debit Money does not exactly equal total Credit Money.
+     * @throws InconsistentCorrectionMetadataException if `correction_type` and `corrected_journal_id` disagree on whether this Journal is a correction.
      */
     public function fromPersistedJournal(array $header, array $lines): Journal
     {
         $tenantId = TenantId::of($header['tenant_id']);
         $journalId = JournalId::of($header['journal_id']);
         $state = self::fromPersistedJournalState($header['state']);
+        $correctionType = $header['correction_type'] === null
+            ? null
+            : self::fromPersistedCorrectionType($header['correction_type']);
+        $correctedJournalId = $header['corrected_journal_id'] === null
+            ? null
+            : JournalId::of($header['corrected_journal_id']);
 
         $orderedLines = $lines;
         usort($orderedLines, static fn (array $a, array $b): int => $a['line_position'] <=> $b['line_position']);
@@ -187,7 +206,7 @@ final class JournalPersistenceAdapter
             $orderedLines,
         );
 
-        return Journal::reconstitute($tenantId, $journalId, $journalLines, $state);
+        return Journal::reconstitute($tenantId, $journalId, $journalLines, $state, $correctionType, $correctedJournalId);
     }
 
     private static function toPersistedJournalState(JournalState $state): string
@@ -204,6 +223,22 @@ final class JournalPersistenceAdapter
         }
 
         throw InvalidPersistedJournalStateException::forValue($value);
+    }
+
+    private static function toPersistedCorrectionType(CorrectionType $type): string
+    {
+        return $type->name;
+    }
+
+    private static function fromPersistedCorrectionType(string $value): CorrectionType
+    {
+        foreach (CorrectionType::cases() as $case) {
+            if ($case->name === $value) {
+                return $case;
+            }
+        }
+
+        throw InvalidPersistedCorrectionTypeException::forValue($value);
     }
 
     private static function toPersistedJournalDirection(JournalDirection $direction): string

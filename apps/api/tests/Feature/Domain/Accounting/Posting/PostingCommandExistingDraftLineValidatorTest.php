@@ -69,6 +69,8 @@ final class PostingCommandExistingDraftLineValidatorTest extends TestCase
 
     private const JOURNAL_MIGRATION_PATH = 'database/migrations/2026_09_04_150000_create_journals_and_journal_lines_tables.php';
 
+    private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -427,6 +429,7 @@ final class PostingCommandExistingDraftLineValidatorTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
+        self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);
