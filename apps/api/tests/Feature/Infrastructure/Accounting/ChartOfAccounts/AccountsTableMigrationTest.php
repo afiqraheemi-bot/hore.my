@@ -33,6 +33,8 @@ final class AccountsTableMigrationTest extends TestCase
 
     private const MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
+    private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
+
     private static ?string $skipReason = null;
 
     private static bool $migrated = false;
@@ -273,6 +275,14 @@ final class AccountsTableMigrationTest extends TestCase
 
         if ($journalLinesExistedBefore) {
             self::forceCleanState($journalMigrationPath, ['journal_lines', 'journals']);
+            // Restoring `journals` via its own base migration alone
+            // omits the M5 correction-chain columns
+            // (`2026_09_06_090000_add_correction_chain_to_journals_table.php`)
+            // that other test classes sharing this real database within
+            // the same PHPUnit process assume are present — re-apply it
+            // immediately so the table matches the full production
+            // schema again, not just this rollback's own concern.
+            self::forceCleanState(self::CORRECTION_MIGRATION_PATH, []);
         }
     }
 

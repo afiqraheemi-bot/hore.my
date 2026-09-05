@@ -43,6 +43,8 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 
     private const JOURNAL_MIGRATION_PATH = 'database/migrations/2026_09_04_150000_create_journals_and_journal_lines_tables.php';
 
+    private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -379,9 +381,32 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
      * migration re-applies cleanly afterward. Restores state afterward
      * so class-level fixtures remain consistent regardless of test
      * execution order.
+     *
+     * **Also restores the M5 correction-chain columns.** Rolling back
+     * this migration drops `journals` entirely — including the
+     * `correction_type`/`corrected_journal_id` columns
+     * `2026_09_06_090000_add_correction_chain_to_journals_table.php`
+     * later adds to it — even though that migration's own tracking row
+     * is untouched by this rollback (it targets a different migration
+     * path). Re-applying the base migration alone would therefore leave
+     * `journals` missing those columns for the rest of this PHPUnit
+     * process, silently breaking every other test class that assumes
+     * the full production schema is present. Re-running the
+     * correction-chain migration immediately afterward restores it.
+     *
+     * **Guarantees this migration is the newest batch first.** Since
+     * `ensureMigrated()` now applies the M5 correction-chain migration
+     * immediately after this one (both share this real database with
+     * every other test class in the same PHPUnit process), that later
+     * migration — not this one — would otherwise be the newest batch by
+     * the time this test runs, and `migrate:rollback --path=X`'s
+     * batch-oriented semantics (documented above `forceCleanMigration()`)
+     * would silently roll back nothing.
      */
     public function test_migration_rollback_succeeds_cleanly(): void
     {
+        self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
+
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE));
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::LINE_TABLE));
 
@@ -404,6 +429,8 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE));
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::LINE_TABLE));
+
+        self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
     }
 
     private function insertJournal(string $tenantId, string $journalId, string $state = 'Draft'): void
@@ -484,6 +511,13 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
+        // Production `journals` never exists without the M5
+        // correction-chain migration also applied on top of it — every
+        // other test class sharing this real database within the same
+        // PHPUnit process assumes that full schema is present. Applying
+        // it here too keeps this class's own fixture consistent with
+        // that shared reality, not just with M3-T9 in isolation.
+        self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
 
         // journal_lines' composite foreign key depends on accounts
         // already existing — ensure the production accounts migration
