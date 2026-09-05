@@ -18,6 +18,7 @@ use App\Domain\Accounting\Journal\JournalState;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
+use App\Domain\Accounting\Posting\Exception\RejectedJournalIdentityUnavailableException;
 use App\Domain\Accounting\Posting\Exception\RejectedJournalStateException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Accounting\Posting\PostingCommand;
@@ -48,6 +49,16 @@ use Tests\TestCase;
  * `DraftJournalAssembler`, which this task does not do. `POST-T045`
  * (line order preserved) remains evidenced by earlier tests
  * (M4-T6/M4-T7) and is not reimplemented here.
+ *
+ * **M4-T19: cross-tenant JournalId collision.** A Journal belonging to
+ * a different Tenant is no longer treated as "fresh" — `JournalId` is
+ * a single global primary key (M3-T9), not a per-Tenant business
+ * identifier, so this resolver now also proves the identity-collision
+ * rejection (`RejectedJournalIdentityUnavailableException`) and its
+ * own tenant-isolation boundary (no owning-Tenant detail ever
+ * surfaces), replacing the resolver's own earlier, since-corrected
+ * assumption that "observationally identical to fresh" was a safe
+ * design for a global identifier.
  *
  * If no real PostgreSQL instance is reachable via the `pgsql`
  * connection (e.g. `docker compose up -d postgres` has not been run —
@@ -167,13 +178,12 @@ final class PostingCommandJournalStateResolverTest extends TestCase
     }
 
     /**
-     * A Journal belonging to a different Tenant than the command
-     * remains observationally equivalent to "not found" — the
-     * existing `JournalRepository::findById()` contract is
-     * tenant-scoped, and this resolver introduces no second,
-     * tenant-unscoped lookup to tell the two apart.
+     * A JournalId already reserved by a different Tenant's real
+     * Journal is rejected outright — never treated as fresh, since
+     * `JournalId` is a single global primary key, not a per-Tenant
+     * business identifier (M4-T19).
      */
-    public function test_wrong_tenant_journal_resolves_as_fresh(): void
+    public function test_journal_id_owned_by_another_tenant_is_rejected(): void
     {
         $tenantBJournal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
             $this->debitLine('account-cash-b', '100.00'),
@@ -181,9 +191,61 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         ]);
         $this->journalRepository->save($tenantBJournal);
 
-        $result = $this->resolver->resolve($this->makeCommand($this->tenantA, JournalId::of('journal-shared-id')));
+        $this->expectException(RejectedJournalIdentityUnavailableException::class);
 
-        $this->assertTrue($result->isFresh());
+        $this->resolver->resolve($this->makeCommand($this->tenantA, JournalId::of('journal-shared-id')));
+    }
+
+    /**
+     * The rejection for a cross-tenant JournalId collision reveals
+     * nothing about the owning Tenant — no Tenant identifier, and not
+     * even a literal confirmation that the cause is "another Tenant"
+     * as opposed to any other reason the identity might be unavailable
+     * (AETS-007 §21).
+     */
+    public function test_cross_tenant_collision_rejection_reveals_no_owning_tenant_details(): void
+    {
+        $tenantBJournal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
+            $this->debitLine('account-cash-b', '100.00'),
+            $this->creditLine('account-cash-b', '100.00'),
+        ]);
+        $this->journalRepository->save($tenantBJournal);
+
+        try {
+            $this->resolver->resolve($this->makeCommand($this->tenantA, JournalId::of('journal-shared-id')));
+            $this->fail('Expected a RejectedJournalIdentityUnavailableException.');
+        } catch (RejectedJournalIdentityUnavailableException $e) {
+            $this->assertStringContainsString('journal-shared-id', $e->getMessage());
+            $this->assertStringNotContainsString($this->tenantB->toString(), $e->getMessage());
+            $this->assertStringNotContainsStringIgnoringCase('tenant', $e->getMessage());
+        }
+    }
+
+    /**
+     * A cross-tenant identity collision leaves zero persistent effect
+     * of any kind — no Journal or Line row is written for the rejected
+     * command, and the other Tenant's real Journal is left completely
+     * unchanged.
+     */
+    public function test_cross_tenant_collision_writes_nothing(): void
+    {
+        $tenantBJournal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
+            $this->debitLine('account-cash-b', '100.00'),
+            $this->creditLine('account-cash-b', '100.00'),
+        ]);
+        $this->journalRepository->save($tenantBJournal);
+        $beforeCount = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->count();
+
+        try {
+            $this->resolver->resolve($this->makeCommand($this->tenantA, JournalId::of('journal-shared-id')));
+        } catch (RejectedJournalIdentityUnavailableException) {
+            // Expected.
+        }
+
+        $this->assertSame($beforeCount, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->count());
+        $unchanged = $this->journalRepository->findById($this->tenantB, JournalId::of('journal-shared-id'));
+        $this->assertNotNull($unchanged);
+        $this->assertTrue($tenantBJournal->equals($unchanged));
     }
 
     /**

@@ -40,7 +40,7 @@ final class JournalRepositoryTest extends TestCase
 
         sort($publicMethodNames);
 
-        $this->assertSame(['__construct', 'findById', 'save'], $publicMethodNames);
+        $this->assertSame(['__construct', 'existsById', 'findById', 'save'], $publicMethodNames);
     }
 
     public function test_no_delete_or_crud_method_exists(): void
@@ -82,6 +82,26 @@ final class JournalRepositoryTest extends TestCase
         $this->assertInstanceOf(ReflectionNamedType::class, $returnType);
         $this->assertTrue($returnType->allowsNull());
         $this->assertSame('App\Domain\Accounting\Journal\Journal', $returnType->getName());
+    }
+
+    /**
+     * (M4-T19) `existsById()` accepts only a `JournalId` — deliberately
+     * no `TenantId` parameter, since it is the one intentionally global
+     * lookup on this repository — and returns a plain `bool`, never a
+     * `Journal`, an `array`, or any other shape that could carry
+     * identifying detail about who owns the identifier.
+     */
+    public function test_exists_by_id_accepts_only_journal_id_and_returns_bool(): void
+    {
+        $method = new ReflectionMethod(JournalRepository::class, 'existsById');
+
+        $parameters = $method->getParameters();
+        $this->assertCount(1, $parameters);
+        $this->assertSame('App\Domain\Accounting\Journal\JournalId', (string) $parameters[0]->getType());
+
+        $returnType = $method->getReturnType();
+        $this->assertInstanceOf(ReflectionNamedType::class, $returnType);
+        $this->assertSame('bool', $returnType->getName());
     }
 
     public function test_uses_journal_persistence_adapter_for_mapping(): void

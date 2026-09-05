@@ -15,6 +15,7 @@ use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\DraftJournalAssembler;
 use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
+use App\Domain\Accounting\Posting\Exception\RejectedJournalIdentityUnavailableException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Accounting\Posting\PostingCommand;
 use App\Domain\Accounting\Posting\PostingCommandAccountValidator;
@@ -264,6 +265,54 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         $this->assertFalse($forA->journal()->id()->equals($forB->journal()->id()));
         $this->assertSame(2, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->count());
         $this->assertSame(2, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
+    }
+
+    // --- M4-T19: cross-tenant JournalId collision ---------------------------
+
+    /**
+     * A command proposing a JournalId already owned by a different
+     * Tenant is rejected outright — at the pre-validation
+     * `PostingCommandJournalStateResolver` step, before any transaction
+     * even opens. Critically, `RejectedJournalIdentityUnavailableException`
+     * is *not* one of the two exceptions
+     * {@see PostingCommandTransactionalExecutor::execute()} treats as a
+     * recoverable race — it propagates straight through, exactly like
+     * any other validation failure, and never reaches
+     * `resolveAfterLostRace()`. This is what actually closes the gap:
+     * before M4-T19, this exact scenario would instead reach
+     * `JournalRepository::save()`'s own `INSERT`, collide with the
+     * other Tenant's real row, and surface as
+     * `DuplicateJournalIdentityException` — the concurrency-race
+     * signal — triggering an irrelevant re-resolution against this
+     * Tenant's own (Tenant, Idempotency Key) mapping.
+     */
+    public function test_cross_tenant_journal_identity_collision_is_rejected_before_any_transaction(): void
+    {
+        $tenantBJournal = $this->executor->execute($this->makeCommand(
+            $this->tenantB,
+            JournalId::of('journal-owned-by-b'),
+            [$this->debitLine('account-cash-b', '100.00'), $this->creditLine('account-income-b', '100.00')],
+        ));
+        $this->assertTrue($tenantBJournal->isNewlyPosted());
+
+        $command = $this->makeCommand($this->tenantA, JournalId::of('journal-owned-by-b'), $this->balancedLines());
+
+        try {
+            $this->executor->execute($command);
+            $this->fail('Expected a RejectedJournalIdentityUnavailableException.');
+        } catch (RejectedJournalIdentityUnavailableException $e) {
+            $this->assertStringNotContainsString($this->tenantB->toString(), $e->getMessage());
+            $this->assertStringNotContainsStringIgnoringCase('tenant', $e->getMessage());
+        }
+
+        // No *new* Journal or mapping for Tenant A's rejected attempt —
+        // exactly the one Journal and one mapping Tenant B's own
+        // earlier, successful posting already produced, unchanged.
+        $this->assertSame(1, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->count());
+        $this->assertSame(1, DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->count());
+        $reloaded = $this->journalRepository->findById($this->tenantB, JournalId::of('journal-owned-by-b'));
+        $this->assertNotNull($reloaded);
+        $this->assertTrue($tenantBJournal->journal()->equals($reloaded));
     }
 
     // --- Atomic rollback ----------------------------------------------------

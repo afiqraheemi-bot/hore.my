@@ -355,6 +355,45 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $this->assertNotNull($this->repository->findById($this->tenantB, JournalId::of('journal-shared-id')));
     }
 
+    /**
+     * (M4-T19) `existsById()` is deliberately global — unlike
+     * `findById()`, it answers whether a JournalId is reserved by
+     * *any* Tenant's Journal, not just this connection's caller's own.
+     */
+    public function test_exists_by_id_is_true_for_a_journal_owned_by_any_tenant(): void
+    {
+        $journal = Journal::create($this->tenantB, JournalId::of('journal-owned-by-b'), [
+            $this->debitLine('account-cash-b', '100.00'),
+            $this->creditLine('account-income-b', '100.00'),
+        ]);
+        $this->repository->save($journal);
+
+        $this->assertTrue($this->repository->existsById(JournalId::of('journal-owned-by-b')));
+    }
+
+    public function test_exists_by_id_is_false_for_a_genuinely_unused_identity(): void
+    {
+        $this->assertFalse($this->repository->existsById(JournalId::of('journal-never-used')));
+    }
+
+    /**
+     * `existsById()` returns a plain `bool` — there is no way, by its
+     * return type alone, for a caller to extract a Tenant, a state, or
+     * any other identifying detail about the Journal it found.
+     */
+    public function test_exists_by_id_returns_a_plain_boolean(): void
+    {
+        $journal = Journal::create($this->tenantA, JournalId::of('journal-0099'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ]);
+        $this->repository->save($journal);
+
+        $result = $this->repository->existsById(JournalId::of('journal-0099'));
+
+        $this->assertIsBool($result);
+    }
+
     // (17) exact line order on retrieval.
     public function test_find_by_id_preserves_exact_line_order(): void
     {

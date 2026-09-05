@@ -247,6 +247,38 @@ final class JournalRepository
     }
 
     /**
+     * Whether a JournalId is already reserved by *any* Journal, for
+     * *any* Tenant — deliberately global, unlike every other method on
+     * this class.
+     *
+     * **A narrow, boolean-only primitive.** This method returns a
+     * `bool` and nothing else: never a Journal, never a Tenant, never
+     * any other column from the matching row. `journal_id` is a single
+     * global primary key (M3-T9) — this method exists solely so a
+     * caller can distinguish "this identity has never been used by
+     * anyone" from "this identity is already reserved," without ever
+     * learning *who* reserved it. It exists to close a real gap
+     * `PostingCommandJournalStateResolver` has: its own `findById()`
+     * lookup is tenant-scoped by design and cannot tell "genuinely
+     * unused" apart from "used by a different Tenant" on its own.
+     *
+     * **Why this is not a tenant-isolation violation.** AETS-007 §21
+     * requires that a cross-tenant rejection reveal nothing "more
+     * specific than a tenant-ownership failure category" — it does not
+     * require that the caller be unable to observe *that* a global
+     * identity collision occurred at all, only that no identifying
+     * detail about the other Tenant's record ever surfaces. This
+     * method structurally cannot leak such a detail: its return type
+     * is `bool`.
+     */
+    public function existsById(JournalId $journalId): bool
+    {
+        return $this->connection->table(self::JOURNAL_TABLE)
+            ->where('journal_id', $journalId->toString())
+            ->exists();
+    }
+
+    /**
      * @return array{journal_id: string, line_position: int, account_id: string, amount: string, currency: string, direction: string}
      */
     private function lineRowToArray(object $row): array
