@@ -7,13 +7,22 @@
 # this. 8.5.10 satisfies both the lock file and composer.json's range.
 FROM php:8.5.10-cli
 
+# ADR-0008: SESSION_DRIVER=redis requires the `redis` PECL extension —
+# PhpRedisConnector (Laravel's default REDIS_CLIENT) needs the native
+# `Redis` class, which does not exist without it. $PHPIZE_DEPS (defined
+# by the official php image) provides the compiler toolchain pecl needs;
+# it is purged afterward since nothing else in this image needs it.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpq-dev \
         libonig-dev \
         unzip \
         curl \
+        $PHPIZE_DEPS \
     && docker-php-ext-install pdo_pgsql mbstring pcntl posix \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
+    && apt-get purge -y --auto-remove $PHPIZE_DEPS \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2.10.3 /usr/bin/composer /usr/bin/composer
@@ -30,4 +39,16 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8000
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+# `--no-reload`: without it, Laravel's ServeCommand spawns the actual
+# request-serving `php -S` subprocess through an environment allowlist
+# (Illuminate\Foundation\Console\ServeCommand::$passthroughVariables)
+# that silently strips any variable not on it — including every
+# docker-compose-injected DB_HOST/REDIS_HOST/etc. this container relies
+# on for service discovery. The stripped subprocess then falls back to
+# config's own `127.0.0.1` defaults, which cannot reach the `postgres`/
+# `redis` containers, surfacing as a "Connection refused" deep inside
+# whatever feature first touched a stripped connection (here: Sanctum's
+# SESSION_DRIVER=redis). `--no-reload` passes the full environment
+# through unchanged; the traded-off `.env`-change auto-restart is not
+# needed in a container that gets restarted directly for such changes.
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload"]
