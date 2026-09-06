@@ -29,6 +29,7 @@ Decisions are interpreted using the precedence documented in [`docs/product/refe
 | [ADR-0005](0005-ai-provider-abstraction.md) | Accepted | Isolate AI/OCR providers and restrict AI to proposals and interpretation. |
 | [ADR-0006](0006-transactional-outbox-pattern.md) | Accepted | Commit outbox events atomically and process external work asynchronously and idempotently. |
 | [ADR-0007](0007-money-representation-strategy.md) | Accepted | Use PostgreSQL BIGINT storing integer minor units as canonical Money persistence; prohibit binary floating point everywhere. |
+| [ADR-0008](0008-identity-authentication-tenancy-strategy.md) | Accepted | Use Laravel Sanctum SPA cookie authentication, a REST/JSON `/api/v1` API, and a Tenant-owns-its-owner-User tenancy shape. |
 
 ## Creating an ADR
 
