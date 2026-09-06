@@ -22,9 +22,9 @@ use App\Domain\Transactions\Expense\RecordExpenseCommand;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Transactions\StoreExpenseRequest;
 use App\Http\Support\CurrentTenant;
+use App\Http\Support\DeterministicIdempotentId;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Str;
 
 /**
  * Wraps {@see ExpenseRecordingService} (M7) over HTTP — no new business
@@ -33,6 +33,13 @@ use Illuminate\Support\Str;
  * posting (AETS-007's own idempotency contract is what actually
  * enforces this; the header only carries the caller-chosen key into
  * it).
+ *
+ * `ExpenseId`/`JournalId` are derived deterministically from
+ * `(Tenant, Idempotency-Key)` via {@see DeterministicIdempotentId},
+ * never freshly random — see that class's own docblock for why a
+ * random identifier would silently break retry safety, since
+ * `PostingCommandLogicalEquivalence` treats the proposed Journal
+ * identity as part of what a genuine retry must agree on.
  */
 final class ExpenseController extends Controller
 {
@@ -42,20 +49,21 @@ final class ExpenseController extends Controller
 
     public function store(StoreExpenseRequest $request, CurrentTenant $currentTenant): JsonResponse
     {
-        $idempotencyKey = $request->header('Idempotency-Key');
+        $idempotencyKeyHeader = $request->header('Idempotency-Key');
 
-        if (! is_string($idempotencyKey) || $idempotencyKey === '') {
+        if (! is_string($idempotencyKeyHeader) || $idempotencyKeyHeader === '') {
             return response()->json(['message' => 'The Idempotency-Key header is required.'], 422);
         }
 
         /** @var User $user */
         $user = $request->user();
         $evidenceReference = $request->string('evidence_reference')->toString();
+        $idempotencyKey = IdempotencyKey::of($idempotencyKeyHeader);
 
         $command = new RecordExpenseCommand(
-            ExpenseId::of((string) Str::uuid()),
-            JournalId::of((string) Str::uuid()),
-            IdempotencyKey::of($idempotencyKey),
+            ExpenseId::of(DeterministicIdempotentId::derive($currentTenant->id(), $idempotencyKey, 'expense')),
+            JournalId::of(DeterministicIdempotentId::derive($currentTenant->id(), $idempotencyKey, 'journal')),
+            $idempotencyKey,
             $currentTenant->id(),
             ActorReference::of($user->id),
             Money::fromDecimalString($request->string('amount')->toString(), Currency::of('MYR')),

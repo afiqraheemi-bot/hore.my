@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Http\Api;
 
+use App\Http\Controllers\Api\ExpenseController;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -341,6 +342,123 @@ final class IdentityAndAccountingApiTest extends TestCase
         $evidenceIndex = $this->getJson('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31');
         $evidenceIndex->assertStatus(200);
         $evidenceIndex->assertJsonCount(2, 'entries');
+    }
+
+    // --- HTTP idempotency: a real retry must replay, never duplicate -------
+
+    /**
+     * The core retry-safety proof: a client that never saw the first
+     * response (e.g. the connection dropped) must be able to resend
+     * the *exact same* HTTP request — same Idempotency-Key, same body
+     * — and get back the *same* authoritative result, not a rejection
+     * and not a second economic effect. This exercises the real HTTP
+     * boundary, not just the Domain service directly: `ExpenseId`/
+     * `JournalId` are minted inside {@see ExpenseController}
+     * itself on every call, so this is the only place a naive random-ID
+     * bug could hide.
+     */
+    public function test_an_expense_retried_with_the_same_idempotency_key_replays_instead_of_duplicating(): void
+    {
+        $this->registerAndReturnCredentials('expense-retry@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+
+        $payload = [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ];
+        $headers = ['Idempotency-Key' => 'key-retry-expense-0001'];
+
+        $first = $this->postJson('/api/v1/expenses', $payload, $headers);
+        $first->assertStatus(201);
+        $first->assertJsonPath('is_newly_recorded', true);
+
+        $second = $this->postJson('/api/v1/expenses', $payload, $headers);
+        $second->assertStatus(200);
+        $second->assertJsonPath('is_newly_recorded', false);
+
+        // The replay is the *same* resource and the *same* Journal —
+        // not a lookalike created a second time.
+        $this->assertSame($first->json('id'), $second->json('id'));
+        $this->assertSame($first->json('journal_id'), $second->json('journal_id'));
+
+        $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('audit_events')->count());
+
+        // No duplicate economic effect: the ledger reflects exactly one
+        // RM50.00 posting, not two.
+        $trialBalance = $this->getJson('/api/v1/reports/trial-balance?as_of=2026-08-31');
+        $trialBalance->assertJsonPath('total_debit', '50.00');
+        $trialBalance->assertJsonPath('total_credit', '50.00');
+    }
+
+    public function test_an_income_retried_with_the_same_idempotency_key_replays_instead_of_duplicating(): void
+    {
+        $this->registerAndReturnCredentials('income-retry@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Consulting Revenue', 'Revenue');
+
+        $payload = [
+            'amount' => '200.00',
+            'transaction_date' => '2026-08-15',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Consulting revenue',
+        ];
+        $headers = ['Idempotency-Key' => 'key-retry-income-0001'];
+
+        $first = $this->postJson('/api/v1/incomes', $payload, $headers);
+        $first->assertStatus(201);
+
+        $second = $this->postJson('/api/v1/incomes', $payload, $headers);
+        $second->assertStatus(200);
+        $second->assertJsonPath('is_newly_recorded', false);
+
+        $this->assertSame($first->json('id'), $second->json('id'));
+        $this->assertSame($first->json('journal_id'), $second->json('journal_id'));
+
+        $this->assertSame(1, DB::connection('pgsql')->table('incomes')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('audit_events')->count());
+    }
+
+    /**
+     * Reusing the same Idempotency-Key for a *materially different*
+     * request (a different amount here) is a conflicting reuse, never
+     * a replay — `PostingCommandLogicalEquivalence` rejects it even
+     * though the derived `JournalId` is identical to the first attempt,
+     * because the proposed Journal Lines themselves now disagree.
+     */
+    public function test_reusing_an_idempotency_key_with_a_different_amount_is_rejected_as_conflicting(): void
+    {
+        $this->registerAndReturnCredentials('expense-conflict@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $headers = ['Idempotency-Key' => 'key-conflict-expense-0001'];
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ], $headers)->assertStatus(201);
+
+        $conflicting = $this->postJson('/api/v1/expenses', [
+            'amount' => '999.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ], $headers);
+
+        $conflicting->assertStatus(422);
+        $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
     }
 
     // --- Fixtures and helpers ------------------------------------------

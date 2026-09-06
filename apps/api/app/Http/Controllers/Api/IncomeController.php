@@ -22,13 +22,15 @@ use App\Domain\Transactions\Income\RecordIncomeCommand;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Transactions\StoreIncomeRequest;
 use App\Http\Support\CurrentTenant;
+use App\Http\Support\DeterministicIdempotentId;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Str;
 
 /**
  * Wraps {@see IncomeRecordingService} (M9) over HTTP — mirrors
- * {@see ExpenseController} exactly, for the identical reason.
+ * {@see ExpenseController} exactly, for the identical reason, including
+ * deriving `IncomeId`/`JournalId` deterministically via
+ * {@see DeterministicIdempotentId} rather than freshly random.
  */
 final class IncomeController extends Controller
 {
@@ -38,20 +40,21 @@ final class IncomeController extends Controller
 
     public function store(StoreIncomeRequest $request, CurrentTenant $currentTenant): JsonResponse
     {
-        $idempotencyKey = $request->header('Idempotency-Key');
+        $idempotencyKeyHeader = $request->header('Idempotency-Key');
 
-        if (! is_string($idempotencyKey) || $idempotencyKey === '') {
+        if (! is_string($idempotencyKeyHeader) || $idempotencyKeyHeader === '') {
             return response()->json(['message' => 'The Idempotency-Key header is required.'], 422);
         }
 
         /** @var User $user */
         $user = $request->user();
         $evidenceReference = $request->string('evidence_reference')->toString();
+        $idempotencyKey = IdempotencyKey::of($idempotencyKeyHeader);
 
         $command = new RecordIncomeCommand(
-            IncomeId::of((string) Str::uuid()),
-            JournalId::of((string) Str::uuid()),
-            IdempotencyKey::of($idempotencyKey),
+            IncomeId::of(DeterministicIdempotentId::derive($currentTenant->id(), $idempotencyKey, 'income')),
+            JournalId::of(DeterministicIdempotentId::derive($currentTenant->id(), $idempotencyKey, 'journal')),
+            $idempotencyKey,
             $currentTenant->id(),
             ActorReference::of($user->id),
             Money::fromDecimalString($request->string('amount')->toString(), Currency::of('MYR')),
