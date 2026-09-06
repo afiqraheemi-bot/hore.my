@@ -149,7 +149,7 @@ final class JournalRepository
 
         try {
             $this->connection->transaction(function () use ($journal, $header, $lines): void {
-                /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}|null $existingHeader */
+                /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null, financial_date: string, posted_at: string|null}|null $existingHeader */
                 $existingHeader = $this->connection->table(self::JOURNAL_TABLE)
                     ->where('journal_id', $header['journal_id'])
                     ->lockForUpdate()
@@ -178,6 +178,10 @@ final class JournalRepository
                     throw ImmutableJournalStateException::forField($journal->id(), 'correction-chain reference');
                 }
 
+                if ($existingHeader->financial_date !== $header['financial_date']) {
+                    throw ImmutableJournalStateException::forField($journal->id(), 'financial date');
+                }
+
                 $existingLines = $this->connection->table(self::LINE_TABLE)
                     ->where('journal_id', $header['journal_id'])
                     ->orderBy('line_position')
@@ -191,7 +195,7 @@ final class JournalRepository
 
                 $this->connection->table(self::JOURNAL_TABLE)
                     ->where('journal_id', $header['journal_id'])
-                    ->update(['state' => $header['state']]);
+                    ->update(['state' => $header['state'], 'posted_at' => $header['posted_at']]);
             });
         } catch (QueryException $e) {
             if ($this->isDuplicateJournalIdentityViolation($e)) {
@@ -219,7 +223,7 @@ final class JournalRepository
      */
     public function findById(TenantId $tenantId, JournalId $journalId): ?Journal
     {
-        /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}|null $headerRow */
+        /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null, financial_date: string, posted_at: string|null}|null $headerRow */
         $headerRow = $this->connection->table(self::JOURNAL_TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('journal_id', $journalId->toString())
@@ -246,6 +250,8 @@ final class JournalRepository
             'state' => $headerRow->state,
             'correction_type' => $headerRow->correction_type,
             'corrected_journal_id' => $headerRow->corrected_journal_id,
+            'financial_date' => $headerRow->financial_date,
+            'posted_at' => $headerRow->posted_at,
         ];
 
         $lines = array_values($lineRows->map(fn (object $row): array => $this->lineRowToArray($row))->all());

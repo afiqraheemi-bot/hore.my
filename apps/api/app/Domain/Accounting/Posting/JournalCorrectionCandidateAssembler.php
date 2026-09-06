@@ -55,6 +55,15 @@ final class JournalCorrectionCandidateAssembler
      */
     private const VALIDATION_PLACEHOLDER = 'journal-correction-account-validation-placeholder';
 
+    /**
+     * Never read by {@see PostingCommandAccountValidator} — present
+     * only because `PostingCommand`'s constructor requires a
+     * `financialDate` (M8); the real candidate Journal's own
+     * `financialDate()` (set from the command's supplied value) is what
+     * actually gets persisted, not this placeholder.
+     */
+    private const VALIDATION_PLACEHOLDER_FINANCIAL_DATE = '1970-01-01';
+
     public function __construct(
         private readonly JournalRepository $journalRepository,
         private readonly PostingCommandAccountValidator $accountValidator,
@@ -74,7 +83,7 @@ final class JournalCorrectionCandidateAssembler
             throw UnresolvedCorrectionTargetException::forJournalId($command->originalJournalId());
         }
 
-        $candidate = $original->reverse($command->newJournalId());
+        $candidate = $original->reverse($command->newJournalId(), $command->financialDate());
 
         $this->validateAccounts($command->tenantId(), $command->newJournalId(), $candidate->lines());
 
@@ -97,7 +106,7 @@ final class JournalCorrectionCandidateAssembler
 
         $this->validateAccounts($command->tenantId(), $command->newJournalId(), $command->lines());
 
-        return Journal::createReplacement($command->tenantId(), $command->newJournalId(), $command->lines(), $reversal);
+        return Journal::createReplacement($command->tenantId(), $command->newJournalId(), $command->lines(), $reversal, $command->financialDate());
     }
 
     /**
@@ -112,6 +121,7 @@ final class JournalCorrectionCandidateAssembler
             SourceReference::of(self::VALIDATION_PLACEHOLDER),
             $journalId,
             $lines,
+            new \DateTimeImmutable(self::VALIDATION_PLACEHOLDER_FINANCIAL_DATE),
         ));
     }
 }

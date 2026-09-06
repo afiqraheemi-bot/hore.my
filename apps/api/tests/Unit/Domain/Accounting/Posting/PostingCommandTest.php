@@ -76,6 +76,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
         );
 
         $this->assertSame($this->idempotencyKey, $command->idempotencyKey());
@@ -118,6 +119,36 @@ final class PostingCommandTest extends TestCase
     }
 
     /**
+     * (POST-028, M8) A Posting Command with no Financial Date is not
+     * well-formed — never defaulted by this class to `created_at`,
+     * "today," or any other system-derived value.
+     */
+    public function test_financial_date_parameter_is_required_and_non_nullable(): void
+    {
+        $this->assertParameterIsRequiredAndNonNullable('financialDate', \DateTimeImmutable::class);
+    }
+
+    /**
+     * (POST-028) The Financial Date supplied is carried exactly.
+     */
+    public function test_financial_date_is_carried_exactly(): void
+    {
+        $financialDate = new \DateTimeImmutable('2026-03-01');
+
+        $command = new PostingCommand(
+            $this->idempotencyKey,
+            $this->tenantId,
+            $this->actor,
+            $this->source,
+            $this->journalId,
+            $this->lines,
+            $financialDate,
+        );
+
+        $this->assertSame($financialDate, $command->financialDate());
+    }
+
+    /**
      * (POST-T006) A Posting Command for a non-evidence-backed effect
      * carries no Evidence reference and is accepted — Evidence is
      * required only where applicable, never fabricated to fill the
@@ -132,6 +163,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
         );
 
         $this->assertSame([], $command->evidenceReferences());
@@ -152,6 +184,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             JournalId::of('journal-fresh'),
             $this->lines,
+            $this->financialDate(),
         );
 
         $this->assertSame('journal-fresh', $command->journalId()->toString());
@@ -172,6 +205,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             JournalId::of('journal-existing-draft'),
             $this->lines,
+            $this->financialDate(),
         );
 
         $this->assertSame('journal-existing-draft', $command->journalId()->toString());
@@ -222,6 +256,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
         );
 
         $this->assertSame($this->lines[0], $command->lines()[0]);
@@ -244,6 +279,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             [$this->lines[0], 'not-a-journal-line'],
+            $this->financialDate(),
         );
     }
 
@@ -259,6 +295,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
             null,
             ['evidence-0001', 'evidence-0002'],
         );
@@ -278,6 +315,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
             null,
             [],
         );
@@ -300,6 +338,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
             null,
             ['evidence-0001', 12345],
         );
@@ -319,6 +358,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
         );
         $this->assertNull($withoutFingerprint->sourceFingerprint());
 
@@ -330,6 +370,7 @@ final class PostingCommandTest extends TestCase
             $this->source,
             $this->journalId,
             $this->lines,
+            $this->financialDate(),
             $fingerprint,
         );
         $this->assertSame($fingerprint, $withFingerprint->sourceFingerprint());
@@ -377,7 +418,7 @@ final class PostingCommandTest extends TestCase
         sort($publicMethodNames);
 
         $this->assertSame(
-            ['__construct', 'actor', 'evidenceReferences', 'idempotencyKey', 'journalId', 'lines', 'source', 'sourceFingerprint', 'tenantId'],
+            ['__construct', 'actor', 'evidenceReferences', 'financialDate', 'idempotencyKey', 'journalId', 'lines', 'source', 'sourceFingerprint', 'tenantId'],
             $publicMethodNames,
         );
     }
@@ -393,6 +434,11 @@ final class PostingCommandTest extends TestCase
         $this->assertIsString($source);
         $this->assertStringNotContainsString('Illuminate\\', $source);
         $this->assertStringNotContainsString('Eloquent', $source);
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
     }
 
     private function assertParameterIsRequiredAndNonNullable(string $parameterName, string $expectedType): void

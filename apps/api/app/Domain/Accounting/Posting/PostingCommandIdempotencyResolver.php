@@ -115,6 +115,7 @@ final class PostingCommandIdempotencyResolver
             SourceReference::of(self::COMPARISON_PLACEHOLDER),
             $journal->id(),
             $journal->lines(),
+            $journal->financialDate(),
         );
     }
 }

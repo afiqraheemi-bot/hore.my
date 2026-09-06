@@ -26,6 +26,15 @@ use App\Domain\Accounting\Journal\Journal;
  * order — reusing `JournalLine`'s own value-equality contract exactly
  * as {@see PostingCommandLogicalEquivalence} already does).
  *
+ * **Financial Date is part of the comparison too (M8).** Mirroring
+ * {@see PostingCommandLogicalEquivalence}'s own extension: since
+ * `Journal::reverse()`/`Journal::createReplacement()` now require an
+ * explicit, caller-supplied Financial Date (never derived from the
+ * Journal being corrected), the same (Tenant, Idempotency Key) reused
+ * for a correction with a different Financial Date is a conflicting
+ * reuse, not a safe replay — compared at calendar-day precision, the
+ * same as the ordinary Posting Command comparator.
+ *
  * **What this does not do.** It does not look up or reserve an
  * Idempotency Key, does not decide what happens when two candidates
  * are or are not equivalent, and does not itself detect a replay —
@@ -49,6 +58,10 @@ final class JournalCorrectionLogicalEquivalence
         }
 
         if ($left->correctionType() !== $right->correctionType()) {
+            return false;
+        }
+
+        if ($left->financialDate()->format('Y-m-d') !== $right->financialDate()->format('Y-m-d')) {
             return false;
         }
 

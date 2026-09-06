@@ -52,8 +52,8 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
     {
         $original = $this->postedOriginal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
 
-        $left = $original->reverse(JournalId::of('journal-reversal'));
-        $right = $original->reverse(JournalId::of('journal-reversal'));
+        $left = $original->reverse(JournalId::of('journal-reversal'), $this->financialDate());
+        $right = $original->reverse(JournalId::of('journal-reversal'), $this->financialDate());
 
         $this->assertTrue($this->equivalence->equivalent($left, $right));
     }
@@ -63,8 +63,8 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
         $originalA = $this->postedOriginal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
         $originalB = $this->postedOriginal($this->tenantB, JournalId::of('journal-original'), $this->balancedLines());
 
-        $left = $originalA->reverse(JournalId::of('journal-reversal'));
-        $right = $originalB->reverse(JournalId::of('journal-reversal'));
+        $left = $originalA->reverse(JournalId::of('journal-reversal'), $this->financialDate());
+        $right = $originalB->reverse(JournalId::of('journal-reversal'), $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -73,8 +73,23 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
     {
         $original = $this->postedOriginal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
 
-        $left = $original->reverse(JournalId::of('journal-reversal-one'));
-        $right = $original->reverse(JournalId::of('journal-reversal-two'));
+        $left = $original->reverse(JournalId::of('journal-reversal-one'), $this->financialDate());
+        $right = $original->reverse(JournalId::of('journal-reversal-two'), $this->financialDate());
+
+        $this->assertFalse($this->equivalence->equivalent($left, $right));
+    }
+
+    /**
+     * (M8) A Reversal candidate reusing the same (Tenant, Idempotency
+     * Key) but supplied with a different Financial Date is a
+     * conflicting reuse, not a safe replay.
+     */
+    public function test_different_financial_date_is_not_equivalent(): void
+    {
+        $original = $this->postedOriginal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
+
+        $left = $original->reverse(JournalId::of('journal-reversal'), new \DateTimeImmutable('2026-01-01'));
+        $right = $original->reverse(JournalId::of('journal-reversal'), new \DateTimeImmutable('2026-02-01'));
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -84,8 +99,8 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
         $originalOne = $this->postedOriginal($this->tenantA, JournalId::of('journal-original-one'), $this->balancedLines());
         $originalTwo = $this->postedOriginal($this->tenantA, JournalId::of('journal-original-two'), $this->balancedLines());
 
-        $left = $originalOne->reverse(JournalId::of('journal-reversal'));
-        $right = $originalTwo->reverse(JournalId::of('journal-reversal'));
+        $left = $originalOne->reverse(JournalId::of('journal-reversal'), $this->financialDate());
+        $right = $originalTwo->reverse(JournalId::of('journal-reversal'), $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -102,7 +117,7 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
     public function test_same_lines_but_different_correction_type_is_not_equivalent(): void
     {
         $original = $this->postedOriginal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
-        $reversal = $original->reverse(JournalId::of('journal-reversal'))->post();
+        $reversal = $original->reverse(JournalId::of('journal-reversal'), $this->financialDate())->post($this->postedAt());
 
         $newJournalId = JournalId::of('journal-shared-id');
 
@@ -110,10 +125,10 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
         // deliberately supplied with those same flipped lines produces
         // a coincidentally identical Journal Line set under a different
         // CorrectionType and a different corrected-Journal reference.
-        $flippedLines = $original->reverse(JournalId::of('journal-reversal-throwaway'))->lines();
+        $flippedLines = $original->reverse(JournalId::of('journal-reversal-throwaway'), $this->financialDate())->lines();
 
-        $left = $original->reverse($newJournalId);
-        $right = Journal::createReplacement($this->tenantA, $newJournalId, $flippedLines, $reversal);
+        $left = $original->reverse($newJournalId, $this->financialDate());
+        $right = Journal::createReplacement($this->tenantA, $newJournalId, $flippedLines, $reversal, $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -127,8 +142,8 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
             $this->creditLine('account-income', '100.00'),
         ]);
 
-        $left = $originalTwoLines->reverse(JournalId::of('journal-reversal'));
-        $right = $originalThreeLines->reverse(JournalId::of('journal-reversal'));
+        $left = $originalTwoLines->reverse(JournalId::of('journal-reversal'), $this->financialDate());
+        $right = $originalThreeLines->reverse(JournalId::of('journal-reversal'), $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -147,8 +162,8 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
             $this->creditLine('account-income', '30.00'),
         ]);
 
-        $left = $originalOrderA->reverse($reversalId);
-        $right = $originalOrderB->reverse($reversalId);
+        $left = $originalOrderA->reverse($reversalId, $this->financialDate());
+        $right = $originalOrderB->reverse($reversalId, $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -165,8 +180,8 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
             $this->creditLine('account-income', '100.00'),
         ]);
 
-        $left = $originalOne->reverse($reversalId);
-        $right = $originalTwo->reverse($reversalId);
+        $left = $originalOne->reverse($reversalId, $this->financialDate());
+        $right = $originalTwo->reverse($reversalId, $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
     }
@@ -183,10 +198,20 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
             $this->creditLine('account-income', '150.00'),
         ]);
 
-        $left = $originalOne->reverse($reversalId);
-        $right = $originalTwo->reverse($reversalId);
+        $left = $originalOne->reverse($reversalId, $this->financialDate());
+        $right = $originalTwo->reverse($reversalId, $this->financialDate());
 
         $this->assertFalse($this->equivalence->equivalent($left, $right));
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     /**
@@ -205,7 +230,7 @@ final class JournalCorrectionLogicalEquivalenceTest extends TestCase
      */
     private function postedOriginal(TenantId $tenantId, JournalId $journalId, array $lines): Journal
     {
-        return Journal::create($tenantId, $journalId, $lines)->post();
+        return Journal::create($tenantId, $journalId, $lines, $this->financialDate())->post($this->postedAt());
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine

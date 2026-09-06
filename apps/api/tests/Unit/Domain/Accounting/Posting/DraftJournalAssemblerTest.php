@@ -188,6 +188,33 @@ final class DraftJournalAssemblerTest extends TestCase
     }
 
     /**
+     * (M8) The PostingCommand's Financial Date is copied onto the
+     * resulting Journal exactly — the assembler never substitutes a
+     * different value.
+     */
+    public function test_financial_date_is_copied_onto_the_journal_exactly(): void
+    {
+        $financialDate = new \DateTimeImmutable('2026-05-20');
+
+        $command = new PostingCommand(
+            IdempotencyKey::of('key-0001'),
+            $this->tenantId,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-0001'),
+            $this->journalId,
+            [
+                $this->debitLine('account-cash', '100.00'),
+                $this->creditLine('account-income', '100.00'),
+            ],
+            $financialDate,
+        );
+
+        $journal = $this->assembler->assemble($command);
+
+        $this->assertSame($financialDate, $journal->financialDate());
+    }
+
+    /**
      * The assembler exposes exactly one public method beyond its
      * constructor — no persistence, tenant, account, idempotency, or
      * orchestration method exists on this class.
@@ -235,6 +262,7 @@ final class DraftJournalAssemblerTest extends TestCase
             SourceReference::of('source-0001'),
             $journalId ?? $this->journalId,
             $lines,
+            new \DateTimeImmutable('2026-08-15'),
         );
     }
 

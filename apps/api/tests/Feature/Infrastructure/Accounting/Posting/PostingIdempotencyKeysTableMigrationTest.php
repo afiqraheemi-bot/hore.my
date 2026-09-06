@@ -57,6 +57,8 @@ final class PostingIdempotencyKeysTableMigrationTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -285,6 +287,7 @@ final class PostingIdempotencyKeysTableMigrationTest extends TestCase
             'tenant_id' => $tenantId,
             'journal_id' => $journalId,
             'state' => 'Draft',
+            'financial_date' => '2026-08-15',
         ]);
     }
 
@@ -317,6 +320,11 @@ final class PostingIdempotencyKeysTableMigrationTest extends TestCase
         if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        }
+
+        if (! Schema::connection('pgsql')->hasColumn(self::JOURNAL_TABLE, 'financial_date')) {
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
         }
 
         // `migrate:rollback --path=X` only rolls back the most recent

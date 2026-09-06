@@ -109,7 +109,7 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             $this->debitLine('account-a', '10.00'),
             $this->debitLine('account-b', '20.00'),
             $this->creditLine('account-c', '30.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->insertJournal($journal);
         $reconstructed = $this->selectJournal('journal-0001');
@@ -132,7 +132,7 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '92233720368547.75'),
             $this->creditLine('account-income', '92233720368547.75'),
-        ]);
+        ], $this->financialDate());
 
         $this->insertJournal($journal);
         $reconstructed = $this->selectJournal('journal-0001');
@@ -171,7 +171,7 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             $this->debitLine('account-vat-input', '5.00'),
             $this->creditLine('account-income', '40.00'),
             $this->creditLine('account-income-2', '25.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->insertJournal($journal);
         $reconstructed = $this->selectJournal('journal-0001');
@@ -181,12 +181,37 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
         $this->assertTrue($journal->equals($reconstructed));
     }
 
+    /**
+     * (M8) `financial_date` and `posted_at` round-trip exactly through
+     * a real PostgreSQL row — `financial_date` present for both Draft
+     * and Posted, `posted_at` `null` for Draft and a real timestamp for
+     * Posted.
+     */
+    public function test_financial_date_and_posted_at_round_trip_through_a_real_postgres_row(): void
+    {
+        $draft = $this->makeJournal(id: JournalId::of('journal-draft-date'), state: JournalState::Draft);
+        $posted = $this->makeJournal(id: JournalId::of('journal-posted-date'), state: JournalState::Posted);
+
+        $this->insertJournal($draft);
+        $this->insertJournal($posted);
+
+        $reconstructedDraft = $this->selectJournal('journal-draft-date');
+        $reconstructedPosted = $this->selectJournal('journal-posted-date');
+
+        $this->assertSame('2026-08-15', $reconstructedDraft->financialDate()->format('Y-m-d'));
+        $this->assertNull($reconstructedDraft->postedAt());
+
+        $this->assertSame('2026-08-15', $reconstructedPosted->financialDate()->format('Y-m-d'));
+        $this->assertSame('2026-09-06 10:00:00', $reconstructedPosted->postedAt()?->format('Y-m-d H:i:s'));
+    }
+
     public function test_invalid_persisted_state_is_rejected_on_read(): void
     {
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->insert([
             'tenant_id' => 'tenant-0001',
             'journal_id' => 'journal-0001',
             'state' => 'NotACanonicalState',
+            'financial_date' => '2026-08-15',
         ]);
         DB::connection('pgsql')->table(self::LINE_TABLE)->insert($this->twoBalancedLineRows());
 
@@ -201,6 +226,7 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             'tenant_id' => 'tenant-0001',
             'journal_id' => 'journal-0001',
             'state' => 'Draft',
+            'financial_date' => '2026-08-15',
         ]);
         $lines = $this->twoBalancedLineRows();
         $lines[0]['direction'] = 'NotACanonicalDirection';
@@ -216,9 +242,19 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
         $journal = Journal::create($tenantId ?? $this->tenantId, $id ?? JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        return $state === JournalState::Posted ? $journal->post() : $journal;
+        return $state === JournalState::Posted ? $journal->post($this->postedAt()) : $journal;
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine
@@ -250,7 +286,7 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
 
     private function selectJournal(string $journalId): Journal
     {
-        /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null} $headerRow */
+        /** @var object{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null, financial_date: string, posted_at: string|null} $headerRow */
         $headerRow = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', $journalId)->firstOrFail();
 
         /** @var Collection<int, object{journal_id: string, line_position: int, account_id: string, amount: int|string, currency: string, direction: string}> $lineRows */
@@ -262,6 +298,8 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             'state' => $headerRow->state,
             'correction_type' => $headerRow->correction_type,
             'corrected_journal_id' => $headerRow->corrected_journal_id,
+            'financial_date' => $headerRow->financial_date,
+            'posted_at' => $headerRow->posted_at,
         ];
 
         $lines = $lineRows->map(static fn (object $row): array => [
@@ -304,6 +342,8 @@ final class JournalPersistenceAdapterIntegrationTest extends TestCase
             $table->string('state', 32);
             $table->string('correction_type', 32)->nullable();
             $table->string('corrected_journal_id', 64)->nullable();
+            $table->date('financial_date');
+            $table->timestamp('posted_at')->nullable();
         });
 
         Schema::connection('pgsql')->create(self::LINE_TABLE, function (Blueprint $table): void {

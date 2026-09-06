@@ -50,6 +50,8 @@ final class JournalRepositoryIntegrationTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -136,7 +138,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
      */
     public function test_save_persists_a_new_journal_that_is_already_posted(): void
     {
-        $journal = $this->makeJournal()->post();
+        $journal = $this->makeJournal()->post($this->postedAt());
 
         $this->repository->save($journal);
 
@@ -152,7 +154,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $draft = $this->makeJournal();
         $this->repository->save($draft);
 
-        $this->repository->save($draft->post());
+        $this->repository->save($draft->post($this->postedAt()));
 
         $this->assertSame('Posted', $this->fetchRawHeader('journal-0001')['state']);
         $this->assertSame(1, DB::connection('pgsql')->table(self::JOURNAL_TABLE)->count());
@@ -165,7 +167,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $this->repository->save($draft);
         $linesBefore = $this->fetchRawLines('journal-0001');
 
-        $this->repository->save($draft->post());
+        $this->repository->save($draft->post($this->postedAt()));
 
         $this->assertSame($linesBefore, $this->fetchRawLines('journal-0001'));
         $this->assertSame(2, DB::connection('pgsql')->table(self::LINE_TABLE)->count());
@@ -175,10 +177,10 @@ final class JournalRepositoryIntegrationTest extends TestCase
     public function test_posted_to_draft_transition_is_rejected(): void
     {
         $draft = $this->makeJournal();
-        $this->repository->save($draft->post());
+        $this->repository->save($draft->post($this->postedAt()));
         $before = $this->snapshot('journal-0001');
 
-        $reconstitutedAsDraft = Journal::reconstitute($this->tenantA, JournalId::of('journal-0001'), $draft->lines(), JournalState::Draft);
+        $reconstitutedAsDraft = Journal::reconstitute($this->tenantA, JournalId::of('journal-0001'), $draft->lines(), JournalState::Draft, $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($reconstitutedAsDraft, 'journal-0001', $before);
     }
@@ -193,7 +195,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $conflicting = Journal::create($this->tenantA, JournalId::of('journal-0001'), [
             $this->debitLine('account-other', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
     }
@@ -208,7 +210,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $conflicting = Journal::create($this->tenantA, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '150.00'),
             $this->creditLine('account-income', '150.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
     }
@@ -248,7 +250,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $conflicting = Journal::create($this->tenantA, JournalId::of('journal-0001'), [
             $this->creditLine('account-cash', '100.00'),
             $this->debitLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
     }
@@ -260,7 +262,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             $this->debitLine('account-a', '10.00'),
             $this->debitLine('account-b', '20.00'),
             $this->creditLine('account-c', '30.00'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($draft);
         $before = $this->snapshot('journal-0001');
 
@@ -268,7 +270,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             $this->debitLine('account-b', '20.00'),
             $this->debitLine('account-a', '10.00'),
             $this->creditLine('account-c', '30.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
     }
@@ -284,7 +286,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             $this->debitLine('account-cash', '60.00'),
             $this->debitLine('account-expense', '40.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
     }
@@ -296,7 +298,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             $this->debitLine('account-cash', '60.00'),
             $this->debitLine('account-expense', '40.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($draft);
         $before = $this->snapshot('journal-0001');
 
@@ -315,9 +317,76 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $conflicting = Journal::create($this->tenantB, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
+    }
+
+    /**
+     * (M8) A Financial Date change for the same `journal_id` is
+     * rejected exactly like a TenantId or Journal Line change —
+     * Financial Date is immutable once set, per AETS-004 §9.1.
+     */
+    public function test_financial_date_change_for_an_existing_journal_id_is_rejected(): void
+    {
+        $draft = $this->makeJournal();
+        $this->repository->save($draft);
+        $before = $this->snapshot('journal-0001');
+
+        $conflicting = Journal::create($this->tenantA, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], new \DateTimeImmutable('2026-12-25'));
+
+        $this->assertRejectedWithoutMutatingState($conflicting, 'journal-0001', $before);
+    }
+
+    /**
+     * (M8) `save()` persists `financial_date` exactly, and the
+     * Draft -> Posted transition sets `posted_at` in the real database
+     * row — both round-trip exactly through `findById()`.
+     */
+    public function test_financial_date_and_posted_at_persist_and_round_trip_exactly(): void
+    {
+        $draft = $this->makeJournal();
+        $this->repository->save($draft);
+
+        $rawDraftHeader = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-0001')->firstOrFail();
+        $this->assertSame('2026-08-15', (new \DateTimeImmutable($rawDraftHeader->financial_date))->format('Y-m-d'));
+        $this->assertNull($rawDraftHeader->posted_at);
+
+        $this->repository->save($draft->post($this->postedAt()));
+
+        $rawPostedHeader = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-0001')->firstOrFail();
+        $this->assertSame('2026-08-15', (new \DateTimeImmutable($rawPostedHeader->financial_date))->format('Y-m-d'));
+        $this->assertNotNull($rawPostedHeader->posted_at);
+
+        $found = $this->repository->findById($this->tenantA, JournalId::of('journal-0001'));
+        $this->assertNotNull($found);
+        $this->assertSame('2026-08-15', $found->financialDate()->format('Y-m-d'));
+        $this->assertSame('2026-09-06 10:00:00', $found->postedAt()?->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * (M8) A replay-style re-save of an already-Posted Journal (same
+     * `posted_at` the row already carries) is not itself under test
+     * here — `save()` already rejects any write to an already-Posted
+     * Journal (`ImmutableJournalStateException`) — but this proves
+     * `posted_at`, once written, survives exactly across a subsequent
+     * `findById()` read without being silently refreshed to a new
+     * "now".
+     */
+    public function test_posted_at_does_not_change_on_repeated_reads(): void
+    {
+        $draft = $this->makeJournal();
+        $this->repository->save($draft->post($this->postedAt()));
+
+        $firstRead = $this->repository->findById($this->tenantA, JournalId::of('journal-0001'));
+        $secondRead = $this->repository->findById($this->tenantA, JournalId::of('journal-0001'));
+
+        $this->assertNotNull($firstRead);
+        $this->assertNotNull($secondRead);
+        $this->assertSame($firstRead->postedAt()?->format('Y-m-d H:i:s'), $secondRead->postedAt()?->format('Y-m-d H:i:s'));
     }
 
     /**
@@ -331,16 +400,16 @@ final class JournalRepositoryIntegrationTest extends TestCase
     public function test_failed_immutable_state_attempts_leave_existing_header_and_lines_unchanged(): void
     {
         $draft = $this->makeJournal();
-        $this->repository->save($draft->post());
+        $this->repository->save($draft->post($this->postedAt()));
         $before = $this->snapshot('journal-0001');
 
-        $asDraft = Journal::reconstitute($this->tenantA, JournalId::of('journal-0001'), $draft->lines(), JournalState::Draft);
+        $asDraft = Journal::reconstitute($this->tenantA, JournalId::of('journal-0001'), $draft->lines(), JournalState::Draft, $this->financialDate());
         $this->assertRejectedWithoutMutatingState($asDraft, 'journal-0001', $before);
 
         $withDifferentLines = Journal::create($this->tenantA, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '999.00'),
             $this->creditLine('account-income', '999.00'),
-        ])->post();
+        ], $this->financialDate())->post($this->postedAt());
         $this->assertRejectedWithoutMutatingState($withDifferentLines, 'journal-0001', $before);
     }
 
@@ -350,7 +419,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $journal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
             $this->debitLine('account-cash-b', '100.00'),
             $this->creditLine('account-income-b', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($journal);
 
         $this->assertNull($this->repository->findById($this->tenantA, JournalId::of('journal-shared-id')));
@@ -367,7 +436,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $journal = Journal::create($this->tenantB, JournalId::of('journal-owned-by-b'), [
             $this->debitLine('account-cash-b', '100.00'),
             $this->creditLine('account-income-b', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($journal);
 
         $this->assertTrue($this->repository->existsById(JournalId::of('journal-owned-by-b')));
@@ -388,7 +457,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $journal = Journal::create($this->tenantA, JournalId::of('journal-0099'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($journal);
 
         $result = $this->repository->existsById(JournalId::of('journal-0099'));
@@ -403,7 +472,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             $this->debitLine('account-a', '10.00'),
             $this->debitLine('account-b', '20.00'),
             $this->creditLine('account-c', '30.00'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($journal);
 
         $found = $this->repository->findById($this->tenantA, JournalId::of('journal-0001'));
@@ -426,7 +495,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $journal = Journal::create($this->tenantA, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '92233720368547.75'),
             $this->creditLine('account-income', '92233720368547.75'),
-        ]);
+        ], $this->financialDate());
         $this->repository->save($journal);
 
         $found = $this->repository->findById($this->tenantA, JournalId::of('journal-0001'));
@@ -450,6 +519,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             'tenant_id' => $this->tenantA->toString(),
             'journal_id' => 'journal-malformed',
             'state' => 'Draft',
+            'financial_date' => '2026-08-15',
         ]);
         DB::connection('pgsql')->table(self::LINE_TABLE)->insert([
             ['tenant_id' => $this->tenantA->toString(), 'journal_id' => 'journal-malformed', 'line_position' => 0, 'account_id' => 'account-cash', 'amount' => 10000, 'currency' => 'BADCUR', 'direction' => 'Debit'],
@@ -493,7 +563,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
         $journal = Journal::create($this->tenantA, JournalId::of('journal-atomic'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-does-not-exist', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         try {
             $this->repository->save($journal);
@@ -543,7 +613,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             ->first();
 
         try {
-            $secondRepository->save($draft->post());
+            $secondRepository->save($draft->post($this->postedAt()));
             $this->fail('Expected the concurrent save() to block on the row lock and then fail.');
         } catch (QueryException $e) {
             // Expected: the second connection could not acquire the row
@@ -627,7 +697,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
                 (new JournalRepository($connection))->save(Journal::create($this->tenantA, JournalId::of($journalId), [
                     $this->debitLine('account-cash', '100.00'),
                     $this->creditLine('account-income', '100.00'),
-                ]));
+                ], $this->financialDate()));
                 // Only now does the parent below know it is safe to
                 // attempt its own insert — without this explicit
                 // handshake, which side inserts first is an unbounded
@@ -658,7 +728,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
             $secondRepository->save(Journal::create($this->tenantA, JournalId::of($journalId), [
                 $this->debitLine('account-cash', '250.00'),
                 $this->creditLine('account-income', '250.00'),
-            ]));
+            ], $this->financialDate()));
             $this->fail('Expected a genuine duplicate Journal identity violation.');
         } catch (DuplicateJournalIdentityException $e) {
             $this->assertStringContainsString($journalId, $e->getMessage());
@@ -778,7 +848,17 @@ final class JournalRepositoryIntegrationTest extends TestCase
         return Journal::create($this->tenantA, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine
@@ -843,6 +923,7 @@ final class JournalRepositoryIntegrationTest extends TestCase
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+        self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);

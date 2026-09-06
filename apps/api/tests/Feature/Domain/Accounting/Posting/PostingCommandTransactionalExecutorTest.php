@@ -78,6 +78,8 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private const AUDIT_EVENT_TABLE = 'audit_events';
@@ -428,6 +430,7 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
             SourceReference::of('source-0001'),
             JournalId::of('journal-evidence-atomic'),
             $this->balancedLines(),
+            $this->financialDate(),
             null,
             ['evidence-0001'],
         );
@@ -479,6 +482,7 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
             SourceReference::of('source-0001'),
             JournalId::of('journal-evidence-linkage'),
             $this->balancedLines(),
+            $this->financialDate(),
             null,
             ['evidence-0001', 'evidence-0002'],
         );
@@ -840,7 +844,13 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
             SourceReference::of('source-0001'),
             $journalId,
             $lines,
+            $this->financialDate(),
         );
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
     }
 
     private function buildExecutor(ConnectionInterface $connection): PostingCommandTransactionalExecutor
@@ -916,6 +926,11 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        }
+
+        if (! Schema::connection('pgsql')->hasColumn(self::JOURNAL_TABLE, 'financial_date')) {
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
         }
 
         self::forceCleanMigration(self::IDEMPOTENCY_MIGRATION_PATH, [self::IDEMPOTENCY_TABLE]);

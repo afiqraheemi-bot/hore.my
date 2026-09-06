@@ -80,6 +80,8 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private const AUDIT_EVENT_TABLE = 'audit_events';
@@ -336,7 +338,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
     public function test_replacement_referencing_a_draft_reversal_is_rejected(): void
     {
         $original = $this->postOrdinaryJournal($this->tenantA, JournalId::of('journal-original'), $this->balancedLines());
-        $draftReversal = $original->reverse(JournalId::of('journal-draft-reversal'));
+        $draftReversal = $original->reverse(JournalId::of('journal-draft-reversal'), $this->financialDate());
         $this->journalRepository->save($draftReversal);
 
         $this->expectException(InvalidReplacementTargetException::class);
@@ -541,7 +543,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         $idempotencyRepository = new PostingIdempotencyRepository($connection);
 
         $candidate = $assembler->assembleReversal($command);
-        $posted = $candidate->post();
+        $posted = $candidate->post(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
         $journalRepository->save($posted);
         $idempotencyRepository->record($command->tenantId(), $command->idempotencyKey(), $posted->id());
 
@@ -587,7 +589,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
 
     private function postOrdinaryJournal(TenantId $tenantId, JournalId $journalId, array $lines): Journal
     {
-        $journal = Journal::create($tenantId, $journalId, $lines)->post();
+        $journal = Journal::create($tenantId, $journalId, $lines, $this->financialDate())->post($this->postedAt());
         $this->journalRepository->save($journal);
 
         return $journal;
@@ -595,10 +597,20 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
 
     private function draftJournal(TenantId $tenantId, JournalId $journalId, array $lines): Journal
     {
-        $journal = Journal::create($tenantId, $journalId, $lines);
+        $journal = Journal::create($tenantId, $journalId, $lines, $this->financialDate());
         $this->journalRepository->save($journal);
 
         return $journal;
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     /**
@@ -631,6 +643,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
             SourceReference::of('source-0001'),
             $newJournalId,
             $originalJournalId,
+            $this->financialDate(),
         );
     }
 
@@ -647,6 +660,7 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
             $newJournalId,
             $reversalJournalId,
             $lines,
+            $this->financialDate(),
         );
     }
 
@@ -715,6 +729,11 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
         if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        }
+
+        if (! Schema::connection('pgsql')->hasColumn(self::JOURNAL_TABLE, 'financial_date')) {
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
         }
 
         self::forceCleanMigration(self::IDEMPOTENCY_MIGRATION_PATH, [self::IDEMPOTENCY_TABLE]);

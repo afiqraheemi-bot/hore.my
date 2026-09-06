@@ -53,9 +53,9 @@ final class JournalCorrectionTest extends TestCase
         $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ])->post();
+        ], $this->financialDate())->post($this->postedAt());
 
-        $reversal = $original->reverse(JournalId::of('journal-0002'));
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate());
 
         $this->assertCount(2, $reversal->lines());
         $this->assertTrue($reversal->lines()[0]->accountId()->equals(AccountId::of('account-cash')));
@@ -86,8 +86,8 @@ final class JournalCorrectionTest extends TestCase
             $lineSpecs,
         );
 
-        $original = Journal::create($this->tenantId, JournalId::of('journal-original'), $lines)->post();
-        $reversal = $original->reverse(JournalId::of('journal-reversal'));
+        $original = Journal::create($this->tenantId, JournalId::of('journal-original'), $lines, $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-reversal'), $this->financialDate());
 
         $this->assertCount(count($lines), $reversal->lines());
 
@@ -146,9 +146,9 @@ final class JournalCorrectionTest extends TestCase
 
     public function test_reverse_preserves_tenant_and_sets_correction_metadata(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
 
-        $reversal = $original->reverse(JournalId::of('journal-0002'));
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate());
 
         $this->assertTrue($reversal->tenantId()->equals($this->tenantId));
         $this->assertSame(CorrectionType::Reversal, $reversal->correctionType());
@@ -158,19 +158,19 @@ final class JournalCorrectionTest extends TestCase
 
     public function test_reverse_result_is_draft_until_posted(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
 
-        $reversal = $original->reverse(JournalId::of('journal-0002'));
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate());
 
         $this->assertSame(JournalState::Draft, $reversal->state());
     }
 
     public function test_original_journal_is_completely_unaffected_by_reversal(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
         $before = $original;
 
-        $original->reverse(JournalId::of('journal-0002'));
+        $original->reverse(JournalId::of('journal-0002'), $this->financialDate());
 
         $this->assertTrue($before->equals($original));
         $this->assertSame(JournalState::Posted, $original->state());
@@ -182,51 +182,52 @@ final class JournalCorrectionTest extends TestCase
 
     public function test_reversing_a_draft_journal_is_rejected(): void
     {
-        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines());
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate());
 
         $this->expectException(InvalidReversalTargetException::class);
 
-        $draft->reverse(JournalId::of('journal-0002'));
+        $draft->reverse(JournalId::of('journal-0002'), $this->financialDate());
     }
 
     public function test_reversing_a_reversal_is_rejected(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
-        $reversal = $original->reverse(JournalId::of('journal-0002'))->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate())->post($this->postedAt());
 
         $this->expectException(InvalidReversalTargetException::class);
 
-        $reversal->reverse(JournalId::of('journal-0003'));
+        $reversal->reverse(JournalId::of('journal-0003'), $this->financialDate());
     }
 
     public function test_reversing_a_replacement_is_rejected(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
-        $reversal = $original->reverse(JournalId::of('journal-0002'))->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate())->post($this->postedAt());
         $replacement = Journal::createReplacement(
             $this->tenantId,
             JournalId::of('journal-0003'),
             $this->balancedLines(),
             $reversal,
-        )->post();
+            $this->financialDate(),
+        )->post($this->postedAt());
 
         $this->expectException(InvalidReversalTargetException::class);
 
-        $replacement->reverse(JournalId::of('journal-0004'));
+        $replacement->reverse(JournalId::of('journal-0004'), $this->financialDate());
     }
 
     // --- Replacement: chain construction -------------------------------------
 
     public function test_create_replacement_references_the_reversal_and_carries_caller_lines(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
-        $reversal = $original->reverse(JournalId::of('journal-0002'))->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate())->post($this->postedAt());
 
         $correctedLines = [
             $this->debitLine('account-cash', '120.00'),
             $this->creditLine('account-income', '120.00'),
         ];
-        $replacement = Journal::createReplacement($this->tenantId, JournalId::of('journal-0003'), $correctedLines, $reversal);
+        $replacement = Journal::createReplacement($this->tenantId, JournalId::of('journal-0003'), $correctedLines, $reversal, $this->financialDate());
 
         $this->assertSame(CorrectionType::Replacement, $replacement->correctionType());
         $this->assertTrue($replacement->correctedJournalId()->equals($reversal->id()));
@@ -242,13 +243,14 @@ final class JournalCorrectionTest extends TestCase
      */
     public function test_replacement_to_reversal_to_original_chain_is_traceable(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
-        $reversal = $original->reverse(JournalId::of('journal-0002'))->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate())->post($this->postedAt());
         $replacement = Journal::createReplacement(
             $this->tenantId,
             JournalId::of('journal-0003'),
             $this->balancedLines(),
             $reversal,
+            $this->financialDate(),
         );
 
         $this->assertTrue($replacement->correctedJournalId()->equals($reversal->id()));
@@ -260,37 +262,38 @@ final class JournalCorrectionTest extends TestCase
 
     public function test_replacement_referencing_an_original_journal_directly_is_rejected(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
 
         $this->expectException(InvalidReplacementTargetException::class);
 
-        Journal::createReplacement($this->tenantId, JournalId::of('journal-0002'), $this->balancedLines(), $original);
+        Journal::createReplacement($this->tenantId, JournalId::of('journal-0002'), $this->balancedLines(), $original, $this->financialDate());
     }
 
     public function test_replacement_referencing_another_replacement_is_rejected(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
-        $reversal = $original->reverse(JournalId::of('journal-0002'))->post();
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate())->post($this->postedAt());
         $replacement = Journal::createReplacement(
             $this->tenantId,
             JournalId::of('journal-0003'),
             $this->balancedLines(),
             $reversal,
-        )->post();
+            $this->financialDate(),
+        )->post($this->postedAt());
 
         $this->expectException(InvalidReplacementTargetException::class);
 
-        Journal::createReplacement($this->tenantId, JournalId::of('journal-0004'), $this->balancedLines(), $replacement);
+        Journal::createReplacement($this->tenantId, JournalId::of('journal-0004'), $this->balancedLines(), $replacement, $this->financialDate());
     }
 
     public function test_replacement_referencing_a_draft_reversal_is_rejected(): void
     {
-        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines())->post();
-        $draftReversal = $original->reverse(JournalId::of('journal-0002'));
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $draftReversal = $original->reverse(JournalId::of('journal-0002'), $this->financialDate());
 
         $this->expectException(InvalidReplacementTargetException::class);
 
-        Journal::createReplacement($this->tenantId, JournalId::of('journal-0003'), $this->balancedLines(), $draftReversal);
+        Journal::createReplacement($this->tenantId, JournalId::of('journal-0003'), $this->balancedLines(), $draftReversal, $this->financialDate());
     }
 
     // --- Consistency invariant -------------------------------------------------
@@ -304,6 +307,7 @@ final class JournalCorrectionTest extends TestCase
             JournalId::of('journal-0001'),
             $this->balancedLines(),
             JournalState::Posted,
+            $this->financialDate(),
             CorrectionType::Reversal,
             null,
         );
@@ -318,6 +322,7 @@ final class JournalCorrectionTest extends TestCase
             JournalId::of('journal-0001'),
             $this->balancedLines(),
             JournalState::Posted,
+            $this->financialDate(),
             null,
             JournalId::of('journal-original'),
         );
@@ -330,8 +335,10 @@ final class JournalCorrectionTest extends TestCase
             JournalId::of('journal-0002'),
             $this->balancedLines(),
             JournalState::Posted,
+            $this->financialDate(),
             CorrectionType::Reversal,
             JournalId::of('journal-0001'),
+            $this->postedAt(),
         );
 
         $this->assertSame(CorrectionType::Reversal, $journal->correctionType());
@@ -340,7 +347,7 @@ final class JournalCorrectionTest extends TestCase
 
     public function test_create_leaves_ordinary_journal_with_no_correction_metadata(): void
     {
-        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines());
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate());
 
         $this->assertNull($journal->correctionType());
         $this->assertNull($journal->correctedJournalId());
@@ -353,14 +360,65 @@ final class JournalCorrectionTest extends TestCase
      * generates one internally — mirroring the same convention already
      * established for {@see Journal::create()} (AETS-004 §11: no
      * self-generation policy exists for `JournalId` in this codebase).
+     * It also requires an explicit Financial Date (M8) — never derived
+     * from the original Journal it reverses.
      */
-    public function test_reverse_requires_the_new_journal_id_as_a_parameter(): void
+    public function test_reverse_requires_the_new_journal_id_and_financial_date_as_parameters(): void
     {
         $reflection = new ReflectionClass(Journal::class);
         $method = $reflection->getMethod('reverse');
 
-        $this->assertCount(1, $method->getParameters());
+        $this->assertCount(2, $method->getParameters());
         $this->assertSame('App\Domain\Accounting\Journal\JournalId', (string) $method->getParameters()[0]->getType());
+        $this->assertSame('DateTimeImmutable', (string) $method->getParameters()[1]->getType());
+    }
+
+    // --- Financial date: caller-supplied, never derived from the corrected Journal (M8) ---
+
+    /**
+     * A Reversal carries exactly the Financial Date its caller
+     * supplied — never the original Journal's own Financial Date, even
+     * though this test deliberately supplies a different one.
+     */
+    public function test_reversal_carries_its_own_supplied_financial_date_not_the_originals(): void
+    {
+        $originalFinancialDate = new \DateTimeImmutable('2026-01-10');
+        $reversalFinancialDate = new \DateTimeImmutable('2026-03-20');
+
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $originalFinancialDate)->post($this->postedAt());
+
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $reversalFinancialDate);
+
+        $this->assertSame($reversalFinancialDate, $reversal->financialDate());
+        $this->assertNotEquals($originalFinancialDate, $reversal->financialDate());
+    }
+
+    /**
+     * A Replacement carries exactly the Financial Date its caller
+     * supplied — never the Reversal's own Financial Date.
+     */
+    public function test_replacement_carries_its_own_supplied_financial_date_not_the_reversals(): void
+    {
+        $reversalFinancialDate = new \DateTimeImmutable('2026-03-20');
+        $replacementFinancialDate = new \DateTimeImmutable('2026-04-01');
+
+        $original = Journal::create($this->tenantId, JournalId::of('journal-0001'), $this->balancedLines(), $this->financialDate())->post($this->postedAt());
+        $reversal = $original->reverse(JournalId::of('journal-0002'), $reversalFinancialDate)->post($this->postedAt());
+
+        $replacement = Journal::createReplacement($this->tenantId, JournalId::of('journal-0003'), $this->balancedLines(), $reversal, $replacementFinancialDate);
+
+        $this->assertSame($replacementFinancialDate, $replacement->financialDate());
+        $this->assertNotEquals($reversalFinancialDate, $replacement->financialDate());
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     /**

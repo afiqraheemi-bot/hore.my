@@ -1,8 +1,8 @@
 # ATS-007: Accounting Commands & Posting Pipeline Test Specification
 
 - Status: Active
-- Version: 1.1.0
-- Effective date: 2026-09-05
+- Version: 1.2.0
+- Effective date: 2026-09-06
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
 - Related: [AETS-000](../AETS-000.md), [AETS-001](../AETS-001-Accounting-Terminology.md), [AETS-002](../AETS-002-Accounting-Invariants.md), [AETS-003](../AETS-003-Money-Specification.md), [AETS-004](../AETS-004-Journal-Posting-Model.md), [AETS-005](../AETS-005-Chart-of-Accounts.md), [AETS-007](../AETS-007-Posting-Command.md); [ADR-0001](../../../adr/0001-modular-monolith-architecture.md), [ADR-0004](../../../adr/0004-financial-integrity-principles.md), [ADR-0005](../../../adr/0005-ai-provider-abstraction.md), [ADR-0006](../../../adr/0006-transactional-outbox-pattern.md)
@@ -103,6 +103,7 @@ Every `POST-NNN` invariant from [AETS-007 §23](../AETS-007-Posting-Command.md#2
 | POST-025 | Outbox consistency | POST-T096, POST-T097, POST-T098 |
 | POST-026 | Required Source Fingerprint fails safely when missing | POST-T028, POST-T130 |
 | POST-027 | No fabricated Source Fingerprint | POST-T029, POST-T030 |
+| POST-028 | Financial Date required and never self-generated | POST-T132, POST-T133, POST-T134, POST-T135, POST-T136, POST-T137, POST-T138, POST-T139, POST-T140 |
 
 ## 7. Posting Command construction tests
 
@@ -120,6 +121,8 @@ Structural coverage of the Posting Command's own shape ([AETS-007 §4–§5](../
 | POST-T008 | A Posting Command's proposed Journal identity may instead be a reference to an existing Draft Journal's identifier ([AETS-007 §11](../AETS-007-Posting-Command.md#11-journal-payload)). |
 | POST-T009 | A Posting Command is not itself a Journal — it has no ledger effect merely by existing, and constructing one performs no persistence. |
 | POST-T010 | A Posting Command is not itself an Accounting Proposal — a candidate proposal with no confirming Actor cannot be submitted as a Posting Command (§21 covers the AI-specific case in full). |
+| POST-T132 | (M8) A Posting Command with no Financial Date is not well-formed and is rejected before any pipeline step runs (`POST-028`). |
+| POST-T133 | (M8) The Financial Date supplied is carried by the Posting Command exactly. |
 
 ## 8. Tenant validation tests
 
@@ -162,6 +165,20 @@ Proving [AETS-007 §6.2](../AETS-007-Posting-Command.md#62-source-fingerprint-co
 | POST-T029 | No code path accepts a caller-fabricated Source Fingerprint for a command with no external source data behind it, merely to satisfy the field (`POST-027`). |
 | POST-T030 | *(Architecture)* No code path in the Posting Command intake or validation pipeline generates a Source Fingerprint value itself for a manual command, to paper over POST-T029's requirement (`POST-027`). |
 | POST-T031 | Two Posting Commands carrying the same Source Fingerprint, for the same Tenant, do not both give rise to a Posted Journal — the second is rejected as a duplicate-source attempt, distinct from an Idempotency-Key-based conflicting-reuse rejection (§17). |
+
+### 10.1 Financial Date tests (M8)
+
+Proving [AETS-007 §11.1](../AETS-007-Posting-Command.md#111-financial-date-m8)'s Financial Date contract — required, never self-generated, and part of the logical-payload identity for idempotency purposes.
+
+| ID | Test |
+| --- | --- |
+| POST-T134 | A same-key reuse with identical Journal Lines but a different Financial Date is judged a materially different logical request by `PostingCommandLogicalEquivalence` — not equivalent. |
+| POST-T135 | Financial Date is compared at calendar-day precision: two Financial Dates on the same calendar day but different times-of-day are judged equivalent. |
+| POST-T136 | `DraftJournalAssembler` copies the Posting Command's Financial Date onto the resulting Journal exactly — never a different value. |
+| POST-T137 | Against real PostgreSQL: `PostingCommandIdempotencyResolver` rejects, as a conflicting reuse, a same-key command whose Financial Date differs from the persisted Journal's own Financial Date — even when every Journal Line is otherwise identical (`POST-004`, `POST-028`). |
+| POST-T138 | Against real PostgreSQL: `PostingCommandJournalExecutor`'s posting path persists the command's exact Financial Date and sets a real, non-null `posted_at` on the resulting Journal row. |
+| POST-T139 | `ExpenseToPostingCommandTranslator` (M7) sends the Expense's own `transactionDate()` as the Posting Command's Financial Date, exactly. |
+| POST-T140 | Against real PostgreSQL: an Expense's `transaction_date` flows exactly into the resulting Journal's `financial_date`, end-to-end through `ExpenseRecordingService`. |
 
 ## 11. Actor/Source tests
 
@@ -404,6 +421,7 @@ Dedicated, real-PostgreSQL integration test IDs, each an end-to-end aggregate pr
 
 ## 30. Changelog
 
+- **1.2.0 (2026-09-06):** Added `POST-T132`–`POST-T140` — coverage for the new Financial Date field ([AETS-007](../AETS-007-Posting-Command.md) v2.0.0, M8): `POST-T132`–`POST-T133` (§7) cover Financial Date's required-and-carried-exactly construction contract; `POST-T134`–`POST-T140` (new §10.1, "Financial Date tests (M8)") cover its logical-equivalence/idempotency-conflict role, calendar-day comparison precision, `DraftJournalAssembler` pass-through, real-PostgreSQL persistence through `PostingCommandJournalExecutor`, and the M7 Expense consumer's end-to-end date flow. Mapped into the traceability matrix (§6) as a new invariant, `POST-028` (appended — no existing `POST-NNN` ID renumbered, altered, or removed). No existing test ID (`POST-T001`–`POST-T131`) was renumbered, altered, or removed.
 - **1.1.0 (2026-09-06):** M6 close: [AETS-010](../AETS-010-Audit-Trail-Evidence-Linkage.md) (Audit Trail & Evidence Linkage) now exists, resolving the forward-reference §29 previously carried. `POST-T093`–`POST-T095` (Audit Event) are implemented; `POST-T096`–`POST-T098` (Outbox) remain deferred, unchanged, since AETS-010 deliberately excludes the Outbox Event schema (AETS-010 §2.2). No test ID, invariant mapping, or other requirement changed — this is a deferred-item status update only, classified MINOR per [AETS-000 §9.1](../AETS-000.md#91-per-document-version) (a clarification, no previously specified behavior changed).
 - **1.0.0 (2026-09-05):** Initial creation. Drafted per the task defining the normative test specification for AETS-007 (Accounting Commands & Posting Pipeline) before Posting Engine implementation begins. Introduces `POST-T001`–`POST-T131`, tracing every `POST-001`–`POST-027` invariant to at least one test ID (§6). No `JRN-T` ID reused, and no existing `POST-NNN` invariant renumbered. Mirrors the established structure and conventions of [ATS-004](ATS-004-Journal-Posting-Test-Specification.md) and [ATS-005](ATS-005-Chart-of-Accounts-Test-Specification.md) throughout.
 

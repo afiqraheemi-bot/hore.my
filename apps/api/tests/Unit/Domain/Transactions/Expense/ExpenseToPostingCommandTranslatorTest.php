@@ -69,6 +69,20 @@ final class ExpenseToPostingCommandTranslatorTest extends TestCase
         $this->assertNotSame($lines[0]->direction(), $lines[1]->direction());
     }
 
+    /**
+     * (M8, AETS-007 §11.1) The resulting Posting Command's Financial
+     * Date is exactly the Expense command's own `transactionDate()` —
+     * never `created_at`, never "today", never any other value.
+     */
+    public function test_financial_date_is_the_expenses_own_transaction_date(): void
+    {
+        $command = $this->makeCommand();
+        $postingCommand = $this->translator->translate($command);
+
+        $this->assertSame($command->transactionDate(), $postingCommand->financialDate());
+        $this->assertSame('2026-09-06', $postingCommand->financialDate()->format('Y-m-d'));
+    }
+
     public function test_carries_the_same_idempotency_key_tenant_actor_and_journal_id(): void
     {
         $command = $this->makeCommand();

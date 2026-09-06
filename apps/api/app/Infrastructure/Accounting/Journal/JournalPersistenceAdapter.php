@@ -10,6 +10,7 @@ use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountIdException;
 use App\Domain\Accounting\Journal\CorrectionType;
 use App\Domain\Accounting\Journal\Exception\InconsistentCorrectionMetadataException;
+use App\Domain\Accounting\Journal\Exception\InconsistentPostedAtException;
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
 use App\Domain\Accounting\Journal\Exception\InvalidJournalIdException;
 use App\Domain\Accounting\Journal\Exception\MixedCurrencyJournalException;
@@ -116,7 +117,7 @@ final class JournalPersistenceAdapter
      * Replacement, exactly as {@see Journal}'s own domain invariant
      * already guarantees.
      *
-     * @return array{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}
+     * @return array{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null, financial_date: string, posted_at: string|null}
      */
     public function toPersistedHeader(Journal $journal): array
     {
@@ -128,6 +129,8 @@ final class JournalPersistenceAdapter
                 ? null
                 : self::toPersistedCorrectionType($journal->correctionType()),
             'corrected_journal_id' => $journal->correctedJournalId()?->toString(),
+            'financial_date' => $journal->financialDate()->format('Y-m-d'),
+            'posted_at' => $journal->postedAt()?->format('Y-m-d H:i:s'),
         ];
     }
 
@@ -166,7 +169,7 @@ final class JournalPersistenceAdapter
      * `line_position` before reconstruction, regardless of the order
      * they are supplied in.
      *
-     * @param  array{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null}  $header
+     * @param  array{tenant_id: string, journal_id: string, state: string, correction_type: string|null, corrected_journal_id: string|null, financial_date: string, posted_at: string|null}  $header
      * @param  list<array{journal_id: string, line_position: int, account_id: string, amount: string, currency: string, direction: string}>  $lines
      *
      * @throws InvalidTenantIdException if `tenant_id` is not canonical.
@@ -181,6 +184,7 @@ final class JournalPersistenceAdapter
      * @throws MixedCurrencyJournalException if the lines do not all share the same Currency.
      * @throws UnbalancedJournalException if total Debit Money does not exactly equal total Credit Money.
      * @throws InconsistentCorrectionMetadataException if `correction_type` and `corrected_journal_id` disagree on whether this Journal is a correction.
+     * @throws InconsistentPostedAtException if `state` and `posted_at` disagree (M8).
      */
     public function fromPersistedJournal(array $header, array $lines): Journal
     {
@@ -193,6 +197,10 @@ final class JournalPersistenceAdapter
         $correctedJournalId = $header['corrected_journal_id'] === null
             ? null
             : JournalId::of($header['corrected_journal_id']);
+        $financialDate = new \DateTimeImmutable($header['financial_date']);
+        $postedAt = $header['posted_at'] === null
+            ? null
+            : new \DateTimeImmutable($header['posted_at']);
 
         $orderedLines = $lines;
         usort($orderedLines, static fn (array $a, array $b): int => $a['line_position'] <=> $b['line_position']);
@@ -206,7 +214,7 @@ final class JournalPersistenceAdapter
             $orderedLines,
         );
 
-        return Journal::reconstitute($tenantId, $journalId, $journalLines, $state, $correctionType, $correctedJournalId);
+        return Journal::reconstitute($tenantId, $journalId, $journalLines, $state, $financialDate, $correctionType, $correctedJournalId, $postedAt);
     }
 
     private static function toPersistedJournalState(JournalState $state): string

@@ -60,6 +60,7 @@ final class DraftJournalAssembler
             $command->tenantId(),
             $command->journalId(),
             $command->lines(),
+            $command->financialDate(),
         );
     }
 }

@@ -69,6 +69,12 @@ use Illuminate\Database\ConnectionInterface;
  * {@see PostingCommandTransactionalExecutor}'s own docblock for the
  * full reasoning; nothing about it changes here beyond which
  * candidate-assembly closure produced the Journal being persisted.
+ *
+ * **`postedAt` is computed here, not by {@see Journal} itself (M8).**
+ * Exactly as {@see PostingCommandJournalExecutor} does for an ordinary
+ * posting, this class reads the wall clock once, in UTC, immediately
+ * before calling `post()` — {@see Journal::post()} never generates
+ * "now" internally.
  */
 final class JournalCorrectionTransactionalExecutor
 {
@@ -139,7 +145,7 @@ final class JournalCorrectionTransactionalExecutor
 
         try {
             $journal = $this->connection->transaction(function () use ($candidate, $tenantId, $idempotencyKey, $actor, $source, $auditAction) {
-                $posted = $candidate->post();
+                $posted = $candidate->post(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
 
                 $this->journalRepository->save($posted);
                 $this->idempotencyRepository->record($tenantId, $idempotencyKey, $posted->id());

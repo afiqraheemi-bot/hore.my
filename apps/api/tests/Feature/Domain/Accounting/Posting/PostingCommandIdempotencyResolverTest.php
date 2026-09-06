@@ -63,6 +63,8 @@ final class PostingCommandIdempotencyResolverTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -245,6 +247,31 @@ final class PostingCommandIdempotencyResolverTest extends TestCase
             $this->debitLine('account-cash', '150.00'),
             $this->creditLine('account-income', '150.00'),
         ], idempotencyKey: $key);
+
+        $this->expectException(RejectedConflictingIdempotencyReuseException::class);
+        $this->resolver->resolve($command);
+    }
+
+    /**
+     * (M8, POST-028) A same-key reuse whose Journal Lines are
+     * identical but whose Financial Date differs from the persisted
+     * Journal's own Financial Date is a conflicting reuse, not a safe
+     * replay — this is the exact scenario the M8 mandate's idempotency
+     * requirement exists to catch.
+     */
+    public function test_different_financial_date_with_identical_lines_is_a_conflict(): void
+    {
+        $journal = $this->persistJournal($this->tenantA, 'journal-0001', $this->balancedLines(), new \DateTimeImmutable('2026-01-01'));
+        $key = IdempotencyKey::of('key-0001');
+        $this->idempotencyRepository->record($this->tenantA, $key, $journal->id());
+
+        $command = $this->makeCommand(
+            $this->tenantA,
+            $journal->id(),
+            $this->balancedLines(),
+            idempotencyKey: $key,
+            financialDate: new \DateTimeImmutable('2026-02-01'),
+        );
 
         $this->expectException(RejectedConflictingIdempotencyReuseException::class);
         $this->resolver->resolve($command);
@@ -447,9 +474,9 @@ final class PostingCommandIdempotencyResolverTest extends TestCase
     /**
      * @param  list<JournalLine>  $lines
      */
-    private function persistJournal(TenantId $tenantId, string $journalId, array $lines): Journal
+    private function persistJournal(TenantId $tenantId, string $journalId, array $lines, ?\DateTimeImmutable $financialDate = null): Journal
     {
-        $journal = Journal::create($tenantId, JournalId::of($journalId), $lines);
+        $journal = Journal::create($tenantId, JournalId::of($journalId), $lines, $financialDate ?? $this->financialDate());
         $this->journalRepository->save($journal);
 
         return $journal;
@@ -467,6 +494,7 @@ final class PostingCommandIdempotencyResolverTest extends TestCase
         ?SourceFingerprint $sourceFingerprint = null,
         array $evidenceReferences = [],
         ?IdempotencyKey $idempotencyKey = null,
+        ?\DateTimeImmutable $financialDate = null,
     ): PostingCommand {
         return new PostingCommand(
             $idempotencyKey ?? IdempotencyKey::of('key-0001'),
@@ -475,9 +503,15 @@ final class PostingCommandIdempotencyResolverTest extends TestCase
             $source ?? SourceReference::of('source-0001'),
             $journalId,
             $lines,
+            $financialDate ?? $this->financialDate(),
             $sourceFingerprint,
             $evidenceReferences,
         );
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
     }
 
     private function insertAccount(TenantId $tenantId, string $accountId): void
@@ -524,6 +558,11 @@ final class PostingCommandIdempotencyResolverTest extends TestCase
         if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        }
+
+        if (! Schema::connection('pgsql')->hasColumn(self::JOURNAL_TABLE, 'financial_date')) {
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
         }
 
         self::forceCleanMigration(self::IDEMPOTENCY_MIGRATION_PATH, [self::IDEMPOTENCY_TABLE]);

@@ -41,6 +41,12 @@ use App\Domain\Accounting\Posting\SourceReference;
  * resulting Journal's Source reference identifies the Expense record
  * that gave rise to it (`"expense:{ExpenseId}"`) — a true, traceable
  * fact (AETS-004 §19), never an invented claim about external material.
+ *
+ * **Financial date — Expense's own `transaction_date`, exactly (M8).**
+ * The Journal's `financialDate` is always `$command->transactionDate()`
+ * — Expense's own business-facing accounting date is the ledger's
+ * authoritative financial date for this Journal; this class never
+ * substitutes `created_at`, "today", or any other value.
  */
 final class ExpenseToPostingCommandTranslator
 {
@@ -62,6 +68,7 @@ final class ExpenseToPostingCommandTranslator
             $this->sourceReferenceFor($command),
             $command->journalId(),
             $lines,
+            $command->transactionDate(),
             null,
             $evidenceReference === null ? [] : [$evidenceReference->toString()],
         );

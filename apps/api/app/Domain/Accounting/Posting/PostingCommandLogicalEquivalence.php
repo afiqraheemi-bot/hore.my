@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Accounting\Posting;
 
+use App\Domain\Accounting\Journal\Journal;
+
 /**
  * The pure, storage-free rule that determines whether two
  * `PostingCommand`s represent the same logical Journal request or a
@@ -34,19 +36,32 @@ namespace App\Domain\Accounting\Posting;
  *
  * **What "materially different" means here, and what it does not.**
  * Per AETS-007 §6.1's own wording, the logical payload is: the
- * proposed Journal identity, and the proposed Journal Lines
+ * proposed Journal identity, the proposed Journal Lines
  * (Account reference, Money amount, Currency, and Direction — all
  * already covered by `JournalLine`'s own existing value-equality
- * contract, checked pairwise in order). TenantId is compared as the
- * scoping context §6.1 already assumes ("for the same Tenant")
- * before "materially different" is even asked. Actor, Source, Source
- * Fingerprint, and Evidence references are deliberately excluded —
- * AETS-007 §6.1 does not name any of them as part of the logical
- * payload two retries of the same command must agree on; a caller may
- * legitimately resubmit the same accounting request through a
- * different Actor session, a different Source trace, or with a
- * Source Fingerprint or Evidence reference added or changed, without
- * that making it a different logical request.
+ * contract, checked pairwise in order), and — added in M8 — the
+ * Financial Date (`POST-028`): since the Financial Date determines
+ * which Accounting Period a Journal belongs to (AETS-004 §9.1), two
+ * commands agreeing on every line but disagreeing on Financial Date
+ * describe two different ledger effects, not a safe retry of the same
+ * one. TenantId is compared as the scoping context §6.1 already
+ * assumes ("for the same Tenant") before "materially different" is
+ * even asked. Actor, Source, Source Fingerprint, and Evidence
+ * references are deliberately excluded — AETS-007 §6.1 does not name
+ * any of them as part of the logical payload two retries of the same
+ * command must agree on; a caller may legitimately resubmit the same
+ * accounting request through a different Actor session, a different
+ * Source trace, or with a Source Fingerprint or Evidence reference
+ * added or changed, without that making it a different logical
+ * request.
+ *
+ * **Financial Date comparison is exact-value, not merely same-day.**
+ * Two `\DateTimeImmutable` instances are compared via `==` after
+ * normalizing to their date-only ISO-8601 string (`Y-m-d`) — the same
+ * "date, not timestamp" semantics {@see Journal::financialDate()}
+ * itself carries; a difference in time-of-day component (which the
+ * persisted Financial Date never actually retains, since it is a
+ * `DATE` column) never causes a false conflict.
  */
 final class PostingCommandLogicalEquivalence
 {
@@ -57,6 +72,10 @@ final class PostingCommandLogicalEquivalence
         }
 
         if (! $left->journalId()->equals($right->journalId())) {
+            return false;
+        }
+
+        if ($left->financialDate()->format('Y-m-d') !== $right->financialDate()->format('Y-m-d')) {
             return false;
         }
 

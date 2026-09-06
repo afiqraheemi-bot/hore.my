@@ -98,6 +98,8 @@ final class ExpenseRecordingServiceIntegrationTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -187,6 +189,23 @@ final class ExpenseRecordingServiceIntegrationTest extends TestCase
 
         $reloaded = $this->expenseRepository()->findById($this->tenantA, $result->expense()->id());
         $this->assertSame('2026-08-15', $reloaded?->transactionDate()->format('Y-m-d'));
+    }
+
+    /**
+     * (M8, AETS-007 §11.1) The Expense's own `transaction_date` flows
+     * exactly into the resulting Journal's `financial_date` — the
+     * ledger-authoritative date, never `created_at` or "today".
+     */
+    public function test_expense_transaction_date_flows_exactly_into_journal_financial_date(): void
+    {
+        $command = $this->makeCommand(transactionDate: new \DateTimeImmutable('2026-05-01'));
+
+        $result = $this->service->record($command);
+
+        $journal = $this->journalRepository->findById($this->tenantA, $result->expense()->journalId());
+        $this->assertNotNull($journal);
+        $this->assertSame('2026-05-01', $journal->financialDate()->format('Y-m-d'));
+        $this->assertNotNull($journal->postedAt());
     }
 
     public function test_description_and_business_context_are_preserved_after_posting(): void
@@ -387,6 +406,7 @@ final class ExpenseRecordingServiceIntegrationTest extends TestCase
             SourceReference::of('source-0001'),
             JournalId::of('journal-reversal-0001'),
             $expense->journalId(),
+            new \DateTimeImmutable('2026-09-06'),
         ));
 
         $this->assertTrue($reversalResult->isNewlyPosted());
@@ -412,7 +432,7 @@ final class ExpenseRecordingServiceIntegrationTest extends TestCase
         $draft = Journal::create($this->tenantA, JournalId::of('journal-draft-expense'), [
             JournalLine::create(AccountId::of('account-office-supplies'), Money::fromDecimalString('10.00', $this->myr), JournalDirection::Debit),
             JournalLine::create(AccountId::of('account-cash'), Money::fromDecimalString('10.00', $this->myr), JournalDirection::Credit),
-        ]);
+        ], new \DateTimeImmutable('2026-08-15'));
         $this->journalRepository->save($draft);
 
         $correctionExecutor = $this->buildCorrectionExecutor($connection);
@@ -426,6 +446,7 @@ final class ExpenseRecordingServiceIntegrationTest extends TestCase
             SourceReference::of('source-0001'),
             JournalId::of('journal-reversal-draft'),
             $draft->id(),
+            new \DateTimeImmutable('2026-08-15'),
         ));
     }
 
@@ -569,6 +590,11 @@ final class ExpenseRecordingServiceIntegrationTest extends TestCase
         if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        }
+
+        if (! Schema::connection('pgsql')->hasColumn(self::JOURNAL_TABLE, 'financial_date')) {
+            self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
         }
 
         self::forceCleanMigration(self::IDEMPOTENCY_MIGRATION_PATH, [self::IDEMPOTENCY_TABLE]);

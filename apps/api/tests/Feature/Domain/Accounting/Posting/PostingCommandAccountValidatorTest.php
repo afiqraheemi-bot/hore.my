@@ -281,6 +281,7 @@ final class PostingCommandAccountValidatorTest extends TestCase
             SourceReference::of('source-0001'),
             JournalId::of('journal-0001'),
             $lines,
+            new \DateTimeImmutable('2026-08-15'),
         );
     }
 

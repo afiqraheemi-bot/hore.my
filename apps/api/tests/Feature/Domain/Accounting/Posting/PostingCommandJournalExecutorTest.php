@@ -82,6 +82,8 @@ final class PostingCommandJournalExecutorTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -353,7 +355,7 @@ final class PostingCommandJournalExecutorTest extends TestCase
         $posted = Journal::create($this->tenantA, JournalId::of('journal-posted'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ])->post();
+        ], $this->financialDate())->post($this->postedAt());
         $this->journalRepository->save($posted);
 
         try {
@@ -368,6 +370,38 @@ final class PostingCommandJournalExecutorTest extends TestCase
 
         $rawState = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-posted')->value('state');
         $this->assertSame('Posted', $rawState);
+    }
+
+    // --- M8: Financial date and posted-at ----------------------------------
+
+    /**
+     * (M8) A freshly posted Journal persists the command's exact
+     * Financial Date, and `posted_at` is set to a real, non-null
+     * timestamp — never left null once Posted.
+     */
+    public function test_posting_persists_financial_date_and_sets_posted_at(): void
+    {
+        $financialDate = new \DateTimeImmutable('2026-03-10');
+        $command = new PostingCommand(
+            IdempotencyKey::of('key-financial-date'),
+            $this->tenantA,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-0001'),
+            JournalId::of('journal-financial-date'),
+            [
+                $this->debitLine('account-cash', '100.00'),
+                $this->creditLine('account-income', '100.00'),
+            ],
+            $financialDate,
+        );
+
+        $this->executor->execute($command);
+
+        /** @var object{financial_date: string, posted_at: string|null} $row */
+        $row = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->where('journal_id', 'journal-financial-date')->firstOrFail();
+
+        $this->assertSame('2026-03-10', (new \DateTimeImmutable($row->financial_date))->format('Y-m-d'));
+        $this->assertNotNull($row->posted_at);
     }
 
     // --- Architecture -----------------------------------------------------
@@ -391,7 +425,7 @@ final class PostingCommandJournalExecutorTest extends TestCase
 
     private function saveDraftJournal(string $journalId, array $lines): Journal
     {
-        $journal = Journal::create($this->tenantA, JournalId::of($journalId), $lines);
+        $journal = Journal::create($this->tenantA, JournalId::of($journalId), $lines, $this->financialDate());
         $this->journalRepository->save($journal);
 
         return $journal;
@@ -409,7 +443,18 @@ final class PostingCommandJournalExecutorTest extends TestCase
             SourceReference::of('source-0001'),
             $journalId,
             $lines,
+            $this->financialDate(),
         );
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine
@@ -466,6 +511,7 @@ final class PostingCommandJournalExecutorTest extends TestCase
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+        self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);

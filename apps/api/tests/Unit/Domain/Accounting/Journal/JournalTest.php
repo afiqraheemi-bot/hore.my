@@ -6,6 +6,7 @@ namespace Tests\Unit\Domain\Accounting\Journal;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\NormalBalance;
+use App\Domain\Accounting\Journal\Exception\InconsistentPostedAtException;
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
 use App\Domain\Accounting\Journal\Exception\JournalAlreadyPostedException;
 use App\Domain\Accounting\Journal\Exception\MixedCurrencyJournalException;
@@ -82,7 +83,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertInstanceOf(Journal::class, $journal);
     }
@@ -96,7 +97,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertSame(JournalState::Draft, $journal->state());
     }
@@ -109,9 +110,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $this->assertInstanceOf(Journal::class, $posted);
         $this->assertSame(JournalState::Posted, $posted->state());
@@ -126,9 +127,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $this->assertNotSame($draft, $posted);
     }
@@ -142,9 +143,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $draft->post();
+        $draft->post($this->postedAt());
 
         $this->assertSame(JournalState::Draft, $draft->state());
     }
@@ -157,9 +158,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $this->assertTrue($this->tenantId->equals($posted->tenantId()));
     }
@@ -173,9 +174,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, $id, [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $this->assertTrue($id->equals($posted->id()));
     }
@@ -190,8 +191,8 @@ final class JournalTest extends TestCase
         $debit = $this->debitLine('account-cash', '100.00');
         $credit = $this->creditLine('account-income', '100.00');
 
-        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
-        $posted = $draft->post();
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], $this->financialDate());
+        $posted = $draft->post($this->postedAt());
 
         $this->assertSame([$debit, $credit], $posted->lines());
     }
@@ -204,9 +205,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $this->assertTrue($posted->isBalanced());
     }
@@ -221,9 +222,9 @@ final class JournalTest extends TestCase
         $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $currencies = array_map(
             static fn (JournalLine $line): string => $line->money()->currency()->identifier(),
@@ -243,8 +244,8 @@ final class JournalTest extends TestCase
         $debit = $this->debitLine('account-cash', '100.00');
         $credit = $this->creditLine('account-income', '100.00');
 
-        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
-        $posted = $draft->post();
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], $this->financialDate());
+        $posted = $draft->post($this->postedAt());
 
         $this->assertSame($debit, $posted->lines()[0]);
         $this->assertSame($credit, $posted->lines()[1]);
@@ -260,11 +261,11 @@ final class JournalTest extends TestCase
         $posted = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ])->post();
+        ], $this->financialDate())->post($this->postedAt());
 
         $this->expectException(JournalAlreadyPostedException::class);
 
-        $posted->post();
+        $posted->post($this->postedAt());
     }
 
     /**
@@ -297,7 +298,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertSame(JournalState::Draft, $journal->state());
     }
@@ -310,7 +311,7 @@ final class JournalTest extends TestCase
         $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
 
         $this->assertInstanceOf(Journal::class, $journal);
         $this->assertSame(JournalState::Draft, $journal->state());
@@ -327,7 +328,7 @@ final class JournalTest extends TestCase
         $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Posted);
+        ], JournalState::Posted, $this->financialDate(), postedAt: $this->postedAt());
 
         $this->assertSame(JournalState::Posted, $journal->state());
     }
@@ -340,7 +341,7 @@ final class JournalTest extends TestCase
         $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
 
         $this->assertTrue($this->tenantId->equals($journal->tenantId()));
     }
@@ -355,7 +356,7 @@ final class JournalTest extends TestCase
         $journal = Journal::reconstitute($this->tenantId, $id, [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
 
         $this->assertTrue($id->equals($journal->id()));
     }
@@ -369,7 +370,7 @@ final class JournalTest extends TestCase
         $debit = $this->debitLine('account-cash', '100.00');
         $credit = $this->creditLine('account-income', '100.00');
 
-        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], JournalState::Draft);
+        $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], JournalState::Draft, $this->financialDate());
 
         $this->assertSame([$debit, $credit], $journal->lines());
     }
@@ -384,9 +385,9 @@ final class JournalTest extends TestCase
         $draft = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
 
-        $posted = $draft->post();
+        $posted = $draft->post($this->postedAt());
 
         $this->assertSame(JournalState::Posted, $posted->state());
         $this->assertSame(JournalState::Draft, $draft->state());
@@ -403,7 +404,7 @@ final class JournalTest extends TestCase
         $journal = Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Posted);
+        ], JournalState::Posted, $this->financialDate(), postedAt: $this->postedAt());
 
         $this->assertSame(JournalState::Posted, $journal->state());
 
@@ -435,7 +436,7 @@ final class JournalTest extends TestCase
 
         Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
     }
 
     /**
@@ -450,7 +451,7 @@ final class JournalTest extends TestCase
         Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             JournalLine::create(AccountId::of('account-cash'), Money::fromDecimalString('100.00', $this->myr), JournalDirection::Debit),
             JournalLine::create(AccountId::of('account-income'), Money::fromDecimalString('100.00', $otherCurrency), JournalDirection::Credit),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
     }
 
     /**
@@ -465,7 +466,7 @@ final class JournalTest extends TestCase
         Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-expense', '45.50'),
             $this->creditLine('account-cash', '45.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
     }
 
     /**
@@ -482,7 +483,7 @@ final class JournalTest extends TestCase
         Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-expense', '45.50'),
             $this->creditLine('account-cash', '45.00'),
-        ], JournalState::Posted);
+        ], JournalState::Posted, $this->financialDate(), postedAt: $this->postedAt());
     }
 
     /**
@@ -496,11 +497,11 @@ final class JournalTest extends TestCase
         $a = Journal::reconstitute($this->tenantId, $id, [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ], JournalState::Draft);
+        ], JournalState::Draft, $this->financialDate());
         $b = Journal::reconstitute($this->tenantId, $id, [
             $this->debitLine('account-cash', '50.00'),
             $this->creditLine('account-income', '50.00'),
-        ], JournalState::Posted);
+        ], JournalState::Posted, $this->financialDate(), postedAt: $this->postedAt());
 
         $this->assertTrue($a->equals($b));
     }
@@ -514,7 +515,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '50.00'),
             $this->creditLine('account-income', '50.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertCount(2, $journal->lines());
     }
@@ -528,7 +529,7 @@ final class JournalTest extends TestCase
             $this->debitLine('account-cash', '60.00'),
             $this->debitLine('account-vat-input', '5.00'),
             $this->creditLine('account-income', '65.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertCount(3, $journal->lines());
     }
@@ -540,7 +541,7 @@ final class JournalTest extends TestCase
     {
         $this->expectException(InsufficientJournalLinesException::class);
 
-        Journal::create($this->tenantId, JournalId::of('journal-0001'), []);
+        Journal::create($this->tenantId, JournalId::of('journal-0001'), [], $this->financialDate());
     }
 
     /**
@@ -552,7 +553,7 @@ final class JournalTest extends TestCase
 
         Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
-        ]);
+        ], $this->financialDate());
     }
 
     /**
@@ -563,7 +564,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-expense', '45.50'),
             $this->creditLine('account-cash', '45.50'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertTrue($journal->isBalanced());
     }
@@ -581,7 +582,7 @@ final class JournalTest extends TestCase
         Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-expense', '45.50'),
             $this->creditLine('account-cash', '45.00'),
-        ]);
+        ], $this->financialDate());
     }
 
     /**
@@ -596,7 +597,7 @@ final class JournalTest extends TestCase
         Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-expense', '100.00'),
             $this->creditLine('account-cash', '100.01'),
-        ]);
+        ], $this->financialDate());
     }
 
     /**
@@ -611,7 +612,7 @@ final class JournalTest extends TestCase
             $this->debitLine('account-vat-input', '5.00'),
             $this->creditLine('account-income', '40.00'),
             $this->creditLine('account-income-2', '25.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertTrue($journal->isBalanced());
     }
@@ -633,7 +634,7 @@ final class JournalTest extends TestCase
         Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             JournalLine::create(AccountId::of('account-cash'), Money::fromDecimalString('100.00', $this->myr), JournalDirection::Debit),
             JournalLine::create(AccountId::of('account-income'), Money::fromDecimalString('100.00', $otherCurrency), JournalDirection::Credit),
-        ]);
+        ], $this->financialDate());
     }
 
     /**
@@ -645,7 +646,7 @@ final class JournalTest extends TestCase
         $debit = $this->debitLine('account-cash', '100.00');
         $credit = $this->creditLine('account-income', '100.00');
 
-        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], $this->financialDate());
 
         $this->assertSame([$debit, $credit], $journal->lines());
     }
@@ -660,7 +661,7 @@ final class JournalTest extends TestCase
         $debit = $this->debitLine('account-cash', '100.00');
         $credit = $this->creditLine('account-income', '100.00');
 
-        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], $this->financialDate());
 
         $lines = $journal->lines();
         $lines[] = $this->creditLine('account-other', '999.00');
@@ -680,7 +681,7 @@ final class JournalTest extends TestCase
         $debit = $this->debitLine('account-cash', '100.00');
         $credit = $this->creditLine('account-income', '100.00');
 
-        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit]);
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [$debit, $credit], $this->financialDate());
 
         $this->assertSame($debit, $journal->lines()[0]);
         $this->assertSame($credit, $journal->lines()[1]);
@@ -694,7 +695,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertTrue($this->tenantId->equals($journal->tenantId()));
     }
@@ -709,7 +710,7 @@ final class JournalTest extends TestCase
         $journal = Journal::create($this->tenantId, $id, [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertTrue($id->equals($journal->id()));
     }
@@ -726,11 +727,11 @@ final class JournalTest extends TestCase
         $a = Journal::create($this->tenantId, $id, [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
         $b = Journal::create($this->tenantId, $id, [
             $this->debitLine('account-cash', '50.00'),
             $this->creditLine('account-income', '50.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertTrue($a->equals($b));
     }
@@ -744,11 +745,11 @@ final class JournalTest extends TestCase
         $a = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
         $b = Journal::create($this->tenantId, JournalId::of('journal-0002'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
         $this->assertFalse($a->equals($b));
     }
@@ -861,8 +862,8 @@ final class JournalTest extends TestCase
         $this->assertSame(
             [
                 'correctedJournalId', 'correctionType', 'create', 'createReplacement',
-                'equals', 'id', 'isBalanced', 'lines', 'post', 'reconstitute', 'reverse',
-                'state', 'tenantId',
+                'equals', 'financialDate', 'id', 'isBalanced', 'lines', 'post', 'postedAt',
+                'reconstitute', 'reverse', 'state', 'tenantId',
             ],
             $publicMethodNames,
         );
@@ -912,6 +913,139 @@ final class JournalTest extends TestCase
         $this->assertIsString($source);
         $this->assertStringNotContainsString('Illuminate\\', $source);
         $this->assertStringNotContainsString('Eloquent', $source);
+    }
+
+    /**
+     * M8: `create()` persists the exact `financialDate` supplied,
+     * distinct from any system timestamp.
+     */
+    public function test_financial_date_is_preserved_exactly(): void
+    {
+        $financialDate = new \DateTimeImmutable('2026-01-15');
+
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], $financialDate);
+
+        $this->assertSame($financialDate, $journal->financialDate());
+    }
+
+    /**
+     * M8: a Draft Journal's `postedAt` is always `null` — it is never
+     * set at construction, only by a successful `post()` transition.
+     */
+    public function test_draft_journal_has_no_posted_at(): void
+    {
+        $journal = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], $this->financialDate());
+
+        $this->assertNull($journal->postedAt());
+    }
+
+    /**
+     * M8: `post($postedAt)` sets `postedAt` to exactly the
+     * caller-supplied moment — never a value the Journal aggregate
+     * computes on its own.
+     */
+    public function test_posting_sets_posted_at_to_the_supplied_moment(): void
+    {
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], $this->financialDate());
+
+        $postedAt = new \DateTimeImmutable('2026-09-06 12:34:56');
+        $posted = $draft->post($postedAt);
+
+        $this->assertSame($postedAt, $posted->postedAt());
+    }
+
+    /**
+     * M8: `post()` preserves `financialDate` exactly, unchanged by the
+     * Draft -> Posted transition — Financial Date and posted-at are
+     * two independent facts, never conflated.
+     */
+    public function test_posting_preserves_financial_date_exactly(): void
+    {
+        $financialDate = new \DateTimeImmutable('2026-02-01');
+
+        $draft = Journal::create($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], $financialDate);
+
+        $posted = $draft->post($this->postedAt());
+
+        $this->assertSame($financialDate, $posted->financialDate());
+    }
+
+    /**
+     * M8: a Draft reconstituted with a non-null `postedAt` is an
+     * inconsistent state and MUST be rejected — a Draft never has a
+     * posting time.
+     */
+    public function test_reconstitute_rejects_draft_with_posted_at(): void
+    {
+        $this->expectException(InconsistentPostedAtException::class);
+
+        Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Draft, $this->financialDate(), null, null, $this->postedAt());
+    }
+
+    /**
+     * M8: a Posted Journal reconstituted with no `postedAt` is an
+     * inconsistent state and MUST be rejected — a Posted Journal always
+     * has a posting time.
+     */
+    public function test_reconstitute_rejects_posted_without_posted_at(): void
+    {
+        $this->expectException(InconsistentPostedAtException::class);
+
+        Journal::reconstitute($this->tenantId, JournalId::of('journal-0001'), [
+            $this->debitLine('account-cash', '100.00'),
+            $this->creditLine('account-income', '100.00'),
+        ], JournalState::Posted, $this->financialDate());
+    }
+
+    /**
+     * M8: no path anywhere in this class ever generates "now" itself —
+     * neither `financialDate` nor `postedAt` has a self-generation
+     * fallback, mirroring the identical, already-established guarantee
+     * for `JournalId` (AETS-004 §11).
+     */
+    public function test_financial_date_and_posted_at_are_never_self_generated(): void
+    {
+        $reflection = new ReflectionClass(Journal::class);
+        $source = file_get_contents((string) $reflection->getFileName());
+        $this->assertIsString($source);
+
+        // Strip docblocks/comments first — the class's own docblock
+        // legitimately *names* this exact string in prose to explain
+        // that it is deliberately never called (mirroring
+        // {@see test_reconstituting_a_posted_journal_does_not_throw_already_posted()}'s
+        // own method-body-only extraction technique above); scanning
+        // the raw source including comments would trip on that
+        // documentation rather than on actual executable code.
+        $executableOnly = preg_replace('#/\*.*?\*/#s', '', $source);
+        $this->assertIsString($executableOnly);
+
+        $this->assertStringNotContainsString("new \\DateTimeImmutable('now')", $executableOnly);
+        $this->assertStringNotContainsString('new \\DateTimeImmutable("now")', $executableOnly);
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine

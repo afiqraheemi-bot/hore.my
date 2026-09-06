@@ -57,6 +57,14 @@ use App\Domain\Shared\Tenancy\TenantId;
  * already exists under that identifier — a repository lookup the
  * future Posting Engine performs, never something this class decides
  * or records itself (`POST-T007`, `POST-T008`).
+ *
+ * **Financial Date (M8, AETS-007 §11.1).** Every Posting Command MUST
+ * carry a Financial Date — the ledger-authoritative accounting date
+ * its resulting Journal's effect belongs to. This is a required
+ * constructor argument with no default, for the same reason
+ * TenantId/Actor/Source are: there is no safe, non-arbitrary value this
+ * class could invent on a caller's behalf (a silent `created_at`
+ * substitute is explicitly the outcome this field exists to prevent).
  */
 final class PostingCommand
 {
@@ -74,6 +82,8 @@ final class PostingCommand
      * @var list<JournalLine>
      */
     private readonly array $lines;
+
+    private readonly \DateTimeImmutable $financialDate;
 
     private readonly ?SourceFingerprint $sourceFingerprint;
 
@@ -107,6 +117,7 @@ final class PostingCommand
         SourceReference $source,
         JournalId $journalId,
         array $lines,
+        \DateTimeImmutable $financialDate,
         ?SourceFingerprint $sourceFingerprint = null,
         array $evidenceReferences = [],
     ) {
@@ -116,6 +127,7 @@ final class PostingCommand
         $this->source = $source;
         $this->journalId = $journalId;
         $this->lines = self::assertJournalLines($lines);
+        $this->financialDate = $financialDate;
         $this->sourceFingerprint = $sourceFingerprint;
         $this->evidenceReferences = self::assertEvidenceReferences($evidenceReferences);
     }
@@ -151,6 +163,22 @@ final class PostingCommand
     public function lines(): array
     {
         return $this->lines;
+    }
+
+    /**
+     * The ledger-authoritative accounting date the resulting Journal's
+     * effect belongs to (M8, AETS-004 §9.1, AETS-007 §11.1) — always
+     * required, never defaulted by this class to "now" or anything
+     * else. Copied onto the Journal this command produces via
+     * {@see DraftJournalAssembler}, and
+     * is part of this command's own logical-payload identity for
+     * idempotency purposes (§6.1): the same Idempotency Key reused with
+     * a different Financial Date is a conflicting reuse, not a safe
+     * replay (`POST-028`).
+     */
+    public function financialDate(): \DateTimeImmutable
+    {
+        return $this->financialDate;
     }
 
     public function sourceFingerprint(): ?SourceFingerprint

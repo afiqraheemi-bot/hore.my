@@ -45,6 +45,8 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -431,6 +433,7 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::LINE_TABLE));
 
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+        self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
     }
 
     private function insertJournal(string $tenantId, string $journalId, string $state = 'Draft'): void
@@ -439,6 +442,7 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
             'tenant_id' => $tenantId,
             'journal_id' => $journalId,
             'state' => $state,
+            'financial_date' => '2026-08-15',
         ]);
     }
 
@@ -520,8 +524,10 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         // other test class sharing this real database within the same
         // PHPUnit process assumes that full schema is present. Applying
         // it here too keeps this class's own fixture consistent with
-        // that shared reality, not just with M3-T9 in isolation.
+        // that shared reality, not just with M3-T9 in isolation. The
+        // same reasoning applies to the M8 financial-date migration.
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+        self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
 
         // journal_lines' composite foreign key depends on accounts
         // already existing — ensure the production accounts migration

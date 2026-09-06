@@ -77,6 +77,8 @@ final class PostingCommandJournalStateResolverTest extends TestCase
 
     private const CORRECTION_MIGRATION_PATH = 'database/migrations/2026_09_06_090000_add_correction_chain_to_journals_table.php';
 
+    private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -190,7 +192,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         $tenantBJournal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
             $this->debitLine('account-cash-b', '100.00'),
             $this->creditLine('account-cash-b', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->journalRepository->save($tenantBJournal);
 
         $this->expectException(RejectedJournalIdentityUnavailableException::class);
@@ -210,7 +212,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         $tenantBJournal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
             $this->debitLine('account-cash-b', '100.00'),
             $this->creditLine('account-cash-b', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->journalRepository->save($tenantBJournal);
 
         try {
@@ -234,7 +236,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         $tenantBJournal = Journal::create($this->tenantB, JournalId::of('journal-shared-id'), [
             $this->debitLine('account-cash-b', '100.00'),
             $this->creditLine('account-cash-b', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->journalRepository->save($tenantBJournal);
         $beforeCount = DB::connection('pgsql')->table(self::JOURNAL_TABLE)->count();
 
@@ -297,7 +299,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         $journal = Journal::create($this->tenantA, JournalId::of($journalId), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
         $this->journalRepository->save($journal);
 
         return $journal;
@@ -308,7 +310,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
         $journal = Journal::create($this->tenantA, JournalId::of($journalId), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ])->post();
+        ], $this->financialDate())->post($this->postedAt());
         $this->journalRepository->save($journal);
 
         return $journal;
@@ -326,7 +328,18 @@ final class PostingCommandJournalStateResolverTest extends TestCase
                 $this->debitLine('account-cash', '100.00'),
                 $this->creditLine('account-income', '100.00'),
             ],
+            $this->financialDate(),
         );
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine
@@ -383,6 +396,7 @@ final class PostingCommandJournalStateResolverTest extends TestCase
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+        self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);

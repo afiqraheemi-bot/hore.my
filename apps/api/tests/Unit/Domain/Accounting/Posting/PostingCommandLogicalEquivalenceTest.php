@@ -209,6 +209,37 @@ final class PostingCommandLogicalEquivalenceTest extends TestCase
     }
 
     /**
+     * (M8, POST-028) A different Financial Date for an otherwise
+     * identical logical payload is NOT equivalent — the same
+     * Idempotency Key reused with a different Financial Date is a
+     * conflicting reuse, not a safe replay, because Financial Date
+     * determines which accounting period the resulting Journal
+     * belongs to.
+     */
+    public function test_different_financial_date_is_not_equivalent(): void
+    {
+        $left = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: new \DateTimeImmutable('2026-01-01'));
+        $right = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: new \DateTimeImmutable('2026-02-01'));
+
+        $this->assertFalse($this->equivalence->equivalent($left, $right));
+    }
+
+    /**
+     * (M8) Financial Date is compared at calendar-day precision — two
+     * Financial Dates that fall on the same day but carry different
+     * times-of-day (e.g. midnight vs. noon) still compare equivalent,
+     * since a Financial Date identifies an accounting day, not a
+     * moment.
+     */
+    public function test_same_calendar_day_financial_date_with_different_time_of_day_remains_equivalent(): void
+    {
+        $left = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: new \DateTimeImmutable('2026-01-01 00:00:00'));
+        $right = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: new \DateTimeImmutable('2026-01-01 23:59:59'));
+
+        $this->assertTrue($this->equivalence->equivalent($left, $right));
+    }
+
+    /**
      * An Actor difference alone does not affect equivalence — Actor
      * is not part of AETS-007 §6.1's logical-payload definition.
      */
@@ -307,6 +338,7 @@ final class PostingCommandLogicalEquivalenceTest extends TestCase
         ?SourceFingerprint $sourceFingerprint = null,
         array $evidenceReferences = [],
         ?IdempotencyKey $idempotencyKey = null,
+        ?\DateTimeImmutable $financialDate = null,
     ): PostingCommand {
         return new PostingCommand(
             $idempotencyKey ?? IdempotencyKey::of('key-0001'),
@@ -315,6 +347,7 @@ final class PostingCommandLogicalEquivalenceTest extends TestCase
             $source ?? SourceReference::of('source-0001'),
             $journalId,
             $lines,
+            $financialDate ?? new \DateTimeImmutable('2026-08-15'),
             $sourceFingerprint,
             $evidenceReferences,
         );

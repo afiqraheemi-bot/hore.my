@@ -25,6 +25,15 @@ use App\Domain\Shared\Tenancy\TenantId;
  * contract `PostingCommand` already carries (§6), never a second
  * representation.
  *
+ * **Financial date (M8, AETS-004 §16).** The caller also supplies the
+ * new Reversal Journal's own `financialDate` — never derived from the
+ * original Journal's date, never defaulted to "today". Which date a
+ * Reversal should carry is a Posting Rules/Period Management policy
+ * decision (AETS-006, deferred) made by the calling layer, not
+ * something this command, {@see JournalCorrectionCandidateAssembler},
+ * or {@see App\Domain\Accounting\Journal\Journal::reverse()} decide on
+ * the caller's behalf.
+ *
  * Pure data carrier — construction-level only. It performs no I/O,
  * validates no Tenant ownership, does not confirm the referenced
  * Journal exists or is eligible to be reversed, and decides nothing
@@ -41,6 +50,7 @@ final class ReverseJournalCommand
         private readonly SourceReference $source,
         private readonly JournalId $newJournalId,
         private readonly JournalId $originalJournalId,
+        private readonly \DateTimeImmutable $financialDate,
     ) {}
 
     public function idempotencyKey(): IdempotencyKey
@@ -71,5 +81,10 @@ final class ReverseJournalCommand
     public function originalJournalId(): JournalId
     {
         return $this->originalJournalId;
+    }
+
+    public function financialDate(): \DateTimeImmutable
+    {
+        return $this->financialDate;
     }
 }

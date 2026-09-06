@@ -41,6 +41,13 @@ use App\Infrastructure\Accounting\Journal\JournalRepository;
  * no new durable persistence effect, and an existing Draft rejected at
  * any step remains exactly as persisted, unchanged.
  *
+ * **`postedAt` is computed here, not by {@see Journal}
+ * itself (M8).** `Journal::post()` requires a caller-supplied moment,
+ * never generating "now" internally (purity) — this class is the
+ * orchestration boundary already responsible for exactly this
+ * transition, so it is the one that reads the wall clock, once, in
+ * UTC, immediately before calling `post()`.
+ *
  * **Atomicity boundary — explicitly partial.** `JournalRepository::save()`
  * already provides an atomic transaction for the Journal header and
  * its Journal Lines only (M3-T10) — this executor does not claim, and
@@ -74,7 +81,7 @@ final class PostingCommandJournalExecutor
             $candidate = $existingDraft;
         }
 
-        $posted = $candidate->post();
+        $posted = $candidate->post(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
 
         $this->journalRepository->save($posted);
 

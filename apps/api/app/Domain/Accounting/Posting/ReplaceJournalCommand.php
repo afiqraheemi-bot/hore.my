@@ -26,6 +26,13 @@ use App\Domain\Shared\Tenancy\TenantId;
  * contract `PostingCommand` already carries (§6), never a second
  * representation.
  *
+ * **Financial date (M8, AETS-004 §17).** The caller also supplies the
+ * new Replacement Journal's own `financialDate` — never derived from
+ * the Reversal's or the original Journal's date, never defaulted to
+ * "today". Exactly as for {@see ReverseJournalCommand}, which date a
+ * Replacement should carry is a Posting Rules/Period Management policy
+ * decision (AETS-006, deferred) made by the calling layer.
+ *
  * Pure data carrier — construction-level only, mirroring
  * `PostingCommand`'s own line-membership guarantee (every member of
  * `$lines` MUST be a {@see JournalLine} instance). It performs no
@@ -56,6 +63,7 @@ final class ReplaceJournalCommand
         private readonly JournalId $newJournalId,
         private readonly JournalId $reversalJournalId,
         array $lines,
+        private readonly \DateTimeImmutable $financialDate,
     ) {
         $this->lines = self::assertJournalLines($lines);
     }
@@ -96,6 +104,11 @@ final class ReplaceJournalCommand
     public function lines(): array
     {
         return $this->lines;
+    }
+
+    public function financialDate(): \DateTimeImmutable
+    {
+        return $this->financialDate;
     }
 
     /**

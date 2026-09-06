@@ -6,6 +6,7 @@ namespace Tests\Unit\Infrastructure\Accounting\Journal;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountIdException;
+use App\Domain\Accounting\Journal\Exception\InconsistentPostedAtException;
 use App\Domain\Accounting\Journal\Exception\InsufficientJournalLinesException;
 use App\Domain\Accounting\Journal\Exception\InvalidJournalIdException;
 use App\Domain\Accounting\Journal\Exception\JournalAlreadyPostedException;
@@ -81,7 +82,7 @@ final class JournalPersistenceAdapterTest extends TestCase
     public function test_persisted_draft_maps_back_to_a_journal(): void
     {
         $journal = $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $this->twoBalancedLineRows(),
         );
 
@@ -91,11 +92,63 @@ final class JournalPersistenceAdapterTest extends TestCase
     public function test_persisted_posted_maps_back_to_a_journal(): void
     {
         $journal = $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => '2026-09-06 10:00:00'],
             $this->twoBalancedLineRows(),
         );
 
         $this->assertSame(JournalState::Posted, $journal->state());
+    }
+
+    /**
+     * (M8) `financial_date` is persisted as a plain `Y-m-d` string and
+     * round-trips back to the exact calendar date, distinct from
+     * `posted_at`.
+     */
+    public function test_financial_date_round_trips_exactly(): void
+    {
+        $journal = $this->makeJournal();
+        $header = $this->adapter->toPersistedHeader($journal);
+
+        $this->assertSame('2026-08-15', $header['financial_date']);
+
+        $reconstructed = $this->adapter->fromPersistedJournal($header, $this->adapter->toPersistedLines($journal));
+
+        $this->assertSame('2026-08-15', $reconstructed->financialDate()->format('Y-m-d'));
+    }
+
+    /**
+     * (M8) A Draft Journal's persisted `posted_at` is `null`; a Posted
+     * Journal's round-trips back to the exact moment, distinct from
+     * `financial_date`.
+     */
+    public function test_posted_at_is_null_for_draft_and_round_trips_exactly_for_posted(): void
+    {
+        $draft = $this->makeJournal(state: JournalState::Draft);
+        $draftHeader = $this->adapter->toPersistedHeader($draft);
+        $this->assertNull($draftHeader['posted_at']);
+
+        $posted = $this->makeJournal(id: JournalId::of('journal-0002'), state: JournalState::Posted);
+        $postedHeader = $this->adapter->toPersistedHeader($posted);
+        $this->assertSame('2026-09-06 10:00:00', $postedHeader['posted_at']);
+
+        $reconstructed = $this->adapter->fromPersistedJournal($postedHeader, $this->adapter->toPersistedLines($posted));
+        $this->assertSame('2026-09-06 10:00:00', $reconstructed->postedAt()?->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * (M8) A `state`/`posted_at` mismatch (a Draft claiming a
+     * `posted_at`, or a Posted Journal with none) is rejected during
+     * reconstitution — the adapter never silently accepts corrupted
+     * persisted data.
+     */
+    public function test_inconsistent_posted_at_is_rejected_during_reconstitution(): void
+    {
+        $this->expectException(InconsistentPostedAtException::class);
+
+        $this->adapter->fromPersistedJournal(
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => '2026-09-06 10:00:00'],
+            $this->twoBalancedLineRows(),
+        );
     }
 
     public function test_tenant_id_round_trips_exactly(): void
@@ -125,7 +178,7 @@ final class JournalPersistenceAdapterTest extends TestCase
             $this->debitLine('account-a', '10.00'),
             $this->debitLine('account-b', '20.00'),
             $this->creditLine('account-c', '30.00'),
-        ]);
+        ], $this->financialDate());
 
         $header = $this->adapter->toPersistedHeader($journal);
         $lines = $this->adapter->toPersistedLines($journal);
@@ -211,7 +264,7 @@ final class JournalPersistenceAdapterTest extends TestCase
             $this->debitLine('account-vat-input', '5.00'),
             $this->creditLine('account-income', '40.00'),
             $this->creditLine('account-income-2', '25.00'),
-        ]);
+        ], $this->financialDate());
 
         $header = $this->adapter->toPersistedHeader($journal);
         $lines = $this->adapter->toPersistedLines($journal);
@@ -234,7 +287,7 @@ final class JournalPersistenceAdapterTest extends TestCase
     public function test_posted_reconstruction_uses_reconstitute_not_post(): void
     {
         $journal = $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Posted', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => '2026-09-06 10:00:00'],
             $this->twoBalancedLineRows(),
         );
         $this->assertSame(JournalState::Posted, $journal->state());
@@ -262,7 +315,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidPersistedJournalStateException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'NotACanonicalState', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'NotACanonicalState', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $this->twoBalancedLineRows(),
         );
     }
@@ -275,7 +328,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidPersistedJournalDirectionException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $lines,
         );
     }
@@ -285,7 +338,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidTenantIdException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => '', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => '', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $this->twoBalancedLineRows(),
         );
     }
@@ -295,7 +348,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidJournalIdException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => '', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => '', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $this->twoBalancedLineRows(),
         );
     }
@@ -308,7 +361,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidAccountIdException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $lines,
         );
     }
@@ -321,7 +374,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidMinorUnitsException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $lines,
         );
     }
@@ -334,7 +387,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InvalidCurrencyException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $lines,
         );
     }
@@ -347,7 +400,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(UnbalancedJournalException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             $lines,
         );
     }
@@ -387,7 +440,7 @@ final class JournalPersistenceAdapterTest extends TestCase
         $this->expectException(InsufficientJournalLinesException::class);
 
         $this->adapter->fromPersistedJournal(
-            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null],
+            ['tenant_id' => 'tenant-0001', 'journal_id' => 'journal-0001', 'state' => 'Draft', 'correction_type' => null, 'corrected_journal_id' => null, 'financial_date' => '2026-08-15', 'posted_at' => null],
             [$lines[0]],
         );
     }
@@ -465,9 +518,19 @@ final class JournalPersistenceAdapterTest extends TestCase
         $journal = Journal::create($tenantId ?? $this->tenantId, $id ?? JournalId::of('journal-0001'), [
             $this->debitLine('account-cash', '100.00'),
             $this->creditLine('account-income', '100.00'),
-        ]);
+        ], $this->financialDate());
 
-        return $state === JournalState::Posted ? $journal->post() : $journal;
+        return $state === JournalState::Posted ? $journal->post($this->postedAt()) : $journal;
+    }
+
+    private function financialDate(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-08-15');
+    }
+
+    private function postedAt(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-09-06 10:00:00');
     }
 
     private function debitLine(string $accountId, string $amount): JournalLine
