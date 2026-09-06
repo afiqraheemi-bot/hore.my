@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
 use App\Http\Controllers\Api\PeriodController;
 use App\Http\Controllers\Api\ReportingController;
+use App\Http\Controllers\Api\TransferController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -31,6 +32,7 @@ Route::prefix('v1')->group(function (): void {
 
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);
+            Route::post('/transfers', [TransferController::class, 'store']);
             Route::post('/periods/close', [PeriodController::class, 'close']);
 
             Route::prefix('reports')->group(function (): void {

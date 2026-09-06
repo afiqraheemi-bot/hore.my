@@ -517,6 +517,7 @@ final class AccountRepositoryIntegrationTest extends TestCase
         // reasoning as above.
         Schema::connection('pgsql')->dropIfExists('expenses');
         Schema::connection('pgsql')->dropIfExists('incomes');
+        Schema::connection('pgsql')->dropIfExists('transfers');
         Schema::connection('pgsql')->dropIfExists('period_closures');
 
         // Reconcile any state left behind by a prior interrupted run

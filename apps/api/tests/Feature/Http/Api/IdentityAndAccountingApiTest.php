@@ -32,6 +32,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         'journal_evidence_links',
         'expenses',
         'incomes',
+        'transfers',
         'journal_lines',
         'journals',
         'accounts',
@@ -425,6 +426,109 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->assertSame(1, DB::connection('pgsql')->table('incomes')->count());
         $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
         $this->assertSame(1, DB::connection('pgsql')->table('audit_events')->count());
+    }
+
+    // --- Transfer (M14, AETS-014) ---------------------------------------
+
+    public function test_a_transfer_posted_via_the_api_moves_funds_between_two_accounts(): void
+    {
+        $this->registerAndReturnCredentials('transfer-basic@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $pettyCashId = $this->createAccount('1010', 'Petty Cash', 'Asset');
+
+        $response = $this->postJson('/api/v1/transfers', [
+            'amount' => '150.00',
+            'transaction_date' => '2026-08-15',
+            'source_account_id' => $bankId,
+            'destination_account_id' => $pettyCashId,
+            'description' => 'Top up petty cash float',
+        ], ['Idempotency-Key' => 'key-transfer-0001']);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('is_newly_recorded', true);
+
+        $this->assertSame(1, DB::connection('pgsql')->table('transfers')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('audit_events')->count());
+    }
+
+    public function test_a_transfer_retried_with_the_same_idempotency_key_replays_instead_of_duplicating(): void
+    {
+        $this->registerAndReturnCredentials('transfer-retry@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $pettyCashId = $this->createAccount('1010', 'Petty Cash', 'Asset');
+
+        $payload = [
+            'amount' => '150.00',
+            'transaction_date' => '2026-08-15',
+            'source_account_id' => $bankId,
+            'destination_account_id' => $pettyCashId,
+            'description' => 'Top up petty cash float',
+        ];
+        $headers = ['Idempotency-Key' => 'key-retry-transfer-0001'];
+
+        $first = $this->postJson('/api/v1/transfers', $payload, $headers);
+        $first->assertStatus(201);
+
+        $second = $this->postJson('/api/v1/transfers', $payload, $headers);
+        $second->assertStatus(200);
+        $second->assertJsonPath('is_newly_recorded', false);
+
+        $this->assertSame($first->json('id'), $second->json('id'));
+        $this->assertSame($first->json('journal_id'), $second->json('journal_id'));
+
+        $this->assertSame(1, DB::connection('pgsql')->table('transfers')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    public function test_transferring_an_account_into_itself_via_the_api_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('transfer-same-account@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+
+        $response = $this->postJson('/api/v1/transfers', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-15',
+            'source_account_id' => $bankId,
+            'destination_account_id' => $bankId,
+            'description' => 'Invalid self-transfer',
+        ], ['Idempotency-Key' => 'key-transfer-self-0001']);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('transfers')->count());
+    }
+
+    public function test_posting_a_transfer_into_an_already_closed_period_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('transfer-period-lock@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $pettyCashId = $this->createAccount('1010', 'Petty Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $retainedEarningsId = $this->createAccount('3900', 'Retained Earnings', 'Equity');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-07-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $bankId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-lock-transfer-expense-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/periods/close', [
+            'closed_through_date' => '2026-07-31',
+            'retained_earnings_account_id' => $retainedEarningsId,
+        ], ['Idempotency-Key' => 'key-lock-transfer-period-0001'])->assertStatus(201);
+
+        $backdated = $this->postJson('/api/v1/transfers', [
+            'amount' => '10.00',
+            'transaction_date' => '2026-07-20',
+            'source_account_id' => $bankId,
+            'destination_account_id' => $pettyCashId,
+            'description' => 'Backdated into a closed period',
+        ], ['Idempotency-Key' => 'key-lock-transfer-backdated-0001']);
+
+        $backdated->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('transfers')->count());
     }
 
     /**
