@@ -3,8 +3,9 @@
 - Status: Closed for MVP scope — remaining items are explicitly blocked, not oversights
 - Date: 2026-09-06
 - **Updated 2026-09-06 (M6 close):** POST-007, POST-019, POST-020, and POST-024 below are corrected from their M4-close status — [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md) (Audit Trail & Evidence Linkage) now exists and resolves the Audit Event and minimal Evidence Reference/Linkage gaps this document originally recorded as blocked/deferred. See §7 for the full M6 delta. Every other row is unchanged from M4 close.
+- **Updated 2026-09-06 (M8/M8A close):** A new invariant, `POST-028` (Financial Date required and never self-generated), is added to the table below — [AETS-007](../specifications/accounting/AETS-007-Posting-Command.md) is now v2.0.0. `PostingCommand` gained a new required `financialDate` field, now part of its logical-payload identity for idempotency (POST-004's own "materially different" test now also covers a differing Financial Date). See §8 for the full M8/M8A delta. Every other row is unchanged from M6 close.
 - Governs: `App\Domain\Accounting\Posting`, `App\Infrastructure\Accounting\Posting`, `App\Infrastructure\Accounting\Journal`
-- Authoritative specs: [AETS-007](../specifications/accounting/AETS-007-Posting-Command.md), [ATS-007](../specifications/accounting/tests/ATS-007-Posting-Pipeline-Test-Specification.md), [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md), [ATS-010](../specifications/accounting/tests/ATS-010-Audit-Trail-Test-Specification.md)
+- Authoritative specs: [AETS-004](../specifications/accounting/AETS-004-Journal-Posting-Model.md), [ATS-004](../specifications/accounting/tests/ATS-004-Journal-Posting-Test-Specification.md), [AETS-007](../specifications/accounting/AETS-007-Posting-Command.md), [ATS-007](../specifications/accounting/tests/ATS-007-Posting-Pipeline-Test-Specification.md), [AETS-010](../specifications/accounting/AETS-010-Audit-Trail-Evidence-Linkage.md), [ATS-010](../specifications/accounting/tests/ATS-010-Audit-Trail-Test-Specification.md)
 
 ## Purpose
 
@@ -51,10 +52,13 @@ A first-submission Posting Command reaches durable, atomic, idempotent Posted st
 | POST-025 | Outbox consistency | **Deferred** | ADR-0006's own deferred scope; Outbox mechanism not yet built. |
 | POST-026 | Required Source Fingerprint fails safely | **Blocked** | Requirement-detection policy is explicitly a future calling module's decision (§6.2/§26) — no such module exists. |
 | POST-027 | No fabricated Source Fingerprint | **Partial** | Architecture half (pipeline never self-generates one): done, `PostingCommandNeverGeneratesSourceFingerprintTest` (POST-T030). Runtime-rejection half (POST-T029): **blocked**, same reason as POST-026. |
+| POST-028 | Financial Date required and never self-generated (M8) | **Done** | `PostingCommandTest` (required, non-nullable, carried exactly); `PostingCommandLogicalEquivalenceTest`/`JournalCorrectionLogicalEquivalenceTest` (same-key reuse with a different Financial Date is a conflicting reuse, compared at calendar-day precision, no timezone conversion); `DraftJournalAssemblerTest` (copied onto the Journal exactly); real-PostgreSQL proof in `PostingCommandJournalExecutorTest`/`PostingCommandIdempotencyResolverTest`/`JournalRepositoryIntegrationTest`. |
 
 **Tally at M4 close:** 16 fully done, 5 partial (each with a concretely done sub-part), 4 blocked, 2 deferred to named future specs, out of 27.
 
 **Tally after M6:** 17 fully done (POST-024 moved from deferred to done), 5 partial (POST-007's status improved; POST-019/POST-020 narrowed to the Outbox gap alone), 4 blocked (unchanged — Actor/AI/Source-Fingerprint-policy items), 1 deferred (Outbox, POST-025, unchanged), out of 27.
+
+**Tally after M8/M8A:** 18 fully done (POST-028 added and done), 5 partial (unchanged from M6), 4 blocked (unchanged), 1 deferred (unchanged), out of 28.
 
 ## 3. What was found and fixed during closure (not part of the original plan)
 
@@ -104,6 +108,19 @@ M6 closed the single most-cited gap in this document: Audit Event and a minimal 
 
 See the M6 closure report (delivered to the Founder alongside this update) for the full self-QA and acceptance-criteria walkthrough.
 
-## 7. Recommendation for M5
+## 8. Post-M6 updates (M8/M8A — Financial Date & Posting Time Foundation)
+
+M8 resolved the cross-cutting gap the M7 Post-Closure Architecture Check exposed: SRS §5.1 requires financial date, posting time, and source time stored separately, but neither `Journal` nor `PostingCommand` carried a financial date at all before this milestone.
+
+- **Journal (AETS-004 v2.0.0, `App\Domain\Accounting\Journal`)** — new `financialDate` (caller-supplied, immutable, required on every Journal in every state) and `postedAt` (`null` until Posted, set exactly once by the orchestration layer, never by `Journal` itself — mirroring `JournalId`'s own established no-self-generation convention). New invariants `JRN-024`/`JRN-025`.
+- **PostingCommand (AETS-007 v2.0.0)** — new required `financialDate` field, copied onto the Journal it produces via `DraftJournalAssembler`, and now part of the command's logical-payload identity for idempotency (`POST-028`, this document's table above): a same-key reuse with an otherwise-identical Journal Line set but a different Financial Date is a conflicting reuse, not a safe replay. Compared at calendar-day precision (`Y-m-d`), with no timezone conversion.
+- **Correction path (M5)** — `Journal::reverse()`/`Journal::createReplacement()` and `ReverseJournalCommand`/`ReplaceJournalCommand` each require their own explicitly-supplied Financial Date; no policy of "use the original's date" or "use today's date" is hard-coded — that selection remains deferred to Posting Rules/Period Management (AETS-006).
+- **M7 Expense integration** — `ExpenseToPostingCommandTranslator` now sends Expense's own `transaction_date` as the Journal's `financial_date`, proven end-to-end against real PostgreSQL.
+- **Persistence** — new migration adds `financial_date` (`DATE`, `NOT NULL`) and `posted_at` (`TIMESTAMP`, nullable) to the production `journals` table; `JournalRepository::save()` now also rejects any attempt to change an existing Journal's `financial_date` (immutable, same treatment as TenantId).
+- **M8A hardening (CTO QA follow-up, same day):** the migration's first revision backfilled any pre-existing `journals` row with a synthetic `1970-01-01` placeholder before tightening the new column to `NOT NULL`, purely to satisfy this test suite's shared, long-lived PostgreSQL instance. A CTO QA pass rejected that outright — a placeholder date is exactly the kind of fabricated financial fact Accounting Core must never produce. The migration now instead refuses to run at all (throws, before touching the schema) if `journals` already contains any row, since such a row necessarily predates the column and has no legitimate Financial Date to report; reconciling a genuinely populated table in some future deployment is left to a separate, explicit, reviewed data migration. For the current greenfield state, this path is never exercised — `journals` is empty every time this migration applies.
+- **Not resolved by M8, deliberately:** which Financial Date a Reversal/Replacement should carry (AETS-006's own future policy decision); any "latest replacement"/"current corrected Business Transaction" concept (a correction chain may have more than one child — callers walk `correctionType`/`correctedJournalId` themselves).
+- Full regression at M8/M8A close: **1127/1127 passing** against real PostgreSQL; `phpstan analyse`: 0 errors; `pint --test`: passing; `composer validate --strict`: valid; `git diff --check`: clean.
+
+## 9. Recommendation for M5
 
 Treat every row marked **Blocked** or **Deferred** above as a precondition, not a gap to silently work around, when scoping the next module. If M5 is the first calling module that would supply a Source Fingerprint or reference Evidence, that module's own design is where AETS-007's deferred policy questions (§6.2, §26) finally get answered — not by retrofitting Accounting Core.
