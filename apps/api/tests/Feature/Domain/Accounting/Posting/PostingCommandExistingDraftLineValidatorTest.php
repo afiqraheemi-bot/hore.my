@@ -438,6 +438,7 @@ final class PostingCommandExistingDraftLineValidatorTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('audit_events');
         Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
         Schema::connection('pgsql')->dropIfExists('expenses');
+        Schema::connection('pgsql')->dropIfExists('incomes');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);

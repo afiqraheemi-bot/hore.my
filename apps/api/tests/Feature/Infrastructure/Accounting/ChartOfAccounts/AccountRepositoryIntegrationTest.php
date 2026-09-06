@@ -516,6 +516,7 @@ final class AccountRepositoryIntegrationTest extends TestCase
         // `accounts`, independent of `journal_lines` — the identical
         // reasoning as above.
         Schema::connection('pgsql')->dropIfExists('expenses');
+        Schema::connection('pgsql')->dropIfExists('incomes');
 
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across

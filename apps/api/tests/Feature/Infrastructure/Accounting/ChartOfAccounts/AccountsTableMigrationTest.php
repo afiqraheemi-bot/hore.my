@@ -267,6 +267,7 @@ final class AccountsTableMigrationTest extends TestCase
         // itself can be dropped below. Not recreated, for the same
         // reason as the tables above.
         Schema::connection('pgsql')->dropIfExists('expenses');
+        Schema::connection('pgsql')->dropIfExists('incomes');
 
         // Guarantee this table's migration is the newest batch before
         // testing rollback against it.
@@ -386,6 +387,7 @@ final class AccountsTableMigrationTest extends TestCase
         // `accounts`, independent of `journal_lines` — the identical
         // reasoning as above.
         Schema::connection('pgsql')->dropIfExists('expenses');
+        Schema::connection('pgsql')->dropIfExists('incomes');
 
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across

@@ -315,6 +315,7 @@ final class PostingCommandAccountValidatorTest extends TestCase
 
         Schema::connection('pgsql')->dropIfExists('journal_lines');
         Schema::connection('pgsql')->dropIfExists('expenses');
+        Schema::connection('pgsql')->dropIfExists('incomes');
         Schema::connection('pgsql')->dropIfExists(self::ACCOUNT_TABLE);
 
         if (Schema::connection('pgsql')->hasTable('migrations')) {
