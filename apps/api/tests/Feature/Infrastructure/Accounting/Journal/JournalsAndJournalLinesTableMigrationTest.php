@@ -512,6 +512,7 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
         Schema::connection('pgsql')->dropIfExists('audit_events');
         Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
+        Schema::connection('pgsql')->dropIfExists('expenses');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         // Production `journals` never exists without the M5

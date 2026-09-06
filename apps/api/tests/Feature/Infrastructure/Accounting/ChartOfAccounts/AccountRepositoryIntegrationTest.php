@@ -512,6 +512,11 @@ final class AccountRepositoryIntegrationTest extends TestCase
         // next time it runs.
         Schema::connection('pgsql')->dropIfExists('journal_lines');
 
+        // `expenses` (M7) carries a composite foreign key directly onto
+        // `accounts`, independent of `journal_lines` — the identical
+        // reasoning as above.
+        Schema::connection('pgsql')->dropIfExists('expenses');
+
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across
         // repeated suite runs against the same persistent database.

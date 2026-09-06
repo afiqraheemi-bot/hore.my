@@ -261,6 +261,13 @@ final class AccountsTableMigrationTest extends TestCase
             self::forceCleanState($journalMigrationPath, ['journal_lines', 'journals']);
         }
 
+        // `expenses` (M7) carries a composite foreign key directly onto
+        // `accounts` — independent of whether `journal_lines` exists —
+        // so it must be dropped unconditionally before `accounts`
+        // itself can be dropped below. Not recreated, for the same
+        // reason as the tables above.
+        Schema::connection('pgsql')->dropIfExists('expenses');
+
         // Guarantee this table's migration is the newest batch before
         // testing rollback against it.
         self::forceCleanState(self::MIGRATION_PATH, [self::TABLE]);
@@ -374,6 +381,11 @@ final class AccountsTableMigrationTest extends TestCase
         // class owns that migration reconciles it independently the
         // next time it runs.
         Schema::connection('pgsql')->dropIfExists('journal_lines');
+
+        // `expenses` (M7) carries a composite foreign key directly onto
+        // `accounts`, independent of `journal_lines` — the identical
+        // reasoning as above.
+        Schema::connection('pgsql')->dropIfExists('expenses');
 
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across
