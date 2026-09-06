@@ -6,7 +6,16 @@ hore.my is not an open-ended chatbot. AI may interpret, extract, classify, propo
 
 ## Project status
 
-The repository is at the engineering-foundation stage. Application code has not been bootstrapped.
+The repository has progressed beyond initial engineering foundation. It now
+contains the Laravel API, Nuxt web foundation, deterministic Accounting Core,
+manual Expense and Income posting, audit/evidence linkage, financial-date
+handling, financial reporting, and the initial Identity/Tenancy/API boundary.
+
+The product remains under active development and is not production-ready.
+Accounting Period controls, asynchronous outbox infrastructure, document and
+AI proposal workflows, production security/operations controls, and the
+customer-facing Nuxt experience remain future milestones governed by the
+accepted ADRs and accounting specifications.
 
 ## Approved architecture
 

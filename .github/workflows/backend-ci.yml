@@ -28,6 +28,26 @@ jobs:
   validate:
     name: Validate (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.15-alpine
+        env:
+          POSTGRES_DB: hore_my_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hore_my_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Integration tests deliberately address the named `pgsql`
+      # connection even while phpunit.xml keeps SQLite as the fast default.
+      # DB_URL therefore supplies the real PostgreSQL target without
+      # weakening local unit-test isolation.
+      DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/hore_my_test
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +66,7 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: ctype, dom, fileinfo, filter, hash, iconv, json, libxml, mbstring, openssl, pcre, pdo, pdo_pgsql, pdo_sqlite, phar, session, tokenizer, xml, xmlwriter
           coverage: none
+          ini-values: variables_order=EGPCS
           tools: composer:2
 
       - name: Resolve Composer cache directory
@@ -70,7 +91,11 @@ jobs:
         run: ./vendor/bin/pint --test
 
       - name: Static analysis (Larastan / PHPStan)
-        run: ./vendor/bin/phpstan analyse --no-progress
+        run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 
-      - name: Run tests
-        run: php artisan test
+      - name: Run tests against real PostgreSQL
+        # PostgreSQL-specific guarantees (constraints, transactions,
+        # locking, concurrency, migrations, tenant isolation, and financial
+        # reporting) are release gates. A skipped test is therefore a CI
+        # failure instead of a false-green build.
+        run: php -d variables_order=EGPCS artisan test --fail-on-skipped
