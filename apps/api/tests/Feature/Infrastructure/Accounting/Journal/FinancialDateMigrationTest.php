@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Infrastructure\Accounting\Journal;
 
 use Illuminate\Database\QueryException;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -31,16 +32,18 @@ use Tests\TestCase;
  * before touching the schema at all — if any pre-existing row is found,
  * rather than inventing a value for it.
  *
- * **Each test manages its own schema lifecycle.** Unlike most migration
- * test classes in this suite, this class has no shared `ensureMigrated()`
- * fixture: every test method first tears `journals`/`journal_lines` down
- * to the "pre-M8" schema shape (base table + M5 correction-chain columns,
- * no `financial_date`/`posted_at`) via {@see resetToPreFinancialDateSchema()},
- * so it can control exactly when — and whether — the financial-date
- * migration under test actually runs. Every test that leaves the schema
- * in that "pre-M8" shape restores the M8 migration before finishing, so
- * this class leaves the shared database in the state every other test
- * class in the same PHPUnit process assumes is already present.
+ * **Each test controls only the two columns under test, never the
+ * whole table.** Unlike most migration test classes in this suite,
+ * this class never drops the `journals`/`journal_lines` tables
+ * themselves (reusing whatever the shared database already has,
+ * creating them only if genuinely absent) and never drops any of their
+ * dependents (`posting_idempotency_keys`, `audit_events`,
+ * `journal_evidence_links`, `expenses`) at all. {@see resetToPreFinancialDateSchema()}
+ * instead only ever drops the two columns this specific migration adds
+ * — an operation with no foreign-key implications whatsoever — so this
+ * class cannot disturb any other test class sharing this same
+ * long-lived PostgreSQL instance within the same PHPUnit process,
+ * regardless of execution order.
  *
  * If no real PostgreSQL instance is reachable via the `pgsql`
  * connection (e.g. `docker compose up -d postgres` has not been run —
@@ -169,8 +172,8 @@ final class FinancialDateMigrationTest extends TestCase
 
     /**
      * *(Architecture)* No sentinel/placeholder date, and no
-     * `created_at`/`occurred_at`-inference logic, appears anywhere in
-     * the migration's source — the hardened replacement does not merely
+     * fabrication/inference logic, appears anywhere in the migration's
+     * executable source — the hardened replacement does not merely
      * behave correctly today, it structurally cannot fabricate a value.
      */
     public function test_no_synthetic_date_or_inference_logic_appears_in_the_migration(): void
@@ -181,13 +184,13 @@ final class FinancialDateMigrationTest extends TestCase
 
         // Strip docblocks/comments and string literals first — both the
         // migration's own class docblock and its thrown exception's
-        // explanatory message legitimately *name* words like "CURRENT_DATE"
-        // and "created_at" in prose, to explain what it deliberately does
+        // explanatory message legitimately *name* words like
+        // "CURRENT_DATE" in prose, to explain what it deliberately does
         // not do (mirroring
         // {@see \Tests\Unit\Domain\Accounting\Journal\JournalTest::test_financial_date_and_posted_at_are_never_self_generated()}'s
-        // own comment-stripping technique). What must be absent is actual
-        // *executable* fabrication/inference logic, not the words
-        // themselves appearing anywhere in the file.
+        // own comment-stripping technique). What must be absent is
+        // actual *executable* fabrication/inference logic, not the
+        // words themselves appearing anywhere in the file.
         $withoutComments = preg_replace('#/\*.*?\*/#s', '', $source);
         $this->assertIsString($withoutComments);
         $executableOnly = preg_replace("#'(?:[^'\\\\]|\\\\.)*'#s", "''", $withoutComments);
@@ -231,31 +234,47 @@ final class FinancialDateMigrationTest extends TestCase
     }
 
     /**
-     * Rebuilds `journals`/`journal_lines` fresh, without the M8
-     * financial-date migration applied — the "pre-M8" schema shape
-     * every test in this class starts from, so each test controls
-     * exactly when, and whether, that migration runs.
-     *
-     * Mirrors {@see JournalsAndJournalLinesTableMigrationTest::ensureMigrated()}'s
-     * own dependent-table drop list — none of `posting_idempotency_keys`,
-     * `posting_source_fingerprints`, `audit_events`,
-     * `journal_evidence_links`, or `expenses` is this class's concern,
-     * and none is recreated here; every other test class that needs one
-     * of them already recreates it on demand.
+     * Brings `journals`/`journal_lines`/`accounts` into existence if
+     * genuinely absent (a fresh database), then rolls back only the
+     * `financial_date`/`posted_at` columns themselves — never the
+     * `journals` table, and never any of its dependents. Dropping two
+     * plain columns has no foreign-key implications, so this method
+     * cannot disturb `posting_idempotency_keys`, `audit_events`,
+     * `journal_evidence_links`, `expenses`, or any other test class
+     * relying on `journals` already existing.
      */
     private function resetToPreFinancialDateSchema(): void
     {
-        Schema::connection('pgsql')->dropIfExists('posting_idempotency_keys');
-        Schema::connection('pgsql')->dropIfExists('posting_source_fingerprints');
-        Schema::connection('pgsql')->dropIfExists('audit_events');
-        Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
-        Schema::connection('pgsql')->dropIfExists('expenses');
-
-        self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
-        self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
-
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);
+        }
+
+        // Check both tables, not just `journals` — some other test class
+        // sharing this real database may have dropped `journal_lines`
+        // alone (as a dependent of some unrelated table it needed to
+        // recreate) while leaving `journals` itself in place. Relying on
+        // `journals` alone would then skip recreating `journal_lines`,
+        // leaving this class with a genuinely broken, split schema.
+        if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE) || ! Schema::connection('pgsql')->hasTable(self::LINE_TABLE)) {
+            self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
+            self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
+        }
+
+        if (Schema::connection('pgsql')->hasTable(self::LINE_TABLE)) {
+            DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
+        }
+        DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
+
+        if (Schema::connection('pgsql')->hasColumn(self::JOURNAL_TABLE, 'financial_date')) {
+            Schema::connection('pgsql')->table(self::JOURNAL_TABLE, function (Blueprint $table): void {
+                $table->dropColumn(['financial_date', 'posted_at']);
+            });
+        }
+
+        if (Schema::connection('pgsql')->hasTable('migrations')) {
+            DB::connection('pgsql')->table('migrations')
+                ->where('migration', pathinfo(self::FINANCIAL_DATE_MIGRATION_PATH, PATHINFO_FILENAME))
+                ->delete();
         }
     }
 
