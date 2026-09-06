@@ -240,6 +240,31 @@ final class PostingCommandLogicalEquivalenceTest extends TestCase
     }
 
     /**
+     * (M8A) The comparison never converts a Financial Date to a
+     * canonical timezone before reading its calendar day — it reads
+     * exactly the `Y-m-d` the value already carries in its own
+     * timezone. Proven with a value whose UTC-equivalent date would
+     * actually differ from its own stated calendar day (a late-night
+     * moment in a positive UTC offset, which — if converted to UTC
+     * first — would fall on the *previous* day): the comparator must
+     * still treat it as `2026-01-02`, never silently shifted to
+     * `2026-01-01` by an implicit conversion.
+     */
+    public function test_financial_date_comparison_never_converts_timezone_before_reading_the_calendar_day(): void
+    {
+        $lateNightInPositiveOffset = new \DateTimeImmutable('2026-01-02 00:30:00', new \DateTimeZone('+08:00'));
+        $this->assertSame('2026-01-01', $lateNightInPositiveOffset->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'));
+
+        $left = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: $lateNightInPositiveOffset);
+        $right = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: new \DateTimeImmutable('2026-01-02'));
+
+        $this->assertTrue($this->equivalence->equivalent($left, $right));
+
+        $wouldMatchIfConvertedToUtc = $this->makeCommand($this->tenantA, $this->journalId, $this->balancedLines(), financialDate: new \DateTimeImmutable('2026-01-01'));
+        $this->assertFalse($this->equivalence->equivalent($left, $wouldMatchIfConvertedToUtc));
+    }
+
+    /**
      * An Actor difference alone does not affect equivalence — Actor
      * is not part of AETS-007 §6.1's logical-payload definition.
      */

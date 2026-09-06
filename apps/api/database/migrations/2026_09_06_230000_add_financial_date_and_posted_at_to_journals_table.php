@@ -27,7 +27,9 @@ use Illuminate\Support\Facades\Schema;
  * moment — matching how {@see Journal}'s
  * own `financialDate()` is compared by
  * {@see PostingCommandLogicalEquivalence}
- * (`Y-m-d` only).
+ * (`Y-m-d` only, with no timezone conversion: comparison reads the
+ * calendar date already carried by the value, it never shifts it
+ * across a timezone boundary).
  *
  * **`posted_at` — `TIMESTAMP`, nullable.** `NULL` for a Draft, and set
  * exactly once — at the durable moment `Journal::post()` transitions
@@ -50,49 +52,62 @@ use Illuminate\Support\Facades\Schema;
  * cross-column relationship; kept as a domain-only guarantee to match
  * that existing convention.
  *
- * **Adds `financial_date` nullable first, then enforces `NOT NULL`.**
- * No production data exists yet for this greenfield system, so there
- * is nothing to backfill in a real deployment — but this test suite's
- * shared PostgreSQL instance accumulates `journals` rows across many
- * independent test classes within one run, some of which pre-date this
- * migration and legitimately still exist when it applies. Adding
- * `financial_date` directly as `NOT NULL` would fail outright the
- * moment any such row exists (`23502`). This migration therefore adds
- * the column nullable, backfills any existing row with a fixed,
- * clearly-synthetic placeholder date, then tightens the column to
- * `NOT NULL` — the standard, safe shape for introducing a required
- * column onto a populated table. This backfill is a one-time migration
- * mechanic only, confined entirely to this file; it does not weaken,
- * bypass, or contradict the domain's own "never self-generate a
- * Financial Date" rule (§9.1), which governs how the *application*
- * constructs a Journal, not how a historical schema migration reconciles
- * pre-existing rows that predate the column's own existence.
+ * **M8A: fails loudly instead of fabricating a Financial Date
+ * (reviewed and hardened after M8's initial CTO QA pass).** An earlier
+ * revision of this migration backfilled any pre-existing `journals` row
+ * with a synthetic placeholder date before tightening the column to
+ * `NOT NULL`, purely to let the migration succeed against this test
+ * suite's shared, long-lived PostgreSQL instance. That is exactly the
+ * kind of fabricated financial fact Accounting Core must never produce
+ * — a placeholder date has no accounting meaning, and a schema
+ * migration is not a legitimate place to invent one merely to satisfy
+ * a `NOT NULL` constraint. This revision instead refuses outright: if
+ * `journals` already contains any row, {@see up()} throws before
+ * touching the schema at all, since every such row necessarily predates
+ * this column's existence and therefore has no legitimate Financial
+ * Date on record — there is no query this migration could run to
+ * "recover" one, and it does not try (no inference from `created_at`,
+ * no inference from an Audit Event's `occurred_at`, no `CURRENT_DATE`).
+ * For the current greenfield state (no production data yet, and the
+ * test suite's own fixtures always apply this migration immediately
+ * after freshly creating `journals`, before any row exists), this path
+ * is never exercised: `journals` is empty, and the column is added
+ * directly as `NOT NULL`. Reconciling a genuinely populated `journals`
+ * table in some future deployment is a separate, explicit data-migration
+ * decision — reviewed and backfilled with each row's real, historically
+ * accurate Financial Date — never an automatic step of this migration.
  */
 return new class extends Migration
 {
     private const JOURNAL_TABLE = 'journals';
 
     /**
-     * A fixed, clearly-synthetic placeholder — never `CURRENT_DATE`,
-     * never derived from any other column — used solely to backfill a
-     * pre-existing row that has no real Financial Date to report,
-     * before the column is tightened to `NOT NULL` below.
+     * @throws RuntimeException if `journals` already contains any row
+     *                          — see this file's own class docblock for why this migration
+     *                          refuses to proceed rather than fabricating a Financial Date
+     *                          for pre-existing rows.
      */
-    private const BACKFILL_PLACEHOLDER_DATE = '1970-01-01';
-
     public function up(): void
     {
+        $existingRowCount = DB::table(self::JOURNAL_TABLE)->count();
+
+        if ($existingRowCount > 0) {
+            throw new RuntimeException(sprintf(
+                'Refusing to add a NOT NULL "financial_date" column to "journals": '
+                .'%d existing row(s) predate this migration and have no legitimate '
+                .'Financial Date on record. Accounting Core never fabricates financial '
+                .'data to satisfy a schema constraint or infer an accounting date from '
+                .'unrelated timestamps. Before re-running '
+                .'this migration, reconcile each existing Journal with its own real, '
+                .'historically accurate Financial Date via a dedicated, reviewed '
+                .'data-migration — this schema migration will not do that for you.',
+                $existingRowCount,
+            ));
+        }
+
         Schema::table(self::JOURNAL_TABLE, function (Blueprint $table): void {
-            $table->date('financial_date')->nullable();
+            $table->date('financial_date');
             $table->timestamp('posted_at')->nullable();
-        });
-
-        DB::table(self::JOURNAL_TABLE)
-            ->whereNull('financial_date')
-            ->update(['financial_date' => self::BACKFILL_PLACEHOLDER_DATE]);
-
-        Schema::table(self::JOURNAL_TABLE, function (Blueprint $table): void {
-            $table->date('financial_date')->nullable(false)->change();
         });
     }
 
