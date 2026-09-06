@@ -37,7 +37,9 @@ final class IdentityAndAccountingApiTest extends TestCase
         'journal_lines',
         'journals',
         'accounts',
+        'business_profiles',
         'tenants',
+        'consents',
         'users',
         'password_reset_tokens',
     ];
@@ -109,6 +111,7 @@ final class IdentityAndAccountingApiTest extends TestCase
             'email' => 'aina@example.my',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => true,
         ]);
 
         $response->assertStatus(201);
@@ -120,6 +123,24 @@ final class IdentityAndAccountingApiTest extends TestCase
         $userId = DB::connection('pgsql')->table('users')->value('id');
         $ownerUserId = DB::connection('pgsql')->table('tenants')->value('owner_user_id');
         $this->assertSame($userId, $ownerUserId);
+
+        $consent = DB::connection('pgsql')->table('consents')->where('user_id', $userId)->first();
+        $this->assertNotNull($consent);
+        $this->assertSame('terms_of_service', $consent->consent_type);
+    }
+
+    public function test_registration_without_accepting_terms_is_rejected(): void
+    {
+        $response = $this->postJson('/api/v1/register', [
+            'name' => 'No Consent',
+            'email' => 'no-consent@example.my',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'terms_accepted' => false,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('users')->count());
     }
 
     public function test_duplicate_email_registration_is_rejected(): void
@@ -131,6 +152,7 @@ final class IdentityAndAccountingApiTest extends TestCase
             'email' => 'dup@example.my',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => true,
         ]);
 
         $response->assertStatus(422);
@@ -567,6 +589,146 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
     }
 
+    // --- Business Profile & Onboarding (M16, SRS IAM-003/IAM-004) --------
+
+    public function test_business_profile_is_absent_before_it_is_ever_saved(): void
+    {
+        $this->registerAndReturnCredentials('profile-absent@example.my');
+
+        $response = $this->getJson('/api/v1/business-profile');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data', null);
+    }
+
+    public function test_saving_a_complete_business_profile_marks_it_complete_and_provisions_a_starter_chart_of_accounts(): void
+    {
+        $this->registerAndReturnCredentials('profile-complete@example.my');
+
+        $response = $this->putJson('/api/v1/business-profile', [
+            'legal_name' => 'Kedai Runcit Aina',
+            'registration_number' => 'SSM-0012345',
+            'tin' => 'IG12345678090',
+            'address_line1' => 'No. 12, Jalan Sutera',
+            'city' => 'Petaling Jaya',
+            'state' => 'Selangor',
+            'postcode' => '46000',
+            'business_type' => 'Retail',
+            'financial_year_start_month' => 1,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('data.is_complete', true);
+        $response->assertJsonPath('data.legal_name', 'Kedai Runcit Aina');
+        // Regression: the schema's own DEFAULT populates `timezone`,
+        // which Eloquent's create() does not automatically refresh into
+        // the in-memory model without an explicit reload.
+        $response->assertJsonPath('data.timezone', 'Asia/Kuala_Lumpur');
+
+        $this->assertSame(1, DB::connection('pgsql')->table('business_profiles')->count());
+
+        // SRS IAM-004: a starter Chart of Accounts is auto-provisioned
+        // on first save.
+        $accountCount = DB::connection('pgsql')->table('accounts')->count();
+        $this->assertGreaterThan(0, $accountCount);
+        $this->assertSame(
+            $accountCount,
+            DB::connection('pgsql')->table('accounts')->where('account_origin', 'System')->count(),
+            'Every auto-provisioned preset Account must carry AccountOrigin::System.',
+        );
+    }
+
+    public function test_saving_a_partial_business_profile_is_accepted_but_not_marked_complete(): void
+    {
+        $this->registerAndReturnCredentials('profile-partial@example.my');
+
+        $response = $this->putJson('/api/v1/business-profile', [
+            'legal_name' => 'Aina Trading',
+            'address_line1' => 'No. 5, Jalan Mawar',
+            'city' => 'Shah Alam',
+            'state' => 'Selangor',
+            'postcode' => '40000',
+            'business_type' => 'Services',
+            'financial_year_start_month' => 1,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('data.is_complete', false);
+        $response->assertJsonPath('data.registration_number', null);
+    }
+
+    public function test_updating_an_already_saved_business_profile_does_not_re_provision_accounts(): void
+    {
+        $this->registerAndReturnCredentials('profile-update@example.my');
+
+        $payload = [
+            'legal_name' => 'Aina Trading',
+            'registration_number' => 'SSM-0099999',
+            'tin' => 'IG99999999090',
+            'address_line1' => 'No. 5, Jalan Mawar',
+            'city' => 'Shah Alam',
+            'state' => 'Selangor',
+            'postcode' => '40000',
+            'business_type' => 'Services',
+            'financial_year_start_month' => 1,
+        ];
+
+        $this->putJson('/api/v1/business-profile', $payload)->assertStatus(201);
+        $accountCountAfterFirstSave = DB::connection('pgsql')->table('accounts')->count();
+
+        $payload['legal_name'] = 'Aina Trading Sdn Bhd (renamed)';
+        $second = $this->putJson('/api/v1/business-profile', $payload);
+
+        $second->assertStatus(200);
+        $second->assertJsonPath('data.legal_name', 'Aina Trading Sdn Bhd (renamed)');
+        $this->assertSame(1, DB::connection('pgsql')->table('business_profiles')->count());
+        $this->assertSame($accountCountAfterFirstSave, DB::connection('pgsql')->table('accounts')->count());
+    }
+
+    public function test_business_profile_provisioning_does_not_clobber_a_pre_existing_manually_created_account(): void
+    {
+        $this->registerAndReturnCredentials('profile-preexisting-account@example.my');
+        $this->createAccount('1000', 'My Own Cash Account', 'Asset');
+
+        $response = $this->putJson('/api/v1/business-profile', [
+            'legal_name' => 'Aina Trading',
+            'registration_number' => 'SSM-0011111',
+            'tin' => 'IG11111111090',
+            'address_line1' => 'No. 5, Jalan Mawar',
+            'city' => 'Shah Alam',
+            'state' => 'Selangor',
+            'postcode' => '40000',
+            'business_type' => 'Services',
+            'financial_year_start_month' => 1,
+        ]);
+
+        $response->assertStatus(201);
+
+        // Code 1000 already existed (manually created before the
+        // profile was ever saved) — provisioning must skip it rather
+        // than fail the whole request.
+        $this->assertSame(1, DB::connection('pgsql')->table('accounts')->where('account_code', '1000')->count());
+        $this->assertSame('My Own Cash Account', DB::connection('pgsql')->table('accounts')->where('account_code', '1000')->value('account_name'));
+    }
+
+    public function test_an_invalid_state_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('profile-invalid-state@example.my');
+
+        $response = $this->putJson('/api/v1/business-profile', [
+            'legal_name' => 'Aina Trading',
+            'address_line1' => 'No. 5, Jalan Mawar',
+            'city' => 'Shah Alam',
+            'state' => 'Not A Real State',
+            'postcode' => '40000',
+            'business_type' => 'Services',
+            'financial_year_start_month' => 1,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('business_profiles')->count());
+    }
+
     // --- Owner Equity (M15) ----------------------------------------------
 
     public function test_a_capital_contribution_posted_via_the_api_increases_cash_and_equity(): void
@@ -755,6 +917,7 @@ final class IdentityAndAccountingApiTest extends TestCase
             'email' => $email,
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => true,
         ])->assertStatus(201);
 
         $this->forgetCachedAuthGuards();

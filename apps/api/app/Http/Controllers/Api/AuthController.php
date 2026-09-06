@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\Consent;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -48,6 +49,16 @@ final class AuthController extends Controller
             Tenant::query()->create([
                 'id' => (string) Str::uuid(),
                 'owner_user_id' => $user->id,
+            ]);
+
+            // SRS IAM-001: registration records consent — append-only,
+            // never updated (see Consent's own docblock).
+            Consent::query()->create([
+                'id' => (string) Str::uuid(),
+                'user_id' => $user->id,
+                'consent_type' => Consent::TERMS_OF_SERVICE,
+                'version' => Consent::CURRENT_TERMS_VERSION,
+                'accepted_at' => now(),
             ]);
 
             return $user;

@@ -14,6 +14,9 @@ async function handleLogout() {
       <div class="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
         <nav class="flex items-center gap-4 text-sm font-medium">
           <span class="text-base font-semibold">hore.my QA harness</span>
+          <NuxtLink to="/business-profile" class="text-gray-600 hover:text-gray-900"
+            >Business Profile</NuxtLink
+          >
           <NuxtLink to="/accounts" class="text-gray-600 hover:text-gray-900">Accounts</NuxtLink>
           <NuxtLink to="/expenses/new" class="text-gray-600 hover:text-gray-900"
             >+ Expense</NuxtLink

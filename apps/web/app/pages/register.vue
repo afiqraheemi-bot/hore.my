@@ -8,6 +8,7 @@ const name = ref('')
 const email = ref('')
 const password = ref('')
 const passwordConfirmation = ref('')
+const termsAccepted = ref(false)
 const error = ref<string | null>(null)
 const submitting = ref(false)
 
@@ -15,11 +16,17 @@ async function onSubmit() {
   error.value = null
   submitting.value = true
   try {
-    await register(name.value, email.value, password.value, passwordConfirmation.value)
-    await router.push('/accounts')
+    await register(
+      name.value,
+      email.value,
+      password.value,
+      passwordConfirmation.value,
+      termsAccepted.value,
+    )
+    await router.push('/business-profile')
   } catch {
     error.value =
-      'Registration failed — check the email is not already taken and the password is at least 8 characters.'
+      'Registration failed — check the email is not already taken, the password is at least 8 characters, and you have accepted the terms.'
   } finally {
     submitting.value = false
   }
@@ -71,6 +78,10 @@ async function onSubmit() {
           class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
         />
       </div>
+      <label class="flex items-start gap-2 text-sm text-gray-700">
+        <input v-model="termsAccepted" type="checkbox" required class="mt-1" />
+        <span>I agree to the Terms of Service and Privacy Notice.</span>
+      </label>
       <button
         type="submit"
         :disabled="submitting"

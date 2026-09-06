@@ -23,6 +23,10 @@ final class RegisterRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'confirmed', Password::min(8)],
+            // SRS IAM-001: registration must record consent — an
+            // unaccepted checkbox fails validation before any User or
+            // Tenant row is created.
+            'terms_accepted' => ['required', 'accepted'],
         ];
     }
 }

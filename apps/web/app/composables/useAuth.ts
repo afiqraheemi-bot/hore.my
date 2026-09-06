@@ -49,10 +49,17 @@ export function useAuth() {
     email: string,
     password: string,
     passwordConfirmation: string,
+    termsAccepted: boolean,
   ): Promise<void> {
     const data = await request<MeResponse>('/api/v1/register', {
       method: 'POST',
-      body: { name, email, password, password_confirmation: passwordConfirmation },
+      body: {
+        name,
+        email,
+        password,
+        password_confirmation: passwordConfirmation,
+        terms_accepted: termsAccepted,
+      },
     })
     user.value = data.user
     tenant.value = data.tenant

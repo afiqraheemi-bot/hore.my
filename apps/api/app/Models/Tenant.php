@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * ADR-0008: a Tenant owns a reference to its single owning User
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $id
  * @property string $owner_user_id
  * @property-read User $owner
+ * @property-read BusinessProfile|null $businessProfile
  */
 #[Fillable(['id', 'owner_user_id'])]
 class Tenant extends Model
@@ -40,5 +42,16 @@ class Tenant extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_user_id', 'id');
+    }
+
+    /**
+     * `null` until the owner completes SRS IAM-003's Business Profile
+     * step of onboarding — registration alone does not create one.
+     *
+     * @return HasOne<BusinessProfile, $this>
+     */
+    public function businessProfile(): HasOne
+    {
+        return $this->hasOne(BusinessProfile::class, 'tenant_id', 'id');
     }
 }
