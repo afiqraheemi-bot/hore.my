@@ -249,13 +249,18 @@ final class FinancialDateMigrationTest extends TestCase
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);
         }
 
-        // Check both tables, not just `journals` — some other test class
-        // sharing this real database may have dropped `journal_lines`
-        // alone (as a dependent of some unrelated table it needed to
-        // recreate) while leaving `journals` itself in place. Relying on
-        // `journals` alone would then skip recreating `journal_lines`,
-        // leaving this class with a genuinely broken, split schema.
-        if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE) || ! Schema::connection('pgsql')->hasTable(self::LINE_TABLE)) {
+        // Deliberately checks `journals` alone, never `journal_lines` —
+        // this class has no test that needs a Journal Line to exist,
+        // and `journals` already having live dependents
+        // (`posting_idempotency_keys`, `audit_events`,
+        // `journal_evidence_links`, none of which are this class's
+        // concern) means it must never attempt to drop/recreate
+        // `journals` merely because `journal_lines` alone happens to be
+        // missing (a state some other, unrelated test class's own
+        // fixture management can leave behind — see this class's own
+        // docblock). Only a genuinely fresh database, where `journals`
+        // itself does not exist yet at all, triggers this branch.
+        if (! Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE)) {
             self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
         }
