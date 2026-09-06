@@ -535,6 +535,7 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('expenses');
         Schema::connection('pgsql')->dropIfExists('incomes');
         Schema::connection('pgsql')->dropIfExists('transfers');
+        Schema::connection('pgsql')->dropIfExists('owner_equity_transactions');
         Schema::connection('pgsql')->dropIfExists('period_closures');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);

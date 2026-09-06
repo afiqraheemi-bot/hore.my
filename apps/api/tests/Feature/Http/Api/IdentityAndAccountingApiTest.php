@@ -33,6 +33,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         'expenses',
         'incomes',
         'transfers',
+        'owner_equity_transactions',
         'journal_lines',
         'journals',
         'accounts',
@@ -564,6 +565,101 @@ final class IdentityAndAccountingApiTest extends TestCase
         $conflicting->assertStatus(422);
         $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
         $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    // --- Owner Equity (M15) ----------------------------------------------
+
+    public function test_a_capital_contribution_posted_via_the_api_increases_cash_and_equity(): void
+    {
+        $this->registerAndReturnCredentials('capital-basic@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $ownerCapitalId = $this->createAccount('3000', "Owner's Capital", 'Equity');
+
+        $response = $this->postJson('/api/v1/capital-contributions', [
+            'amount' => '5000.00',
+            'transaction_date' => '2026-08-15',
+            'equity_account_id' => $ownerCapitalId,
+            'cash_account_id' => $bankId,
+            'description' => 'Owner injected startup capital',
+        ], ['Idempotency-Key' => 'key-capital-0001']);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('is_newly_recorded', true);
+
+        $this->assertSame(1, DB::connection('pgsql')->table('owner_equity_transactions')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    public function test_an_owner_drawing_posted_via_the_api_decreases_cash_and_equity(): void
+    {
+        $this->registerAndReturnCredentials('drawing-basic@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $ownerCapitalId = $this->createAccount('3000', "Owner's Capital", 'Equity');
+
+        $response = $this->postJson('/api/v1/owner-drawings', [
+            'amount' => '800.00',
+            'transaction_date' => '2026-08-15',
+            'equity_account_id' => $ownerCapitalId,
+            'cash_account_id' => $bankId,
+            'description' => 'Owner withdrew funds for personal use',
+        ], ['Idempotency-Key' => 'key-drawing-0001']);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('is_newly_recorded', true);
+
+        $this->assertSame(1, DB::connection('pgsql')->table('owner_equity_transactions')->count());
+
+        $journalId = $response->json('journal_id');
+        $lines = DB::connection('pgsql')->table('journal_lines')->where('journal_id', $journalId)->orderBy('line_position')->get();
+
+        $this->assertSame('Debit', $lines[0]->direction);
+        $this->assertSame($ownerCapitalId, $lines[0]->account_id);
+        $this->assertSame('Credit', $lines[1]->direction);
+        $this->assertSame($bankId, $lines[1]->account_id);
+    }
+
+    public function test_an_owner_drawing_retried_with_the_same_idempotency_key_replays_instead_of_duplicating(): void
+    {
+        $this->registerAndReturnCredentials('drawing-retry@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $ownerCapitalId = $this->createAccount('3000', "Owner's Capital", 'Equity');
+
+        $payload = [
+            'amount' => '800.00',
+            'transaction_date' => '2026-08-15',
+            'equity_account_id' => $ownerCapitalId,
+            'cash_account_id' => $bankId,
+            'description' => 'Owner withdrew funds for personal use',
+        ];
+        $headers = ['Idempotency-Key' => 'key-retry-drawing-0001'];
+
+        $first = $this->postJson('/api/v1/owner-drawings', $payload, $headers);
+        $first->assertStatus(201);
+
+        $second = $this->postJson('/api/v1/owner-drawings', $payload, $headers);
+        $second->assertStatus(200);
+        $second->assertJsonPath('is_newly_recorded', false);
+
+        $this->assertSame($first->json('id'), $second->json('id'));
+        $this->assertSame(1, DB::connection('pgsql')->table('owner_equity_transactions')->count());
+    }
+
+    public function test_a_capital_contribution_against_a_non_equity_account_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('capital-wrong-type@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+
+        $response = $this->postJson('/api/v1/capital-contributions', [
+            'amount' => '100.00',
+            'transaction_date' => '2026-08-15',
+            'equity_account_id' => $officeSuppliesId,
+            'cash_account_id' => $bankId,
+            'description' => 'Invalid equity account',
+        ], ['Idempotency-Key' => 'key-capital-wrong-type-0001']);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('owner_equity_transactions')->count());
     }
 
     // --- Period closing (M13, AETS-014) ---------------------------------

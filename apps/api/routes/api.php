@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CapitalContributionController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
+use App\Http\Controllers\Api\OwnerDrawingController;
 use App\Http\Controllers\Api\PeriodController;
 use App\Http\Controllers\Api\ReportingController;
 use App\Http\Controllers\Api\TransferController;
@@ -33,6 +35,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);
             Route::post('/transfers', [TransferController::class, 'store']);
+            Route::post('/capital-contributions', [CapitalContributionController::class, 'store']);
+            Route::post('/owner-drawings', [OwnerDrawingController::class, 'store']);
             Route::post('/periods/close', [PeriodController::class, 'close']);
 
             Route::prefix('reports')->group(function (): void {
