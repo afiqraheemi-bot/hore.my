@@ -12,6 +12,7 @@ use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\EvidenceReference;
 use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
+use App\Domain\Accounting\Posting\Exception\RejectedClosedPeriodPostingException;
 use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Transactions\Expense\Exception\InvalidExpenseAccountTypeException;
@@ -78,6 +79,7 @@ final class ExpenseController extends Controller
             $result = $this->expenseService->record($command);
         } catch (
             RejectedAccountReferenceException|
+            RejectedClosedPeriodPostingException|
             RejectedConflictingIdempotencyReuseException|
             InvalidExpenseAccountTypeException|
             InvalidPaymentAccountTypeException|

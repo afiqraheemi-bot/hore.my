@@ -25,6 +25,7 @@ use Tests\TestCase;
 final class IdentityAndAccountingApiTest extends TestCase
 {
     private const TABLES_TO_CLEAN = [
+        'period_closures',
         'posting_idempotency_keys',
         'posting_source_fingerprints',
         'audit_events',
@@ -459,6 +460,90 @@ final class IdentityAndAccountingApiTest extends TestCase
         $conflicting->assertStatus(422);
         $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
         $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    // --- Period closing (M13, AETS-014) ---------------------------------
+
+    public function test_closing_a_period_via_the_api_zeroes_revenue_and_expense_and_balances(): void
+    {
+        $this->registerAndReturnCredentials('period-close@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $revenueId = $this->createAccount('4000', 'Consulting Revenue', 'Revenue');
+        $retainedEarningsId = $this->createAccount('3900', 'Retained Earnings', 'Equity');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-close-expense-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '200.00',
+            'transaction_date' => '2026-08-15',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Consulting revenue',
+        ], ['Idempotency-Key' => 'key-close-income-0001'])->assertStatus(201);
+
+        $close = $this->postJson('/api/v1/periods/close', [
+            'closed_through_date' => '2026-08-31',
+            'retained_earnings_account_id' => $retainedEarningsId,
+        ], ['Idempotency-Key' => 'key-close-period-0001']);
+
+        $close->assertStatus(201);
+        $close->assertJsonPath('is_newly_closed', true);
+        $close->assertJsonPath('closed_through_date', '2026-08-31');
+
+        $trialBalance = $this->getJson('/api/v1/reports/trial-balance?as_of=2026-08-31');
+        $trialBalance->assertStatus(200);
+        $trialBalance->assertJsonPath('is_balanced', true);
+
+        // Retry with the same Idempotency-Key replays instead of
+        // rejecting or double-closing.
+        $retry = $this->postJson('/api/v1/periods/close', [
+            'closed_through_date' => '2026-08-31',
+            'retained_earnings_account_id' => $retainedEarningsId,
+        ], ['Idempotency-Key' => 'key-close-period-0001']);
+
+        $retry->assertStatus(200);
+        $retry->assertJsonPath('is_newly_closed', false);
+        $this->assertSame($close->json('closing_journal_id'), $retry->json('closing_journal_id'));
+        $this->assertSame(1, DB::connection('pgsql')->table('period_closures')->count());
+    }
+
+    public function test_posting_an_expense_into_an_already_closed_period_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('period-lock@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $retainedEarningsId = $this->createAccount('3900', 'Retained Earnings', 'Equity');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-lock-expense-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/periods/close', [
+            'closed_through_date' => '2026-08-31',
+            'retained_earnings_account_id' => $retainedEarningsId,
+        ], ['Idempotency-Key' => 'key-lock-period-0001'])->assertStatus(201);
+
+        $backdated = $this->postJson('/api/v1/expenses', [
+            'amount' => '10.00',
+            'transaction_date' => '2026-08-20',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Backdated into a closed period',
+        ], ['Idempotency-Key' => 'key-lock-expense-backdated-0001']);
+
+        $backdated->assertStatus(422);
+        $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
     }
 
     // --- Fixtures and helpers ------------------------------------------

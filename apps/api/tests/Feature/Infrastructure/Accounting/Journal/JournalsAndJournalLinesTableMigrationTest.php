@@ -47,6 +47,8 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 
     private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
 
+    private const PERIOD_CLOSURES_MIGRATION_PATH = 'database/migrations/2026_09_07_040000_create_period_closures_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -407,6 +409,14 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
      */
     public function test_migration_rollback_succeeds_cleanly(): void
     {
+        // `period_closures` (AETS-014) holds a composite foreign key on
+        // (tenant_id, journal_id) referencing this table — its mere
+        // existence, not any row in it, blocks `DROP TABLE journals`
+        // regardless of `--force`. Not this test's concern; not
+        // recreated here, mirroring the identical treatment
+        // `ensureMigrated()` already gives every other dependent table.
+        Schema::connection('pgsql')->dropIfExists('period_closures');
+
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
 
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::JOURNAL_TABLE));
@@ -434,6 +444,12 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
         self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        // Restores `period_closures` too (AETS-014), dropped above to
+        // let this method's own rollback proceed — every other test
+        // class sharing this real database within the same PHPUnit
+        // process assumes the full production schema, this table
+        // included, is present.
+        self::forceCleanMigration(self::PERIOD_CLOSURES_MIGRATION_PATH, []);
     }
 
     private function insertJournal(string $tenantId, string $journalId, string $state = 'Draft'): void
@@ -518,6 +534,7 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
         Schema::connection('pgsql')->dropIfExists('expenses');
         Schema::connection('pgsql')->dropIfExists('incomes');
+        Schema::connection('pgsql')->dropIfExists('period_closures');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         // Production `journals` never exists without the M5

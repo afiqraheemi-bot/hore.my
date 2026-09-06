@@ -61,6 +61,7 @@ final class PostingCommandJournalExecutor
     public function __construct(
         private readonly PostingCommandJournalStateResolver $stateResolver,
         private readonly PostingCommandAccountValidator $accountValidator,
+        private readonly PostingCommandPeriodLockValidator $periodLockValidator,
         private readonly PostingCommandExistingDraftLineValidator $existingDraftLineValidator,
         private readonly DraftJournalAssembler $assembler,
         private readonly JournalRepository $journalRepository,
@@ -69,6 +70,7 @@ final class PostingCommandJournalExecutor
     public function execute(PostingCommand $command): Journal
     {
         $this->accountValidator->validate($command);
+        $this->periodLockValidator->validate($command);
 
         $state = $this->stateResolver->resolve($command);
 

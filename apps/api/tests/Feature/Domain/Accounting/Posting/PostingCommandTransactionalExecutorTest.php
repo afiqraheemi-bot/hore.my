@@ -27,12 +27,14 @@ use App\Domain\Accounting\Posting\PostingCommandIdempotencyResolver;
 use App\Domain\Accounting\Posting\PostingCommandJournalExecutor;
 use App\Domain\Accounting\Posting\PostingCommandJournalStateResolver;
 use App\Domain\Accounting\Posting\PostingCommandLogicalEquivalence;
+use App\Domain\Accounting\Posting\PostingCommandPeriodLockValidator;
 use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Accounting\Audit\AuditEventRepository;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountRepository;
 use App\Infrastructure\Accounting\Journal\JournalRepository;
+use App\Infrastructure\Accounting\Period\PeriodClosureRepository;
 use App\Infrastructure\Accounting\Posting\JournalEvidenceLinkRepository;
 use App\Infrastructure\Accounting\Posting\PostingIdempotencyRepository;
 use Illuminate\Database\ConnectionInterface;
@@ -740,6 +742,7 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         $journalExecutor = new PostingCommandJournalExecutor(
             new PostingCommandJournalStateResolver($journalRepository),
             new PostingCommandAccountValidator(new AccountRepository($connection)),
+            new PostingCommandPeriodLockValidator(new PeriodClosureRepository($connection)),
             new PostingCommandExistingDraftLineValidator,
             new DraftJournalAssembler,
             $journalRepository,
@@ -861,6 +864,7 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
         $journalExecutor = new PostingCommandJournalExecutor(
             new PostingCommandJournalStateResolver($journalRepository),
             new PostingCommandAccountValidator(new AccountRepository($connection)),
+            new PostingCommandPeriodLockValidator(new PeriodClosureRepository($connection)),
             new PostingCommandExistingDraftLineValidator,
             new DraftJournalAssembler,
             $journalRepository,

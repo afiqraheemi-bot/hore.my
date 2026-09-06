@@ -12,6 +12,7 @@ use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\EvidenceReference;
 use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
+use App\Domain\Accounting\Posting\Exception\RejectedClosedPeriodPostingException;
 use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Transactions\Income\Exception\InvalidDepositAccountTypeException;
@@ -69,6 +70,7 @@ final class IncomeController extends Controller
             $result = $this->incomeService->record($command);
         } catch (
             RejectedAccountReferenceException|
+            RejectedClosedPeriodPostingException|
             RejectedConflictingIdempotencyReuseException|
             InvalidIncomeAccountTypeException|
             InvalidDepositAccountTypeException|

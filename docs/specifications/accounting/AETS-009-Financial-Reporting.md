@@ -1,7 +1,7 @@
 # AETS-009: Financial Reporting
 
 - Status: Active
-- Version: 1.0.1
+- Version: 1.0.2
 - Effective date: 2026-09-06
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -162,7 +162,7 @@ These examples are illustrative only and are not normative.
 - **Reconciliation Report** (SRS RPT-007) — deferred pending Bank Reconciliation, AETS-008 (§2.2).
 - **Export to PDF/XLSX/CSV** (SRS RPT-009) — a presentation-layer concern, deferred to a future UI/export task (§2.2).
 - **Formal reproducibility testing** (SRS RPT-010, `Disyorkan`) — implied structurally by §5's rebuildability rule; not separately tested by name (§2.2).
-- **Period Management integration** — how a closed Accounting Period interacts with reporting, and how the "unclosed books" Cumulative Net Income line (§8) is superseded once real closing entries exist — deferred to AETS-014, not yet created (§8, §2.2).
+- ~~**Period Management integration**~~ — resolved; see [AETS-014](AETS-014-Period-Management.md), which specifies Period closing. No change to this document's own Balance Sheet computation was needed: a closing Journal's zeroing lines are ordinary Posted Journal Lines, so `ProfitAndLossQuery::forPeriod([inception, asOfDate])`'s existing "since inception" aggregation automatically nets a closed range's original activity against that same range's closing entries to zero, leaving the "unclosed books" Cumulative Net Income line correctly reflecting only activity since the last closing — verified directly (`PeriodClosingServiceIntegrationTest::test_the_unclosed_books_convention_correctly_shows_only_post_closing_activity`).
 - **Report caching/performance infrastructure** — read replicas, pre-aggregation, or caching, should a real performance problem be measured against the p95 target ([`HORE_MY_MASTER_CONTEXT.md`](../../product/reference/HORE_MY_MASTER_CONTEXT.md) §14) — not designed speculatively here (§2.2).
 - ~~**This document's own future ATS-009**~~ — written; see [ATS-009](tests/ATS-009-Financial-Reporting-Test-Specification.md) (1.0.0, 2026-09-07), which fulfills exactly the coverage §13 named as required.
 
@@ -174,5 +174,6 @@ A change to any `RPT-NNN` invariant, or to any MUST-level requirement in §5–�
 
 ## Changelog
 
+- **1.0.2 (2026-09-07):** Editorial: §15's Period Management deferral is resolved — [AETS-014](AETS-014-Period-Management.md) now exists, and this document's own Balance Sheet computation required no code change (verified directly). No invariant or previously specified behavior changed.
 - **1.0.1 (2026-09-07):** Editorial: §15's forward-reference to this document's own future ATS-009 now links to that document, which has since been written. No invariant, MUST-level requirement, or previously specified behavior changed.
 - **1.0.0 (2026-09-06):** Initial creation. Specifies Trial Balance (RPT-004), Profit & Loss (RPT-001), Balance Sheet (RPT-002), General Ledger drill-down (RPT-005), and Evidence Index (RPT-008) — the five SRS §4.9 `Wajib` reports this codebase's existing Accounting Core (M1–M8) and Transactions consumers (M7, M9) can support without depending on a not-yet-built module. Cash Flow (RPT-003), Debtors/Aging (RPT-006), and Reconciliation Report (RPT-007) are explicitly deferred by name (§2.2, §15), each blocked on a specific, named future module — not silently dropped. Introduces `RPT-001`–`RPT-011`. Documents the "unclosed books" Cumulative Net Income convention (§8) as a deliberate, named design decision pending AETS-014 (Period Management). Reviewed and marked `Active` per the Founder's M10 Architecture Review approval (GO for this exact scope; RPT-003/006/007 explicitly NO-GO pending their prerequisite modules).

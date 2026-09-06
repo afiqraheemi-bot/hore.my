@@ -7,9 +7,11 @@ namespace App\Infrastructure\Accounting\Reporting;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\ChartOfAccounts\AccountType;
 use App\Domain\Accounting\Journal\JournalDirection;
+use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\MinorUnits;
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Period\PeriodClosingService;
 use App\Domain\Accounting\Reporting\AccountBalance;
 use App\Domain\Accounting\Reporting\NetBalance;
 use App\Domain\Shared\Tenancy\TenantId;
@@ -65,6 +67,12 @@ final class AccountBalanceAggregator
 
     /**
      * @param  list<AccountType>  $accountTypes  `[]` means every Account Type.
+     * @param  JournalId|null  $excludeJournalId  Excludes one specific
+     *                                            Journal from the aggregation entirely — used exclusively by
+     *                                            {@see PeriodClosingService} to
+     *                                            exclude a Period-closing Journal from its own "what needs to
+     *                                            be closed" computation (its own docblock explains why); every
+     *                                            other caller passes `null` and this parameter has no effect.
      * @return list<AccountBalance>
      *
      * @throws InvalidPersistedAccountTypeException if a persisted `account_type` value is not canonical.
@@ -74,9 +82,10 @@ final class AccountBalanceAggregator
         ?\DateTimeImmutable $financialDateFrom,
         \DateTimeImmutable $financialDateTo,
         array $accountTypes = [],
+        ?JournalId $excludeJournalId = null,
     ): array {
         $accountRows = $this->fetchAccounts($tenantId, $accountTypes);
-        $lineRows = $this->fetchPostedLines($tenantId, $financialDateFrom, $financialDateTo, null);
+        $lineRows = $this->fetchPostedLines($tenantId, $financialDateFrom, $financialDateTo, null, $excludeJournalId);
 
         /** @var object{currency: string}|null $firstLine */
         $firstLine = $lineRows->first();
@@ -126,7 +135,7 @@ final class AccountBalanceAggregator
         ?\DateTimeImmutable $financialDateFrom,
         \DateTimeImmutable $financialDateTo,
     ): NetBalance {
-        $lineRows = $this->fetchPostedLines($tenantId, $financialDateFrom, $financialDateTo, $accountId);
+        $lineRows = $this->fetchPostedLines($tenantId, $financialDateFrom, $financialDateTo, $accountId, null);
         /** @var object{currency: string}|null $firstLine */
         $firstLine = $lineRows->first();
         $currency = $this->resolveCurrency($firstLine?->currency);
@@ -173,7 +182,7 @@ final class AccountBalanceAggregator
     /**
      * @return Collection<int, object{account_id: string, direction: string, amount: int|string, currency: string}>
      */
-    private function fetchPostedLines(TenantId $tenantId, ?\DateTimeImmutable $financialDateFrom, \DateTimeImmutable $financialDateTo, ?AccountId $accountId): Collection
+    private function fetchPostedLines(TenantId $tenantId, ?\DateTimeImmutable $financialDateFrom, \DateTimeImmutable $financialDateTo, ?AccountId $accountId, ?JournalId $excludeJournalId): Collection
     {
         $query = $this->connection->table(self::LINE_TABLE)
             ->join(self::JOURNAL_TABLE, function ($join): void {
@@ -190,6 +199,10 @@ final class AccountBalanceAggregator
 
         if ($accountId !== null) {
             $query->where(self::LINE_TABLE.'.account_id', $accountId->toString());
+        }
+
+        if ($excludeJournalId !== null) {
+            $query->where(self::JOURNAL_TABLE.'.journal_id', '!=', $excludeJournalId->toString());
         }
 
         /** @var Collection<int, object{account_id: string, direction: string, amount: int|string, currency: string}> $rows */

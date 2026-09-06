@@ -30,10 +30,12 @@ use App\Domain\Accounting\Posting\PostingCommandAccountValidator;
 use App\Domain\Accounting\Posting\PostingCommandExistingDraftLineValidator;
 use App\Domain\Accounting\Posting\PostingCommandJournalExecutor;
 use App\Domain\Accounting\Posting\PostingCommandJournalStateResolver;
+use App\Domain\Accounting\Posting\PostingCommandPeriodLockValidator;
 use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Accounting\ChartOfAccounts\AccountRepository;
 use App\Infrastructure\Accounting\Journal\JournalRepository;
+use App\Infrastructure\Accounting\Period\PeriodClosureRepository;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -84,6 +86,8 @@ final class PostingCommandJournalExecutorTest extends TestCase
 
     private const FINANCIAL_DATE_MIGRATION_PATH = 'database/migrations/2026_09_06_230000_add_financial_date_and_posted_at_to_journals_table.php';
 
+    private const PERIOD_CLOSURES_MIGRATION_PATH = 'database/migrations/2026_09_07_040000_create_period_closures_table.php';
+
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
 
     private static ?string $skipReason = null;
@@ -116,6 +120,7 @@ final class PostingCommandJournalExecutorTest extends TestCase
         $this->executor = new PostingCommandJournalExecutor(
             new PostingCommandJournalStateResolver($this->journalRepository),
             new PostingCommandAccountValidator(new AccountRepository(DB::connection('pgsql'))),
+            new PostingCommandPeriodLockValidator(new PeriodClosureRepository(DB::connection('pgsql'))),
             new PostingCommandExistingDraftLineValidator,
             new DraftJournalAssembler,
             $this->journalRepository,
@@ -509,10 +514,12 @@ final class PostingCommandJournalExecutorTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('journal_evidence_links');
         Schema::connection('pgsql')->dropIfExists('expenses');
         Schema::connection('pgsql')->dropIfExists('incomes');
+        Schema::connection('pgsql')->dropIfExists('period_closures');
 
         self::forceCleanMigration(self::JOURNAL_MIGRATION_PATH, [self::LINE_TABLE, self::JOURNAL_TABLE]);
         self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
         self::forceCleanMigration(self::FINANCIAL_DATE_MIGRATION_PATH, []);
+        self::forceCleanMigration(self::PERIOD_CLOSURES_MIGRATION_PATH, []);
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);
