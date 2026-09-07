@@ -26,6 +26,8 @@ use Tests\TestCase;
 final class IdentityAndAccountingApiTest extends TestCase
 {
     private const TABLES_TO_CLEAN = [
+        'payment_allocations',
+        'payments',
         'period_closures',
         'posting_idempotency_keys',
         'posting_source_fingerprints',
@@ -487,6 +489,169 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonCount(0, 'data');
+    }
+
+    // --- Payments & Allocation (M21, Modul 7 phase 3) -------------------
+
+    public function test_a_tenant_can_record_a_payment_and_allocate_it_to_an_issued_invoice(): void
+    {
+        $this->registerAndReturnCredentials('payments@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $invoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '300.00');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '300.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+            'reference' => 'REF-001',
+        ], ['Idempotency-Key' => 'key-payment-0001']);
+        $paymentResponse->assertStatus(201);
+        $paymentResponse->assertJsonPath('unallocated_amount', '300.00');
+        $paymentId = $paymentResponse->json('id');
+
+        $allocationResponse = $this->postJson("/api/v1/payments/{$paymentId}/allocations", [
+            'invoice_id' => $invoiceId,
+            'amount' => '300.00',
+        ]);
+        $allocationResponse->assertStatus(201);
+
+        $paymentAfter = $this->getJson("/api/v1/payments/{$paymentId}");
+        $paymentAfter->assertJsonPath('unallocated_amount', '0.00');
+
+        $outstanding = $this->getJson('/api/v1/outstanding-invoices');
+        $outstanding->assertStatus(200);
+        $outstanding->assertJsonCount(0, 'data');
+    }
+
+    public function test_a_payment_can_be_split_across_two_invoices(): void
+    {
+        $this->registerAndReturnCredentials('payment-split@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $invoiceAId = $this->issueInvoice($customerId, $receivableId, $revenueId, '100.00');
+        $invoiceBId = $this->issueInvoice($customerId, $receivableId, $revenueId, '150.00');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '250.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ], ['Idempotency-Key' => 'key-payment-split']);
+        $paymentId = $paymentResponse->json('id');
+
+        $this->postJson("/api/v1/payments/{$paymentId}/allocations", ['invoice_id' => $invoiceAId, 'amount' => '100.00'])->assertStatus(201);
+        $this->postJson("/api/v1/payments/{$paymentId}/allocations", ['invoice_id' => $invoiceBId, 'amount' => '150.00'])->assertStatus(201);
+
+        $paymentAfter = $this->getJson("/api/v1/payments/{$paymentId}");
+        $paymentAfter->assertJsonPath('unallocated_amount', '0.00');
+    }
+
+    public function test_allocating_more_than_the_invoice_balance_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('payment-over-invoice@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $invoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '100.00');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '500.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ], ['Idempotency-Key' => 'key-payment-over']);
+        $paymentId = $paymentResponse->json('id');
+
+        $this->postJson("/api/v1/payments/{$paymentId}/allocations", ['invoice_id' => $invoiceId, 'amount' => '150.00'])
+            ->assertStatus(422);
+    }
+
+    public function test_allocating_against_a_draft_invoice_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('payment-draft-invoice@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => '100.00']],
+        ]);
+        $draftInvoiceId = $draft->json('id');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '100.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ], ['Idempotency-Key' => 'key-payment-draft']);
+        $paymentId = $paymentResponse->json('id');
+
+        $this->postJson("/api/v1/payments/{$paymentId}/allocations", ['invoice_id' => $draftInvoiceId, 'amount' => '50.00'])
+            ->assertStatus(422);
+    }
+
+    public function test_an_allocation_can_be_removed_and_frees_the_invoice_balance(): void
+    {
+        $this->registerAndReturnCredentials('payment-deallocate@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $invoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '300.00');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '300.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ], ['Idempotency-Key' => 'key-payment-deallocate']);
+        $paymentId = $paymentResponse->json('id');
+
+        $allocationResponse = $this->postJson("/api/v1/payments/{$paymentId}/allocations", ['invoice_id' => $invoiceId, 'amount' => '300.00']);
+        $allocationId = $allocationResponse->json('id');
+
+        $this->deleteJson("/api/v1/payment-allocations/{$allocationId}")->assertStatus(204);
+
+        $outstanding = $this->getJson('/api/v1/outstanding-invoices');
+        $outstanding->assertJsonCount(1, 'data');
+        $outstanding->assertJsonPath('data.0.outstanding_balance', '300.00');
+    }
+
+    public function test_recording_a_payment_without_an_idempotency_key_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('payment-no-key@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '100.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ])->assertStatus(422);
     }
 
     // --- Tenant isolation ---------------------------------------------------
@@ -1453,6 +1618,26 @@ final class IdentityAndAccountingApiTest extends TestCase
         $id = $response->json('id');
 
         return $id;
+    }
+
+    private function issueInvoice(string $customerId, string $receivableAccountId, string $revenueAccountId, string $unitPrice): string
+    {
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableAccountId,
+            'revenue_account_id' => $revenueAccountId,
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => $unitPrice]],
+        ]);
+        $draft->assertStatus(201);
+
+        /** @var string $invoiceId */
+        $invoiceId = $draft->json('id');
+
+        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-issue-'.$invoiceId]);
+        $issued->assertStatus(201);
+
+        return $invoiceId;
     }
 
     private function ensureMigrated(): void

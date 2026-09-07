@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AllocationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BankAccountController;
 use App\Http\Controllers\Api\BankStatementImportController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Api\IncomeController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MatchController;
 use App\Http\Controllers\Api\OwnerDrawingController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PeriodController;
 use App\Http\Controllers\Api\ReconciliationController;
 use App\Http\Controllers\Api\ReportingController;
@@ -67,6 +69,14 @@ Route::prefix('v1')->group(function (): void {
             Route::put('/invoices/{invoiceId}', [InvoiceController::class, 'update']);
             Route::delete('/invoices/{invoiceId}', [InvoiceController::class, 'destroy']);
             Route::post('/invoices/{invoiceId}/issue', [InvoiceController::class, 'issue']);
+            Route::get('/outstanding-invoices', [AllocationController::class, 'outstandingInvoices']);
+
+            Route::get('/payments', [PaymentController::class, 'index']);
+            Route::post('/payments', [PaymentController::class, 'store']);
+            Route::get('/payments/{paymentId}', [PaymentController::class, 'show']);
+            Route::get('/payments/{paymentId}/allocations', [AllocationController::class, 'index']);
+            Route::post('/payments/{paymentId}/allocations', [AllocationController::class, 'store']);
+            Route::delete('/payment-allocations/{allocationId}', [AllocationController::class, 'destroy']);
 
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);

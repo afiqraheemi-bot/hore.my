@@ -133,6 +133,10 @@ final class IncomeRecordingServiceIntegrationTest extends TestCase
         DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->delete();
         DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
+        if (Schema::connection('pgsql')->hasTable('payments')) {
+            DB::connection('pgsql')->table('payment_allocations')->delete();
+            DB::connection('pgsql')->table('payments')->delete();
+        }
         if (Schema::connection('pgsql')->hasTable('invoices')) {
             DB::connection('pgsql')->table('invoice_lines')->delete();
             DB::connection('pgsql')->table('invoices')->delete();

@@ -49,6 +49,10 @@ final class AccountsTableMigrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
+        if (Schema::connection('pgsql')->hasTable('payments')) {
+            DB::connection('pgsql')->table('payment_allocations')->delete();
+            DB::connection('pgsql')->table('payments')->delete();
+        }
         if (Schema::connection('pgsql')->hasTable('invoices')) {
             DB::connection('pgsql')->table('invoice_lines')->delete();
             DB::connection('pgsql')->table('invoices')->delete();
@@ -281,6 +285,8 @@ final class AccountsTableMigrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('reconciliations');
         Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
         Schema::connection('pgsql')->dropIfExists('bank_accounts');
+        Schema::connection('pgsql')->dropIfExists('payment_allocations');
+        Schema::connection('pgsql')->dropIfExists('payments');
         Schema::connection('pgsql')->dropIfExists('invoice_lines');
         Schema::connection('pgsql')->dropIfExists('invoices');
 
@@ -412,6 +418,8 @@ final class AccountsTableMigrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('reconciliations');
         Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
         Schema::connection('pgsql')->dropIfExists('bank_accounts');
+        Schema::connection('pgsql')->dropIfExists('payment_allocations');
+        Schema::connection('pgsql')->dropIfExists('payments');
         Schema::connection('pgsql')->dropIfExists('invoice_lines');
         Schema::connection('pgsql')->dropIfExists('invoices');
 

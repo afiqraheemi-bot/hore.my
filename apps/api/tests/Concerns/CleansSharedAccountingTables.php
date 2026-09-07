@@ -54,6 +54,8 @@ trait CleansSharedAccountingTables
      * @var list<string>
      */
     private static array $sharedAccountingTablesInDependencyOrder = [
+        'payment_allocations',
+        'payments',
         'reconciliation_reopenings',
         'matches',
         'bank_transactions',
