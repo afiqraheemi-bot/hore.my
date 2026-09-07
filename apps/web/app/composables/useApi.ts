@@ -8,7 +8,7 @@ type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 interface RequestOptions {
   method?: HttpMethod
-  body?: Record<string, unknown>
+  body?: Record<string, unknown> | FormData
   query?: Record<string, string>
   headers?: Record<string, string>
 }

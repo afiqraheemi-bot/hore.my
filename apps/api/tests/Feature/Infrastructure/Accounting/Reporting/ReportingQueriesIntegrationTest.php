@@ -156,6 +156,11 @@ final class ReportingQueriesIntegrationTest extends TestCase
         DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
+        if (Schema::connection('pgsql')->hasTable('bank_accounts')) {
+            DB::connection('pgsql')->table('bank_transactions')->delete();
+            DB::connection('pgsql')->table('bank_statement_import_batches')->delete();
+            DB::connection('pgsql')->table('bank_accounts')->delete();
+        }
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
 
         $connection = DB::connection('pgsql');
@@ -206,6 +211,11 @@ final class ReportingQueriesIntegrationTest extends TestCase
             DB::connection('pgsql')->table(self::INCOME_TABLE)->delete();
             DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
             DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
+            if (Schema::connection('pgsql')->hasTable('bank_accounts')) {
+                DB::connection('pgsql')->table('bank_transactions')->delete();
+                DB::connection('pgsql')->table('bank_statement_import_batches')->delete();
+                DB::connection('pgsql')->table('bank_accounts')->delete();
+            }
             DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
         }
 

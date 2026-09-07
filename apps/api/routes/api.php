@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BankAccountController;
+use App\Http\Controllers\Api\BankStatementImportController;
 use App\Http\Controllers\Api\BusinessProfileController;
 use App\Http\Controllers\Api\CapitalContributionController;
 use App\Http\Controllers\Api\ExpenseController;
@@ -35,6 +37,11 @@ Route::prefix('v1')->group(function (): void {
 
             Route::get('/accounts', [AccountController::class, 'index']);
             Route::post('/accounts', [AccountController::class, 'store']);
+
+            Route::get('/bank-accounts', [BankAccountController::class, 'index']);
+            Route::post('/bank-accounts', [BankAccountController::class, 'store']);
+            Route::get('/bank-accounts/{bankAccountId}/transactions', [BankAccountController::class, 'transactions']);
+            Route::post('/bank-accounts/{bankAccountId}/import', [BankStatementImportController::class, 'store']);
 
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);

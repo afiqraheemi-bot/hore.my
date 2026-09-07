@@ -520,6 +520,9 @@ final class AccountRepositoryIntegrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('transfers');
         Schema::connection('pgsql')->dropIfExists('owner_equity_transactions');
         Schema::connection('pgsql')->dropIfExists('period_closures');
+        Schema::connection('pgsql')->dropIfExists('bank_transactions');
+        Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
+        Schema::connection('pgsql')->dropIfExists('bank_accounts');
 
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across

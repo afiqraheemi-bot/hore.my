@@ -114,6 +114,11 @@ final class PostingCommandJournalExecutorTest extends TestCase
 
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
+        if (Schema::connection('pgsql')->hasTable('bank_accounts')) {
+            DB::connection('pgsql')->table('bank_transactions')->delete();
+            DB::connection('pgsql')->table('bank_statement_import_batches')->delete();
+            DB::connection('pgsql')->table('bank_accounts')->delete();
+        }
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
 
         $this->journalRepository = new JournalRepository(DB::connection('pgsql'));

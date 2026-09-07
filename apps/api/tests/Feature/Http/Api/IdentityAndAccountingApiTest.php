@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Http\Api;
 
 use App\Http\Controllers\Api\ExpenseController;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,9 @@ final class IdentityAndAccountingApiTest extends TestCase
         'owner_equity_transactions',
         'journal_lines',
         'journals',
+        'bank_transactions',
+        'bank_statement_import_batches',
+        'bank_accounts',
         'accounts',
         'business_profiles',
         'tenants',
@@ -587,6 +591,103 @@ final class IdentityAndAccountingApiTest extends TestCase
         $conflicting->assertStatus(422);
         $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
         $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    // --- Banking Import (M17, SRS BNK-001/BNK-003/BNK-004) ---------------
+
+    public function test_registering_a_bank_account_and_importing_a_statement_end_to_end(): void
+    {
+        $this->registerAndReturnCredentials('bank-import@example.my');
+        $bankAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $register = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankAccountId,
+            'bank_name' => 'Maybank',
+            'account_number_last4' => '1234',
+        ]);
+        $register->assertStatus(201);
+        $registeredBankAccountId = $register->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Salary credit,3000.00,IN,3000.00,REF001\n"
+            ."2026-08-02,Rent payment,1200.00,OUT,1800.00,REF002\n";
+        $file = UploadedFile::fake()->createWithContent('statement.csv', $csv);
+
+        $import = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", ['statement' => $file]);
+
+        $import->assertStatus(201);
+        $import->assertJsonPath('row_count', 2);
+        $import->assertJsonPath('inserted_count', 2);
+        $import->assertJsonPath('duplicate_count', 0);
+        $import->assertJsonPath('is_new_import', true);
+
+        $transactions = $this->getJson("/api/v1/bank-accounts/{$registeredBankAccountId}/transactions");
+        $transactions->assertStatus(200);
+        $transactions->assertJsonCount(2, 'data');
+        $transactions->assertJsonPath('data.0.description', 'Salary credit');
+        $transactions->assertJsonPath('data.0.direction', 'MoneyIn');
+    }
+
+    public function test_reimporting_the_same_statement_file_replays_instead_of_duplicating(): void
+    {
+        $this->registerAndReturnCredentials('bank-import-retry@example.my');
+        $bankAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+        $registeredBankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Salary credit,3000.00,IN,,\n";
+
+        $first = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ]);
+        $first->assertStatus(201);
+
+        $second = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ]);
+        $second->assertStatus(200);
+        $second->assertJsonPath('is_new_import', false);
+        $this->assertSame($first->json('id'), $second->json('id'));
+
+        $this->assertSame(1, DB::connection('pgsql')->table('bank_statement_import_batches')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('bank_transactions')->count());
+    }
+
+    public function test_a_malformed_statement_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('bank-import-malformed@example.my');
+        $bankAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+        $registeredBankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Salary credit,not-a-number,IN,,\n";
+
+        $response = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('bank_transactions')->count());
+    }
+
+    public function test_registering_a_bank_account_against_a_non_asset_account_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('bank-account-wrong-type@example.my');
+        $revenueAccountId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+
+        $response = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $revenueAccountId,
+            'bank_name' => 'Maybank',
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('bank_accounts')->count());
     }
 
     // --- Business Profile & Onboarding (M16, SRS IAM-003/IAM-004) --------
