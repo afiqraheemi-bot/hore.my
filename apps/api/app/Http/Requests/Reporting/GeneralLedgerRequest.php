@@ -22,6 +22,7 @@ final class GeneralLedgerRequest extends FormRequest
             'account_id' => ['required', 'string', 'max:64'],
             'period_start' => ['required', 'date_format:Y-m-d'],
             'period_end' => ['required', 'date_format:Y-m-d', 'after_or_equal:period_start'],
+            'format' => ['sometimes', 'string', 'in:json,csv'],
         ];
     }
 }

@@ -686,6 +686,53 @@ final class IdentityAndAccountingApiTest extends TestCase
         $response->assertJsonPath('grand_total', '100.00');
     }
 
+    // --- Report CSV export (M23, Hasil MVP item 8) ----------------------
+
+    public function test_the_trial_balance_can_be_exported_as_csv(): void
+    {
+        $this->registerAndReturnCredentials('csv-trial-balance@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '100.00',
+            'transaction_date' => '2026-09-08',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Sales',
+        ], ['Idempotency-Key' => 'key-csv-income'])->assertStatus(201);
+
+        $response = $this->get('/api/v1/reports/trial-balance?as_of=2026-09-08&format=csv');
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+        $this->assertStringContainsString('attachment; filename="trial-balance-2026-09-08.csv"', $response->headers->get('Content-Disposition'));
+        $this->assertStringContainsString($cashId, $response->getContent());
+        $this->assertStringContainsString($revenueId, $response->getContent());
+    }
+
+    public function test_the_aging_report_can_be_exported_as_csv(): void
+    {
+        $this->registerAndReturnCredentials('csv-aging@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+        $invoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '100.00');
+
+        $response = $this->get('/api/v1/reports/aging?as_of='.now()->toDateString().'&format=csv');
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+        $this->assertStringContainsString($invoiceId, $response->getContent());
+        $this->assertStringContainsString('Bucket', $response->getContent());
+    }
+
+    public function test_an_invalid_export_format_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('csv-invalid-format@example.my');
+
+        $this->get('/api/v1/reports/trial-balance?as_of=2026-09-08&format=xml')->assertStatus(422);
+    }
+
     // --- Tenant isolation ---------------------------------------------------
 
     public function test_a_tenants_accounts_are_never_visible_to_another_tenant(): void

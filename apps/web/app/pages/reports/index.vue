@@ -41,44 +41,62 @@ async function loadAccounts() {
   }
 }
 
+const reportEndpoints: Record<(typeof tabs)[number], string> = {
+  'Trial Balance': '/api/v1/reports/trial-balance',
+  'Profit & Loss': '/api/v1/reports/profit-and-loss',
+  'Balance Sheet': '/api/v1/reports/balance-sheet',
+  'General Ledger': '/api/v1/reports/general-ledger',
+  'Evidence Index': '/api/v1/reports/evidence-index',
+  'Aging Report': '/api/v1/reports/aging',
+}
+
+function currentReportQuery(): Record<string, string> {
+  if (activeTab.value === 'Trial Balance' || activeTab.value === 'Balance Sheet' || activeTab.value === 'Aging Report') {
+    return { as_of: asOf.value }
+  }
+  if (activeTab.value === 'General Ledger') {
+    return {
+      account_id: selectedAccountId.value,
+      period_start: periodStart.value,
+      period_end: periodEnd.value,
+    }
+  }
+  return { period_start: periodStart.value, period_end: periodEnd.value }
+}
+
 async function runReport() {
   loading.value = true
   error.value = null
   result.value = null
   try {
-    if (activeTab.value === 'Trial Balance') {
-      result.value = await request(`/api/v1/reports/trial-balance`, {
-        query: { as_of: asOf.value },
-      })
-    } else if (activeTab.value === 'Profit & Loss') {
-      result.value = await request(`/api/v1/reports/profit-and-loss`, {
-        query: { period_start: periodStart.value, period_end: periodEnd.value },
-      })
-    } else if (activeTab.value === 'Balance Sheet') {
-      result.value = await request(`/api/v1/reports/balance-sheet`, {
-        query: { as_of: asOf.value },
-      })
-    } else if (activeTab.value === 'Aging Report') {
-      result.value = await request(`/api/v1/reports/aging`, {
-        query: { as_of: asOf.value },
-      })
-    } else if (activeTab.value === 'General Ledger') {
-      result.value = await request(`/api/v1/reports/general-ledger`, {
-        query: {
-          account_id: selectedAccountId.value,
-          period_start: periodStart.value,
-          period_end: periodEnd.value,
-        },
-      })
-    } else {
-      result.value = await request(`/api/v1/reports/evidence-index`, {
-        query: { period_start: periodStart.value, period_end: periodEnd.value },
-      })
-    }
+    result.value = await request(reportEndpoints[activeTab.value], { query: currentReportQuery() })
   } catch {
     error.value = 'Failed to load this report.'
   } finally {
     loading.value = false
+  }
+}
+
+const exporting = ref(false)
+
+async function downloadCsv() {
+  exporting.value = true
+  error.value = null
+  try {
+    const csv = await request<string>(reportEndpoints[activeTab.value], {
+      query: { ...currentReportQuery(), format: 'csv' },
+    })
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${activeTab.value.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    error.value = 'Failed to export this report as CSV.'
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -150,6 +168,13 @@ async function selectTab(tab: (typeof tabs)[number]) {
       </div>
       <button class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white" @click="runReport">
         Run
+      </button>
+      <button
+        class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
+        :disabled="exporting"
+        @click="downloadCsv"
+      >
+        {{ exporting ? 'Exporting…' : 'Download CSV' }}
       </button>
     </div>
 
