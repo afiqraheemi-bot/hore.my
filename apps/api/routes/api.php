@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\BankAccountController;
 use App\Http\Controllers\Api\BankStatementImportController;
 use App\Http\Controllers\Api\BusinessProfileController;
 use App\Http\Controllers\Api\CapitalContributionController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
 use App\Http\Controllers\Api\MatchController;
@@ -54,6 +55,10 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/reconciliations/{reconciliationId}/mark-balanced', [ReconciliationController::class, 'markBalanced']);
             Route::post('/reconciliations/{reconciliationId}/complete', [ReconciliationController::class, 'complete']);
             Route::post('/reconciliations/{reconciliationId}/reopen', [ReconciliationController::class, 'reopen']);
+
+            Route::get('/customers', [CustomerController::class, 'index']);
+            Route::post('/customers', [CustomerController::class, 'store']);
+            Route::put('/customers/{customerId}', [CustomerController::class, 'update']);
 
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);

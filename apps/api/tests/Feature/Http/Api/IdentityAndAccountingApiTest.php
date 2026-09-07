@@ -41,6 +41,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'customers',
         'journal_lines',
         'journals',
         'accounts',
@@ -262,6 +263,82 @@ final class IdentityAndAccountingApiTest extends TestCase
             'account_name' => 'Another Cash',
             'account_type' => 'Asset',
         ])->assertStatus(422);
+    }
+
+    // --- Customers (M19, Modul 7 foundation) ---------------------------
+
+    public function test_a_registered_tenant_can_create_list_and_update_its_own_customers(): void
+    {
+        $this->registerAndReturnCredentials('customers@example.my');
+
+        $created = $this->postJson('/api/v1/customers', [
+            'name' => 'Kedai Runcit Aminah',
+            'email' => 'aminah@example.com',
+            'phone' => '0123456789',
+        ]);
+        $created->assertStatus(201);
+        $created->assertJsonPath('name', 'Kedai Runcit Aminah');
+        $created->assertJsonPath('active', true);
+
+        /** @var string $customerId */
+        $customerId = $created->json('id');
+
+        $list = $this->getJson('/api/v1/customers');
+        $list->assertStatus(200);
+        $list->assertJsonCount(1, 'data');
+        $list->assertJsonPath('data.0.name', 'Kedai Runcit Aminah');
+
+        $updated = $this->putJson("/api/v1/customers/{$customerId}", [
+            'name' => 'Kedai Runcit Aminah Sdn Bhd',
+            'email' => 'new@example.com',
+            'active' => false,
+        ]);
+        $updated->assertStatus(200);
+        $updated->assertJsonPath('name', 'Kedai Runcit Aminah Sdn Bhd');
+        $updated->assertJsonPath('email', 'new@example.com');
+        $updated->assertJsonPath('active', false);
+    }
+
+    public function test_registering_a_customer_with_an_empty_name_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('customer-empty-name@example.my');
+
+        $this->postJson('/api/v1/customers', ['name' => ''])->assertStatus(422);
+    }
+
+    public function test_registering_a_customer_with_a_malformed_email_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('customer-bad-email@example.my');
+
+        $this->postJson('/api/v1/customers', [
+            'name' => 'Kedai Runcit Aminah',
+            'email' => 'not-an-email',
+        ])->assertStatus(422);
+    }
+
+    public function test_updating_a_nonexistent_customer_returns_404(): void
+    {
+        $this->registerAndReturnCredentials('customer-404@example.my');
+
+        $this->putJson('/api/v1/customers/does-not-exist', [
+            'name' => 'Somebody',
+        ])->assertStatus(404);
+    }
+
+    public function test_a_tenants_customers_are_never_visible_to_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('customer-tenant-a@example.my');
+        $this->postJson('/api/v1/customers', ['name' => 'Tenant A Customer'])->assertStatus(201);
+        $this->logout();
+
+        $this->registerAndReturnCredentials('customer-tenant-b@example.my');
+        $this->postJson('/api/v1/customers', ['name' => 'Tenant B Customer'])->assertStatus(201);
+
+        $response = $this->getJson('/api/v1/customers');
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.name', 'Tenant B Customer');
     }
 
     // --- Tenant isolation ---------------------------------------------------

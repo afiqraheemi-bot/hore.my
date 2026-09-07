@@ -19,6 +19,7 @@ async function handleLogout() {
           >
           <NuxtLink to="/accounts" class="text-gray-600 hover:text-gray-900">Accounts</NuxtLink>
           <NuxtLink to="/bank-accounts" class="text-gray-600 hover:text-gray-900">Bank</NuxtLink>
+          <NuxtLink to="/customers" class="text-gray-600 hover:text-gray-900">Customers</NuxtLink>
           <NuxtLink to="/expenses/new" class="text-gray-600 hover:text-gray-900"
             >+ Expense</NuxtLink
           >
