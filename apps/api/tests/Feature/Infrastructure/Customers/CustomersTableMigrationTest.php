@@ -45,6 +45,10 @@ final class CustomersTableMigrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
+        if (Schema::connection('pgsql')->hasTable('invoices')) {
+            DB::connection('pgsql')->table('invoice_lines')->delete();
+            DB::connection('pgsql')->table('invoices')->delete();
+        }
         DB::connection('pgsql')->table(self::TABLE)->delete();
     }
 
@@ -138,6 +142,8 @@ final class CustomersTableMigrationTest extends TestCase
             return;
         }
 
+        Schema::connection('pgsql')->dropIfExists('invoice_lines');
+        Schema::connection('pgsql')->dropIfExists('invoices');
         Schema::connection('pgsql')->dropIfExists(self::TABLE);
 
         if (Schema::connection('pgsql')->hasTable('migrations')) {

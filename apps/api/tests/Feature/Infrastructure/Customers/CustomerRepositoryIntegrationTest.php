@@ -44,6 +44,10 @@ final class CustomerRepositoryIntegrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
+        if (Schema::connection('pgsql')->hasTable('invoices')) {
+            DB::connection('pgsql')->table('invoice_lines')->delete();
+            DB::connection('pgsql')->table('invoices')->delete();
+        }
         DB::connection('pgsql')->table(self::TABLE)->delete();
 
         $this->repository = new CustomerRepository(DB::connection('pgsql'));

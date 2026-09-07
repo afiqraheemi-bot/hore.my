@@ -41,6 +41,9 @@ final class IdentityAndAccountingApiTest extends TestCase
         'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'invoice_lines',
+        'invoices',
+        'invoice_number_sequences',
         'customers',
         'journal_lines',
         'journals',
@@ -339,6 +342,151 @@ final class IdentityAndAccountingApiTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonCount(1, 'data');
         $response->assertJsonPath('data.0.name', 'Tenant B Customer');
+    }
+
+    // --- Invoices (M20, Modul 7 phase 2) --------------------------------
+
+    public function test_a_tenant_can_draft_edit_and_issue_an_invoice_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('invoices@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [
+                ['description' => 'Consulting', 'quantity' => 2, 'unit_price' => '150.00'],
+            ],
+        ]);
+        $draft->assertStatus(201);
+        $draft->assertJsonPath('status', 'Draft');
+        $draft->assertJsonPath('total_amount', '300.00');
+        $invoiceId = $draft->json('id');
+
+        $updated = $this->putJson("/api/v1/invoices/{$invoiceId}", [
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [
+                ['description' => 'Consulting', 'quantity' => 3, 'unit_price' => '150.00'],
+            ],
+        ]);
+        $updated->assertStatus(200);
+        $updated->assertJsonPath('total_amount', '450.00');
+
+        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-invoice-issue-0001']);
+        $issued->assertStatus(201);
+        $issued->assertJsonPath('status', 'Issued');
+        $issued->assertJsonPath('invoice_number', 'INV-000001');
+        $this->assertNotNull($issued->json('journal_id'));
+
+        $trialBalance = $this->getJson('/api/v1/reports/trial-balance?as_of=2026-09-08');
+        $trialBalance->assertStatus(200);
+    }
+
+    public function test_issuing_an_invoice_without_an_idempotency_key_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('invoice-no-key@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => '10.00']],
+        ]);
+        $invoiceId = $draft->json('id');
+
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue")->assertStatus(422);
+    }
+
+    public function test_issuing_an_empty_draft_invoice_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('invoice-empty@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+        ]);
+        $draft->assertStatus(201);
+        $invoiceId = $draft->json('id');
+
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-empty-invoice'])
+            ->assertStatus(422);
+    }
+
+    public function test_deleting_an_issued_invoice_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('invoice-delete-issued@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => '10.00']],
+        ]);
+        $invoiceId = $draft->json('id');
+
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-delete-issued'])
+            ->assertStatus(201);
+
+        $this->deleteJson("/api/v1/invoices/{$invoiceId}")->assertStatus(409);
+    }
+
+    public function test_a_draft_invoice_can_be_deleted(): void
+    {
+        $this->registerAndReturnCredentials('invoice-delete-draft@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+        ]);
+        $invoiceId = $draft->json('id');
+
+        $this->deleteJson("/api/v1/invoices/{$invoiceId}")->assertStatus(204);
+        $this->getJson("/api/v1/invoices/{$invoiceId}")->assertStatus(404);
+    }
+
+    public function test_a_tenants_invoices_are_never_visible_to_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('invoice-tenant-a@example.my');
+        $receivableAId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueAId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerAId = $this->createCustomer('Tenant A Customer');
+        $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerAId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableAId,
+            'revenue_account_id' => $revenueAId,
+        ])->assertStatus(201);
+        $this->logout();
+
+        $this->registerAndReturnCredentials('invoice-tenant-b@example.my');
+        $response = $this->getJson('/api/v1/invoices');
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(0, 'data');
     }
 
     // --- Tenant isolation ---------------------------------------------------
@@ -1288,6 +1436,17 @@ final class IdentityAndAccountingApiTest extends TestCase
             'account_name' => $name,
             'account_type' => $type,
         ]);
+        $response->assertStatus(201);
+
+        /** @var string $id */
+        $id = $response->json('id');
+
+        return $id;
+    }
+
+    private function createCustomer(string $name): string
+    {
+        $response = $this->postJson('/api/v1/customers', ['name' => $name]);
         $response->assertStatus(201);
 
         /** @var string $id */

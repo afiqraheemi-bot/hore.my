@@ -86,6 +86,10 @@ final class PostingCommandAccountValidatorTest extends TestCase
             DB::connection('pgsql')->table('bank_statement_import_batches')->delete();
             DB::connection('pgsql')->table('bank_accounts')->delete();
         }
+        if (Schema::connection('pgsql')->hasTable('invoices')) {
+            DB::connection('pgsql')->table('invoice_lines')->delete();
+            DB::connection('pgsql')->table('invoices')->delete();
+        }
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
 
         $this->validator = new PostingCommandAccountValidator(new AccountRepository(DB::connection('pgsql')));
@@ -330,6 +334,8 @@ final class PostingCommandAccountValidatorTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('reconciliations');
         Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
         Schema::connection('pgsql')->dropIfExists('bank_accounts');
+        Schema::connection('pgsql')->dropIfExists('invoice_lines');
+        Schema::connection('pgsql')->dropIfExists('invoices');
         Schema::connection('pgsql')->dropIfExists(self::ACCOUNT_TABLE);
 
         if (Schema::connection('pgsql')->hasTable('migrations')) {

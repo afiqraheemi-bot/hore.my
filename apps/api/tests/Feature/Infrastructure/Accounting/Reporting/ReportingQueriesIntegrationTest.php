@@ -155,6 +155,10 @@ final class ReportingQueriesIntegrationTest extends TestCase
         DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->delete();
         DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
+        if (Schema::connection('pgsql')->hasTable('invoices')) {
+            DB::connection('pgsql')->table('invoice_lines')->delete();
+            DB::connection('pgsql')->table('invoices')->delete();
+        }
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
         foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
             if (Schema::connection('pgsql')->hasTable($bankingTable)) {
@@ -210,6 +214,10 @@ final class ReportingQueriesIntegrationTest extends TestCase
             DB::connection('pgsql')->table(self::EXPENSE_TABLE)->delete();
             DB::connection('pgsql')->table(self::INCOME_TABLE)->delete();
             DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
+            if (Schema::connection('pgsql')->hasTable('invoices')) {
+                DB::connection('pgsql')->table('invoice_lines')->delete();
+                DB::connection('pgsql')->table('invoices')->delete();
+            }
             DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
             foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
                 if (Schema::connection('pgsql')->hasTable($bankingTable)) {

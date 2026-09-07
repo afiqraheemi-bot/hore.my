@@ -66,6 +66,10 @@ final class OwnerEquityTransactionsTableMigrationTest extends TestCase
 
         DB::connection('pgsql')->table(self::TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
+        if (Schema::connection('pgsql')->hasTable('invoices')) {
+            DB::connection('pgsql')->table('invoice_lines')->delete();
+            DB::connection('pgsql')->table('invoices')->delete();
+        }
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
         foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
             if (Schema::connection('pgsql')->hasTable($bankingTable)) {

@@ -59,6 +59,10 @@ final class AccountRepositoryIntegrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
+        if (Schema::connection('pgsql')->hasTable('invoices')) {
+            DB::connection('pgsql')->table('invoice_lines')->delete();
+            DB::connection('pgsql')->table('invoices')->delete();
+        }
         DB::connection('pgsql')->table(self::TABLE)->delete();
 
         $this->repository = new AccountRepository(DB::connection('pgsql'));
@@ -526,6 +530,8 @@ final class AccountRepositoryIntegrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('reconciliations');
         Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
         Schema::connection('pgsql')->dropIfExists('bank_accounts');
+        Schema::connection('pgsql')->dropIfExists('invoice_lines');
+        Schema::connection('pgsql')->dropIfExists('invoices');
 
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across

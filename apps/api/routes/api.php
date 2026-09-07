@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\CapitalContributionController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MatchController;
 use App\Http\Controllers\Api\OwnerDrawingController;
 use App\Http\Controllers\Api\PeriodController;
@@ -59,6 +60,13 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/customers', [CustomerController::class, 'index']);
             Route::post('/customers', [CustomerController::class, 'store']);
             Route::put('/customers/{customerId}', [CustomerController::class, 'update']);
+
+            Route::get('/invoices', [InvoiceController::class, 'index']);
+            Route::post('/invoices', [InvoiceController::class, 'store']);
+            Route::get('/invoices/{invoiceId}', [InvoiceController::class, 'show']);
+            Route::put('/invoices/{invoiceId}', [InvoiceController::class, 'update']);
+            Route::delete('/invoices/{invoiceId}', [InvoiceController::class, 'destroy']);
+            Route::post('/invoices/{invoiceId}/issue', [InvoiceController::class, 'issue']);
 
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);

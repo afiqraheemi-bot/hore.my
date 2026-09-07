@@ -29,7 +29,8 @@ use Illuminate\Support\Facades\Schema;
  * `journals`" — every time a new such table was added (M13's
  * `period_closures`, M14's `transfers`, M17's `bank_accounts`/
  * `bank_transactions`/`bank_statement_import_batches`, M18's
- * `matches`/`reconciliations`/`reconciliation_reopenings`), *every*
+ * `matches`/`reconciliations`/`reconciliation_reopenings`, M20's
+ * `invoices`/`invoice_lines`), *every*
  * existing file needed the identical edit repeated, and a missed file
  * silently reintroduced the exact same class of bug. This trait
  * exists specifically so that the next such table only ever needs to
@@ -59,6 +60,8 @@ trait CleansSharedAccountingTables
         'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'invoice_lines',
+        'invoices',
         'period_closures',
         'posting_idempotency_keys',
         'posting_source_fingerprints',
