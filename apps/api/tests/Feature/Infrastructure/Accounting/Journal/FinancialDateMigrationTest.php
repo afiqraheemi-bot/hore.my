@@ -265,6 +265,15 @@ final class FinancialDateMigrationTest extends TestCase
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
         }
 
+        // `matches` (M18) carries a composite foreign key on
+        // (tenant_id, journal_id) referencing this table — a leftover
+        // row from another test class sharing this same persistent
+        // database would otherwise block the blanket `journals` delete
+        // below. Not this test's concern; not recreated here.
+        if (Schema::connection('pgsql')->hasTable('matches')) {
+            DB::connection('pgsql')->table('matches')->delete();
+        }
+
         if (Schema::connection('pgsql')->hasTable(self::LINE_TABLE)) {
             DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
         }

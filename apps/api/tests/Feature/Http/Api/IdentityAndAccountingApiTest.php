@@ -35,11 +35,14 @@ final class IdentityAndAccountingApiTest extends TestCase
         'incomes',
         'transfers',
         'owner_equity_transactions',
-        'journal_lines',
-        'journals',
+        'reconciliation_reopenings',
+        'matches',
         'bank_transactions',
+        'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'journal_lines',
+        'journals',
         'accounts',
         'business_profiles',
         'tenants',
@@ -688,6 +691,159 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $response->assertStatus(422);
         $this->assertSame(0, DB::connection('pgsql')->table('bank_accounts')->count());
+    }
+
+    // --- Banking Matching & Reconciliation (M18, SRS BNK-005/006/007) ----
+
+    public function test_a_bank_transaction_is_suggested_against_a_posted_expense_and_can_be_confirmed(): void
+    {
+        $this->registerAndReturnCredentials('bank-match@example.my');
+        $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '123.45',
+            'transaction_date' => '2026-08-05',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $bankLinkedAccountId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-match-expense-0001'])->assertStatus(201);
+
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankLinkedAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment - office supplies,123.45,OUT,,\n";
+        $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ])->assertStatus(201);
+
+        $suggestions = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions");
+        $suggestions->assertStatus(200);
+        $suggestions->assertJsonCount(1, 'data');
+        $suggestions->assertJsonPath('data.0.source_type', 'Expense');
+
+        $bankTransactionId = $suggestions->json('data.0.bank_transaction_id');
+        $journalId = $suggestions->json('data.0.journal_id');
+
+        $confirm = $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match", [
+            'journal_id' => $journalId,
+        ]);
+        $confirm->assertStatus(201);
+
+        $this->assertSame(1, DB::connection('pgsql')->table('matches')->count());
+
+        // Confirmed matches never resurface as suggestions.
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->assertJsonCount(0, 'data');
+    }
+
+    public function test_confirming_an_already_matched_bank_transaction_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('bank-match-dup@example.my');
+        $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-05',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $bankLinkedAccountId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-match-expense-0002'])->assertStatus(201);
+
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankLinkedAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment,50.00,OUT,,\n";
+        $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ])->assertStatus(201);
+
+        $suggestion = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->json('data.0');
+
+        $this->postJson("/api/v1/bank-transactions/{$suggestion['bank_transaction_id']}/confirm-match", [
+            'journal_id' => $suggestion['journal_id'],
+        ])->assertStatus(201);
+
+        $again = $this->postJson("/api/v1/bank-transactions/{$suggestion['bank_transaction_id']}/confirm-match", [
+            'journal_id' => $suggestion['journal_id'],
+        ]);
+        $again->assertStatus(422);
+        $this->assertSame(1, DB::connection('pgsql')->table('matches')->count());
+    }
+
+    public function test_reconciliation_full_lifecycle_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('reconciliation-lifecycle@example.my');
+        $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankLinkedAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Deposit,500.00,IN,,\n";
+        $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ])->assertStatus(201);
+
+        $open = $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '1500.00',
+        ]);
+        $open->assertStatus(201);
+        $open->assertJsonPath('state', 'Draft');
+        $open->assertJsonPath('difference.is_zero', true);
+
+        $reconciliationId = $open->json('id');
+
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/start-review")->assertJsonPath('state', 'InReview');
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/mark-balanced")->assertJsonPath('state', 'Balanced');
+
+        $complete = $this->postJson("/api/v1/reconciliations/{$reconciliationId}/complete");
+        $complete->assertStatus(200);
+        $complete->assertJsonPath('state', 'Completed');
+        $this->assertNotNull($complete->json('completed_at'));
+
+        $reopen = $this->postJson("/api/v1/reconciliations/{$reconciliationId}/reopen", [
+            'reason' => 'Found a missing bank fee',
+        ]);
+        $reopen->assertStatus(200);
+        $reopen->assertJsonPath('state', 'Draft');
+        $this->assertSame(1, DB::connection('pgsql')->table('reconciliation_reopenings')->count());
+    }
+
+    public function test_marking_a_reconciliation_balanced_with_a_nonzero_difference_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('reconciliation-unbalanced@example.my');
+        $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankLinkedAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $open = $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '9999.00',
+        ]);
+        $reconciliationId = $open->json('id');
+        $this->assertFalse($open->json('difference.is_zero'));
+
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/start-review")->assertStatus(200);
+
+        $response = $this->postJson("/api/v1/reconciliations/{$reconciliationId}/mark-balanced");
+        $response->assertStatus(422);
     }
 
     // --- Business Profile & Onboarding (M16, SRS IAM-003/IAM-004) --------

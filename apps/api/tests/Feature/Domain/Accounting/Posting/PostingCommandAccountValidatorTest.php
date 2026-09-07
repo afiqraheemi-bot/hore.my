@@ -324,7 +324,10 @@ final class PostingCommandAccountValidatorTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('transfers');
         Schema::connection('pgsql')->dropIfExists('owner_equity_transactions');
         Schema::connection('pgsql')->dropIfExists('period_closures');
+        Schema::connection('pgsql')->dropIfExists('reconciliation_reopenings');
+        Schema::connection('pgsql')->dropIfExists('matches');
         Schema::connection('pgsql')->dropIfExists('bank_transactions');
+        Schema::connection('pgsql')->dropIfExists('reconciliations');
         Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
         Schema::connection('pgsql')->dropIfExists('bank_accounts');
         Schema::connection('pgsql')->dropIfExists(self::ACCOUNT_TABLE);

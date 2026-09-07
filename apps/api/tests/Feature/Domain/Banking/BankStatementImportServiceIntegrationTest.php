@@ -18,6 +18,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\CleansSharedAccountingTables;
 use Tests\TestCase;
 
 /**
@@ -36,6 +37,8 @@ use Tests\TestCase;
  */
 final class BankStatementImportServiceIntegrationTest extends TestCase
 {
+    use CleansSharedAccountingTables;
+
     private const BANK_ACCOUNT_TABLE = 'bank_accounts';
 
     private const IMPORT_BATCH_TABLE = 'bank_statement_import_batches';
@@ -74,25 +77,34 @@ final class BankStatementImportServiceIntegrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
-        DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE)->delete();
-        DB::connection('pgsql')->table(self::IMPORT_BATCH_TABLE)->delete();
-        DB::connection('pgsql')->table(self::BANK_ACCOUNT_TABLE)->delete();
-
-        // This class does not own `journals`/`journal_lines` (or any
-        // Transactions-domain table) — it only needs `accounts` to be
-        // freely deletable. A leftover `journal_lines` row from another
-        // test class sharing this same persistent database (a very
-        // common fixture Account id like `account-cash`) would
-        // otherwise block the blanket `accounts` delete below with the
-        // identical foreign-key-violation this codebase already treats
-        // as "not this test's concern" everywhere else.
-        foreach (['period_closures', 'posting_idempotency_keys', 'posting_source_fingerprints', 'audit_events', 'journal_evidence_links', 'expenses', 'incomes', 'transfers', 'owner_equity_transactions', 'journal_lines', 'journals'] as $table) {
-            if (Schema::connection('pgsql')->hasTable($table)) {
-                DB::connection('pgsql')->table($table)->delete();
+        // Re-checked on every test, not just once in ensureMigrated():
+        // another Banking test class sharing this persistent database
+        // (e.g. one proving `accounts`/`bank_accounts` migration
+        // reversibility) may drop these tables between this class's own
+        // one-time ensureMigrated() and any individual test method here
+        // actually running — PHPUnit's test *class* execution order is
+        // not alphabetical or otherwise guaranteed.
+        foreach ([
+            self::BANK_ACCOUNT_TABLE => self::BANK_ACCOUNT_MIGRATION_PATH,
+            self::IMPORT_BATCH_TABLE => self::IMPORT_BATCH_MIGRATION_PATH,
+            self::BANK_TRANSACTION_TABLE => self::BANK_TRANSACTION_MIGRATION_PATH,
+        ] as $table => $migrationPath) {
+            if (! Schema::connection('pgsql')->hasTable($table)) {
+                self::forceCleanMigration($migrationPath, []);
             }
         }
 
-        DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
+        // This class does not own `journals`/`journal_lines`/`matches`/
+        // `reconciliations` (or any Transactions-domain table) — it
+        // only needs `accounts` to be freely deletable. A leftover row
+        // in any of them from another test class sharing this same
+        // persistent database (a very common fixture id like
+        // `account-cash`/`bank-account-0001`) would otherwise block the
+        // blanket `accounts`/`bank_accounts` deletes below with the
+        // identical foreign-key-violation this codebase already treats
+        // as "not this test's concern" everywhere else — see
+        // {@see CleansSharedAccountingTables}'s own docblock.
+        self::cleanSharedAccountingTables();
 
         $connection = DB::connection('pgsql');
         $this->service = $this->buildService($connection);

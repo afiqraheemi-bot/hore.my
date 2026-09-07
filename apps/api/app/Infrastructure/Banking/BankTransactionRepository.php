@@ -68,6 +68,21 @@ final class BankTransactionRepository
             ->exists();
     }
 
+    public function findById(TenantId $tenantId, BankTransactionId $bankTransactionId): ?BankTransaction
+    {
+        /** @var object{id: string, tenant_id: string, bank_account_id: string, import_batch_id: string, transaction_date: string, description: string, amount: int|string, currency: string, direction: string, balance: int|string|null, reference: string}|null $row */
+        $row = $this->connection->table(self::TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->where('id', $bankTransactionId->toString())
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        return $this->fromPersisted($row);
+    }
+
     /**
      * @return list<BankTransaction>
      */

@@ -10,8 +10,10 @@ use App\Http\Controllers\Api\BusinessProfileController;
 use App\Http\Controllers\Api\CapitalContributionController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
+use App\Http\Controllers\Api\MatchController;
 use App\Http\Controllers\Api\OwnerDrawingController;
 use App\Http\Controllers\Api\PeriodController;
+use App\Http\Controllers\Api\ReconciliationController;
 use App\Http\Controllers\Api\ReportingController;
 use App\Http\Controllers\Api\TransferController;
 use Illuminate\Support\Facades\Route;
@@ -42,6 +44,16 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/bank-accounts', [BankAccountController::class, 'store']);
             Route::get('/bank-accounts/{bankAccountId}/transactions', [BankAccountController::class, 'transactions']);
             Route::post('/bank-accounts/{bankAccountId}/import', [BankStatementImportController::class, 'store']);
+            Route::get('/bank-accounts/{bankAccountId}/match-suggestions', [MatchController::class, 'suggestions']);
+            Route::post('/bank-transactions/{bankTransactionId}/confirm-match', [MatchController::class, 'confirm']);
+
+            Route::get('/bank-accounts/{bankAccountId}/reconciliations', [ReconciliationController::class, 'index']);
+            Route::post('/bank-accounts/{bankAccountId}/reconciliations', [ReconciliationController::class, 'store']);
+            Route::get('/reconciliations/{reconciliationId}', [ReconciliationController::class, 'show']);
+            Route::post('/reconciliations/{reconciliationId}/start-review', [ReconciliationController::class, 'startReview']);
+            Route::post('/reconciliations/{reconciliationId}/mark-balanced', [ReconciliationController::class, 'markBalanced']);
+            Route::post('/reconciliations/{reconciliationId}/complete', [ReconciliationController::class, 'complete']);
+            Route::post('/reconciliations/{reconciliationId}/reopen', [ReconciliationController::class, 'reopen']);
 
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::post('/incomes', [IncomeController::class, 'store']);

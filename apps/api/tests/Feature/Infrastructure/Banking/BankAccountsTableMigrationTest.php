@@ -46,9 +46,10 @@ final class BankAccountsTableMigrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
-        if (Schema::connection('pgsql')->hasTable('bank_transactions')) {
-            DB::connection('pgsql')->table('bank_transactions')->delete();
-            DB::connection('pgsql')->table('bank_statement_import_batches')->delete();
+        foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches'] as $bankingTable) {
+            if (Schema::connection('pgsql')->hasTable($bankingTable)) {
+                DB::connection('pgsql')->table($bankingTable)->delete();
+            }
         }
         DB::connection('pgsql')->table(self::TABLE)->delete();
 
@@ -171,7 +172,10 @@ final class BankAccountsTableMigrationTest extends TestCase
         // concern; not recreated here, mirroring the identical
         // treatment this codebase already gives every other dependent
         // table in this position.
+        Schema::connection('pgsql')->dropIfExists('reconciliation_reopenings');
+        Schema::connection('pgsql')->dropIfExists('matches');
         Schema::connection('pgsql')->dropIfExists('bank_transactions');
+        Schema::connection('pgsql')->dropIfExists('reconciliations');
         Schema::connection('pgsql')->dropIfExists('bank_statement_import_batches');
 
         self::forceCleanMigration(self::MIGRATION_PATH, [self::TABLE]);

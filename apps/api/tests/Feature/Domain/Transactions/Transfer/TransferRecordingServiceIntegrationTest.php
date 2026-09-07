@@ -138,10 +138,10 @@ final class TransferRecordingServiceIntegrationTest extends TestCase
         DB::connection('pgsql')->table(self::EVIDENCE_LINK_TABLE)->delete();
         DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
         DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
-        if (Schema::connection('pgsql')->hasTable('bank_accounts')) {
-            DB::connection('pgsql')->table('bank_transactions')->delete();
-            DB::connection('pgsql')->table('bank_statement_import_batches')->delete();
-            DB::connection('pgsql')->table('bank_accounts')->delete();
+        foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
+            if (Schema::connection('pgsql')->hasTable($bankingTable)) {
+                DB::connection('pgsql')->table($bankingTable)->delete();
+            }
         }
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
 
