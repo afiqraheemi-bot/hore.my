@@ -654,6 +654,38 @@ final class IdentityAndAccountingApiTest extends TestCase
         ])->assertStatus(422);
     }
 
+    // --- Aging Report (M22) ---------------------------------------------
+
+    public function test_the_aging_report_reflects_outstanding_invoices_and_excludes_paid_ones(): void
+    {
+        $this->registerAndReturnCredentials('aging-report@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $unpaidInvoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '100.00');
+        $paidInvoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '50.00');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '50.00',
+            'payment_date' => now()->toDateString(),
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ], ['Idempotency-Key' => 'key-aging-payment']);
+        $paymentId = $paymentResponse->json('id');
+        $this->postJson("/api/v1/payments/{$paymentId}/allocations", ['invoice_id' => $paidInvoiceId, 'amount' => '50.00'])
+            ->assertStatus(201);
+
+        $response = $this->getJson('/api/v1/reports/aging?as_of='.now()->toDateString());
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(1, 'lines');
+        $response->assertJsonPath('lines.0.invoice_id', $unpaidInvoiceId);
+        $response->assertJsonPath('grand_total', '100.00');
+    }
+
     // --- Tenant isolation ---------------------------------------------------
 
     public function test_a_tenants_accounts_are_never_visible_to_another_tenant(): void

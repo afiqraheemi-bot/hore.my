@@ -14,6 +14,9 @@ use App\Domain\Accounting\Reporting\GeneralLedgerEntry;
 use App\Domain\Accounting\Reporting\NetBalance;
 use App\Domain\Accounting\Reporting\ProfitAndLossStatement;
 use App\Domain\Accounting\Reporting\TrialBalance;
+use App\Domain\Invoicing\Reporting\AgingBucket;
+use App\Domain\Invoicing\Reporting\AgingReport;
+use App\Domain\Invoicing\Reporting\AgingReportLine;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reporting\AsOfDateRequest;
 use App\Http\Requests\Reporting\GeneralLedgerRequest;
@@ -24,15 +27,16 @@ use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
 use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
+use App\Infrastructure\Invoicing\Reporting\AgingReportQuery;
 use Illuminate\Http\JsonResponse;
 use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
 
 /**
- * Wraps M10's five report Query classes over HTTP — read-only, no new
- * business logic (AETS-009 §5 rule 6, proven by
- * {@see ReportingHasNoWriteEffectTest}
- * at the Query layer itself; this controller adds nothing that layer
- * does not already guarantee).
+ * Wraps M10's five Accounting Core report Query classes plus M22's
+ * Aging Report over HTTP — read-only, no new business logic (AETS-009
+ * §5 rule 6, proven by {@see ReportingHasNoWriteEffectTest} at the
+ * Query layer itself, extended to cover {@see AgingReportQuery} too;
+ * this controller adds nothing that layer does not already guarantee).
  */
 final class ReportingController extends Controller
 {
@@ -42,6 +46,7 @@ final class ReportingController extends Controller
         private readonly BalanceSheetQuery $balanceSheetQuery,
         private readonly GeneralLedgerQuery $generalLedgerQuery,
         private readonly EvidenceIndexQuery $evidenceIndexQuery,
+        private readonly AgingReportQuery $agingReportQuery,
     ) {}
 
     public function trialBalance(AsOfDateRequest $request, CurrentTenant $currentTenant): JsonResponse
@@ -90,6 +95,13 @@ final class ReportingController extends Controller
         );
 
         return response()->json($this->evidenceIndexToArray($index));
+    }
+
+    public function agingReport(AsOfDateRequest $request, CurrentTenant $currentTenant): JsonResponse
+    {
+        $report = $this->agingReportQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+
+        return response()->json($this->agingReportToArray($report));
     }
 
     /**
@@ -203,6 +215,40 @@ final class ReportingController extends Controller
         return [
             'amount' => $balance->amount()->toDecimalString(),
             'direction' => $balance->direction()?->name,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function agingReportToArray(AgingReport $report): array
+    {
+        return [
+            'as_of' => $report->asOfDate()->format('Y-m-d'),
+            'grand_total' => $report->grandTotal()->toDecimalString(),
+            'bucket_totals' => [
+                'current' => $report->totalForBucket(AgingBucket::Current)->toDecimalString(),
+                'overdue_1_to_30' => $report->totalForBucket(AgingBucket::Overdue1To30)->toDecimalString(),
+                'overdue_31_to_60' => $report->totalForBucket(AgingBucket::Overdue31To60)->toDecimalString(),
+                'overdue_61_to_90' => $report->totalForBucket(AgingBucket::Overdue61To90)->toDecimalString(),
+                'overdue_91_plus' => $report->totalForBucket(AgingBucket::Overdue91Plus)->toDecimalString(),
+            ],
+            'lines' => array_map($this->agingReportLineToArray(...), $report->lines()),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function agingReportLineToArray(AgingReportLine $line): array
+    {
+        return [
+            'invoice_id' => $line->invoiceId()->toString(),
+            'invoice_number' => $line->invoiceNumber(),
+            'customer_id' => $line->customerId()->toString(),
+            'due_date' => $line->dueDate()->format('Y-m-d'),
+            'outstanding_balance' => $line->outstandingBalance()->toDecimalString(),
+            'bucket' => $line->bucket()->name,
         ];
     }
 }

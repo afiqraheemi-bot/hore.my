@@ -9,6 +9,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\CleansSharedAccountingTables;
 use Tests\Feature\Infrastructure\Accounting\Posting\PostingIdempotencyKeysTableMigrationTest;
 use Tests\TestCase;
 
@@ -31,6 +32,8 @@ use Tests\TestCase;
  */
 final class ExpensesTableMigrationTest extends TestCase
 {
+    use CleansSharedAccountingTables;
+
     private const TABLE = 'expenses';
 
     private const JOURNAL_TABLE = 'journals';
@@ -63,23 +66,7 @@ final class ExpensesTableMigrationTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
-        DB::connection('pgsql')->table(self::TABLE)->delete();
-        DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
-        if (Schema::connection('pgsql')->hasTable('payments')) {
-            DB::connection('pgsql')->table('payment_allocations')->delete();
-            DB::connection('pgsql')->table('payments')->delete();
-        }
-        if (Schema::connection('pgsql')->hasTable('invoices')) {
-            DB::connection('pgsql')->table('invoice_lines')->delete();
-            DB::connection('pgsql')->table('invoices')->delete();
-        }
-        DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
-        foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
-            if (Schema::connection('pgsql')->hasTable($bankingTable)) {
-                DB::connection('pgsql')->table($bankingTable)->delete();
-            }
-        }
-        DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
+        self::cleanSharedAccountingTables();
 
         $this->seedAccount('tenant-0001', 'account-expense');
         $this->seedAccount('tenant-0001', 'account-cash');

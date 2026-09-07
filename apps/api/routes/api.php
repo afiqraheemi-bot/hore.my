@@ -91,6 +91,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('/balance-sheet', [ReportingController::class, 'balanceSheet']);
                 Route::get('/general-ledger', [ReportingController::class, 'generalLedger']);
                 Route::get('/evidence-index', [ReportingController::class, 'evidenceIndex']);
+                Route::get('/aging', [ReportingController::class, 'agingReport']);
             });
         });
     });

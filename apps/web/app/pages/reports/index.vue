@@ -15,6 +15,7 @@ const tabs = [
   'Balance Sheet',
   'General Ledger',
   'Evidence Index',
+  'Aging Report',
 ] as const
 const activeTab = ref<(typeof tabs)[number]>('Trial Balance')
 
@@ -55,6 +56,10 @@ async function runReport() {
       })
     } else if (activeTab.value === 'Balance Sheet') {
       result.value = await request(`/api/v1/reports/balance-sheet`, {
+        query: { as_of: asOf.value },
+      })
+    } else if (activeTab.value === 'Aging Report') {
+      result.value = await request(`/api/v1/reports/aging`, {
         query: { as_of: asOf.value },
       })
     } else if (activeTab.value === 'General Ledger') {
@@ -107,11 +112,17 @@ async function selectTab(tab: (typeof tabs)[number]) {
     </div>
 
     <div class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4">
-      <div v-if="activeTab === 'Trial Balance' || activeTab === 'Balance Sheet'">
+      <div v-if="activeTab === 'Trial Balance' || activeTab === 'Balance Sheet' || activeTab === 'Aging Report'">
         <label class="block text-xs font-medium text-gray-500">As of</label>
         <input v-model="asOf" type="date" class="mt-1 rounded border border-gray-300 px-2 py-1" />
       </div>
-      <template v-if="activeTab !== 'Trial Balance' && activeTab !== 'Balance Sheet'">
+      <template
+        v-if="
+          activeTab !== 'Trial Balance' &&
+          activeTab !== 'Balance Sheet' &&
+          activeTab !== 'Aging Report'
+        "
+      >
         <div>
           <label class="block text-xs font-medium text-gray-500">Period start</label>
           <input

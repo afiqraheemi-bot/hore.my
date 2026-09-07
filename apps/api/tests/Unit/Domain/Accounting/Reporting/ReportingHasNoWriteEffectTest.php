@@ -10,6 +10,7 @@ use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
 use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
+use App\Infrastructure\Invoicing\Reporting\AgingReportQuery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -43,6 +44,7 @@ final class ReportingHasNoWriteEffectTest extends TestCase
             BalanceSheetQuery::class,
             GeneralLedgerQuery::class,
             EvidenceIndexQuery::class,
+            AgingReportQuery::class,
         ];
 
         $cases = [];
