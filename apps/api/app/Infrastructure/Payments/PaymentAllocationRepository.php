@@ -67,17 +67,45 @@ final class PaymentAllocationRepository
      * method below excludes it from that point on, but the row itself
      * — amount, Payment, Invoice, and now who deallocated it and when
      * — is retained.
+     *
+     * **Race-safe by construction, not by an application-level
+     * check-then-act (P1-3 follow-up, 2026-09-11: an external audit
+     * found the original version of this method had no such
+     * guarantee).** The `deleted_at IS NULL` predicate is part of the
+     * `UPDATE` statement itself, not a separate prior `SELECT` —
+     * PostgreSQL evaluates an `UPDATE ... WHERE` predicate against the
+     * row's current committed state and serializes concurrent writers
+     * to the same row, so of two concurrent callers racing to
+     * deallocate the same allocation, only the one that actually
+     * transitions `deleted_at` from `NULL` can ever match this
+     * predicate; the other's `UPDATE` matches zero rows once the first
+     * commits. This is the standard atomic compare-and-swap pattern
+     * for a conditional update — no explicit `SELECT ... FOR UPDATE`
+     * is needed, unlike {@see AllocationService::allocate()}'s own
+     * locking (a genuinely different shape of race: that one reads a
+     * cross-row `SUM()` before deciding, which an `UPDATE ... WHERE`
+     * predicate cannot express).
+     *
+     * @return bool `true` if this call actually transitioned the row
+     *              from active to deleted; `false` if it had already been
+     *              deleted (by this call or a concurrent one) by the time this
+     *              statement ran — the caller MUST treat `false` as "lost the
+     *              race, do not report success," never as a silent no-op,
+     *              exactly as it would treat a `findById()` miss.
      */
-    public function softDelete(TenantId $tenantId, PaymentAllocationId $allocationId, ActorReference $actor): void
+    public function softDelete(TenantId $tenantId, PaymentAllocationId $allocationId, ActorReference $actor): bool
     {
-        $this->connection->table(self::TABLE)
+        $affected = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('id', $allocationId->toString())
+            ->whereNull('deleted_at')
             ->update([
                 'deleted_at' => now(),
                 'deleted_by_actor' => $actor->toString(),
                 'updated_at' => now(),
             ]);
+
+        return $affected > 0;
     }
 
     public function findById(TenantId $tenantId, PaymentAllocationId $allocationId): ?PaymentAllocation

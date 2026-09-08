@@ -125,11 +125,23 @@ final class AllocationService
      * own audit trail (P1-3, 2026-09-08 audit remediation; see
      * {@see PaymentAllocationRepository::softDelete()}).
      *
+     * **Concurrent deallocation cannot overwrite the winning actor**
+     * (P1-3 follow-up, 2026-09-11). The `findById()` check below is a
+     * fast, friendly rejection for the ordinary sequential case — it
+     * is not, by itself, what makes this race-safe. That guarantee
+     * comes from `softDelete()`'s own atomic `UPDATE ... WHERE
+     * deleted_at IS NULL`: of two concurrent callers, only the one
+     * that actually flips the row wins; the other's `softDelete()`
+     * call returns `false`, which this method treats identically to a
+     * `findById()` miss — never as a silent no-op success, and never
+     * allowed to overwrite the winner's `deleted_by_actor`.
+     *
      * @throws PaymentAllocationNotFoundException if no allocation
-     *                                            exists for `$allocationId` under this Tenant. Re-deallocating an
-     *                                            already-deallocated allocation throws the identical exception —
-     *                                            `findById()` excludes soft-deleted rows, so this is idempotent
-     *                                            in its failure mode, never a silent no-op success.
+     *                                            exists for `$allocationId` under this Tenant, if it was already
+     *                                            deallocated before this call started, or if a concurrent call
+     *                                            deallocated it first — all three are reported identically, by
+     *                                            design: from this call's own point of view, none of them
+     *                                            succeeded in deallocating anything.
      */
     public function deallocate(TenantId $tenantId, PaymentAllocationId $allocationId, ActorReference $actor): void
     {
@@ -139,7 +151,11 @@ final class AllocationService
             throw PaymentAllocationNotFoundException::forId($allocationId);
         }
 
-        $this->allocationRepository->softDelete($tenantId, $allocationId, $actor);
+        $deleted = $this->allocationRepository->softDelete($tenantId, $allocationId, $actor);
+
+        if (! $deleted) {
+            throw PaymentAllocationNotFoundException::forId($allocationId);
+        }
     }
 
     public function outstandingBalanceFor(TenantId $tenantId, InvoiceId $invoiceId, Money $totalAmount): Money

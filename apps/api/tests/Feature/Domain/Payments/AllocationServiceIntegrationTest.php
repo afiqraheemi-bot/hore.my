@@ -295,6 +295,114 @@ final class AllocationServiceIntegrationTest extends TestCase
         $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0002'));
     }
 
+    /**
+     * The definitive proof for the P1-3 follow-up (2026-09-11): two
+     * genuinely concurrent OS processes, each independently
+     * bootstrapping Laravel and calling the real
+     * {@see AllocationService::deallocate()} against the *same*
+     * allocation with *different* Actors — the exact scenario an
+     * external audit described (two concurrent deallocation requests,
+     * the second silently overwriting the first's `deleted_by_actor`).
+     * PHPUnit is single-threaded and this codebase's own `Tests\TestCase`
+     * performs no per-test rollback, so a single-process test cannot
+     * reproduce a genuine race between two overlapping transactions the
+     * way spawning two real processes can — mirrors
+     * `test_two_concurrent_issue_attempts_never_post_two_journals()`
+     * (`InvoiceIssuingServiceIntegrationTest`) exactly; see
+     * `tests/bin/concurrent_deallocate_worker.php`'s own docblock for
+     * the full synchronization mechanism.
+     *
+     * Empirically confirmed discriminating, the same way the invoice
+     * one was: temporarily reverted `softDelete()` to a version with
+     * no `WHERE deleted_at IS NULL` guard (always returning `true`)
+     * and ran this test three times — three failures, each time both
+     * workers reporting `deallocated: true`. Restored the fix and ran
+     * five times — five clean passes.
+     */
+    public function test_two_concurrent_deallocate_attempts_never_corrupt_the_audit_trail(): void
+    {
+        $invoice = $this->issuedInvoice('300.00');
+        $payment = $this->recordedPayment('300.00');
+        $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('300.00', $this->myr));
+
+        $tmp = sys_get_temp_dir();
+        $readyA = tempnam($tmp, 'ready_a_');
+        $readyB = tempnam($tmp, 'ready_b_');
+        $goFile = tempnam($tmp, 'go_');
+        $resultA = tempnam($tmp, 'result_a_');
+        $resultB = tempnam($tmp, 'result_b_');
+        unlink($readyA);
+        unlink($readyB);
+        unlink($goFile);
+
+        $workerScript = base_path('tests/bin/concurrent_deallocate_worker.php');
+
+        $processA = proc_open(
+            ['php', $workerScript, $this->tenant->toString(), $allocation->id()->toString(), 'user-concurrent-a', $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, $this->tenant->toString(), $allocation->id()->toString(), 'user-concurrent-b', $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($readyA) && file_exists($readyB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker processes to signal ready.');
+            }
+            usleep(2000);
+        }
+
+        touch($goFile);
+
+        foreach ([$processA, $processB] as $process) {
+            proc_close($process);
+        }
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($resultA) && file_exists($resultB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker results.');
+            }
+            usleep(2000);
+        }
+
+        $resultAData = json_decode((string) file_get_contents($resultA), true);
+        $resultBData = json_decode((string) file_get_contents($resultB), true);
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            @unlink($file);
+        }
+
+        $outcomes = ['A' => $resultAData, 'B' => $resultBData];
+        $succeededActors = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['deallocated'] ?? false) === true));
+        $rejectedActors = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['exception'] ?? null) === PaymentAllocationNotFoundException::class));
+
+        $this->assertCount(1, $succeededActors, 'Exactly one of the two concurrent deallocate attempts must succeed. Got: '.json_encode($outcomes));
+        $this->assertCount(1, $rejectedActors, 'The other concurrent attempt must be rejected as not-found (the row was already gone by the time its UPDATE ran). Got: '.json_encode($outcomes));
+
+        $winner = $succeededActors[0] === 'A' ? 'user-concurrent-a' : 'user-concurrent-b';
+
+        $row = DB::connection('pgsql')->table('payment_allocations')
+            ->where('tenant_id', $this->tenant->toString())
+            ->where('id', $allocation->id()->toString())
+            ->first();
+
+        $this->assertNotNull($row);
+        $this->assertNotNull($row->deleted_at);
+        $this->assertSame(
+            $winner,
+            $row->deleted_by_actor,
+            'deleted_by_actor MUST record whichever Actor actually won the race — never the loser silently overwriting it.',
+        );
+    }
+
     private function issuedInvoice(string $totalAmount, string $invoiceId = 'invoice-0001'): Invoice
     {
         $draft = Invoice::draft(
