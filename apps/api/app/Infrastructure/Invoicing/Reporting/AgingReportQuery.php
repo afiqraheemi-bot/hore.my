@@ -37,6 +37,26 @@ use Illuminate\Database\ConnectionInterface;
  * a Financial Date on a financial event, consistent with AETS-009 §5
  * rule 5; deallocation, unlike a Payment or an Invoice, has no
  * business-dated field of its own to prefer instead.
+ *
+ * **Point-in-time correct against a *later-created* allocation too
+ * (P1-4 follow-up, 2026-09-11: an external audit found the fix above
+ * only closed half the gap).** An allocation additionally only counts
+ * toward a historical `asOfDate` if it was itself created on or before
+ * that date — `payment_allocations.created_at`'s own calendar date
+ * must not be *after* `asOfDate`. Without this, a Payment made on 5
+ * August but only allocated to an Invoice in September would make an
+ * Aging Report re-run for 10 August retroactively show that Invoice as
+ * settled, even though on 10 August no allocation existed yet — the
+ * report's own history would silently change depending on when it was
+ * *generated*, not just what date it was *for*. `created_at` is a
+ * system timestamp; using it here is the same "had this fact taken
+ * effect yet, as of this date" question the `deleted_at` check above
+ * already answers, not a claim about a Payment's or Invoice's own
+ * Financial Date. This is a deliberate, conservative policy choice
+ * among two the audit itself named as open (system-effective timestamp
+ * vs. a not-yet-designed business-effective allocation date) — see
+ * AETS-009 §17 for the full reasoning and the alternative this
+ * document does not implement.
  */
 final class AgingReportQuery
 {
@@ -80,6 +100,12 @@ final class AgingReportQuery
                 $query->whereNull('payment_allocations.deleted_at')
                     ->orWhereDate('payment_allocations.deleted_at', '>', $asOfDateString);
             })
+            // P1-4 follow-up: an allocation counts only if it was
+            // itself created on or before $asOfDate — a late-created
+            // allocation for an earlier-dated Payment must not
+            // retroactively change a report for a date before the
+            // allocation existed. See this class's own docblock.
+            ->whereDate('payment_allocations.created_at', '<=', $asOfDateString)
             ->selectRaw('payment_allocations.invoice_id as invoice_id, sum(payment_allocations.amount) as allocated')
             ->groupBy('payment_allocations.invoice_id')
             ->pluck('allocated', 'invoice_id')

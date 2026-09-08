@@ -151,6 +151,103 @@ final class AgingReportQueryIntegrationTest extends TestCase
         ));
     }
 
+    /**
+     * MEDIUM finding closed, 2026-09-11: an external audit found
+     * `AgingReportQuery`'s tenant filter was proven correct only by
+     * inspection, unlike `RPT-002`'s own dedicated cross-tenant test
+     * for every other report (`RPT-T028`). Sets up a second Tenant's
+     * own Account/Customer/Invoice/Payment/Allocation from scratch
+     * (this class's shared fixtures below are all hardcoded to
+     * `$this->tenant`) — `accounts.account_id` is this table's own
+     * primary key (a real UUID in production; a short fixture string
+     * here), so Tenant B's own Account rows use their own distinct IDs
+     * rather than literally colliding with Tenant A's. What this test
+     * actually proves is that Tenant A's own report and outstanding
+     * balance stay unaffected by Tenant B's own Invoice/Payment/
+     * Allocation, and vice versa — both share the identical MYR amount
+     * and dates, so a real leak would show up as an immediately visible
+     * doubled or halved balance, not merely an unexpected extra row.
+     */
+    public function test_two_tenants_never_leak_into_each_others_aging_report(): void
+    {
+        $invoiceA = $this->issuedInvoice('100.00', '2026-08-20', 'invoice-tenant-a');
+
+        $tenantB = TenantId::of('tenant-0002');
+        $connection = DB::connection('pgsql');
+
+        foreach ([['account-receivable-b', 'Asset'], ['account-bank-b', 'Asset'], ['account-revenue-b', 'Revenue']] as [$accountId, $accountType]) {
+            $connection->table(self::ACCOUNT_TABLE)->insert([
+                'tenant_id' => $tenantB->toString(),
+                'account_id' => $accountId,
+                'account_code' => substr(md5($tenantB->toString().$accountId), 0, 10),
+                'account_name' => 'Test Account (Tenant B)',
+                'account_type' => $accountType,
+                'account_origin' => 'UserCreated',
+                'active' => true,
+                'posting_eligible' => true,
+                'parent_id' => null,
+            ]);
+        }
+        (new CustomerRepository($connection))->save(Customer::register(
+            CustomerId::of('customer-tenant-b'),
+            $tenantB,
+            'Tenant B Customer',
+            null,
+            null,
+            null,
+            null,
+            null,
+        ));
+
+        $draftB = Invoice::draft(
+            InvoiceId::of('invoice-tenant-b'),
+            $tenantB,
+            CustomerId::of('customer-tenant-b'),
+            new \DateTimeImmutable('2026-08-20'),
+            AccountId::of('account-receivable-b'),
+            AccountId::of('account-revenue-b'),
+            [InvoiceLine::of('Item', 1, Money::fromDecimalString('100.00', $this->myr))],
+            $this->myr,
+        );
+        $this->invoiceRepository->save($draftB);
+        $issueKeyB = IdempotencyKey::of('idem-key-issue-tenant-b');
+        $invoiceB = $this->invoiceIssuingService->issue(
+            $tenantB,
+            $draftB->id(),
+            JournalId::of(DeterministicIdempotentId::derive($tenantB, $issueKeyB, 'journal')),
+            $issueKeyB,
+            ActorReference::of('user-0001'),
+            new \DateTimeImmutable('2026-01-01'),
+        )->invoice();
+
+        $paymentKeyB = IdempotencyKey::of('idem-key-payment-tenant-b');
+        $paymentB = $this->paymentService->record(new RecordPaymentCommand(
+            PaymentId::of(DeterministicIdempotentId::derive($tenantB, $paymentKeyB, 'payment')),
+            JournalId::of(DeterministicIdempotentId::derive($tenantB, $paymentKeyB, 'journal')),
+            $paymentKeyB,
+            $tenantB,
+            ActorReference::of('user-0001'),
+            CustomerId::of('customer-tenant-b'),
+            Money::fromDecimalString('40.00', $this->myr),
+            new \DateTimeImmutable('2026-09-01'),
+            AccountId::of('account-bank-b'),
+            AccountId::of('account-receivable-b'),
+            null,
+        ))->payment();
+        $this->allocationService->allocate($tenantB, $paymentB->id(), $invoiceB->id(), Money::fromDecimalString('40.00', $this->myr));
+
+        $reportA = $this->query->asOf($this->tenant, new \DateTimeImmutable('2026-09-08'));
+        $reportB = $this->query->asOf($tenantB, new \DateTimeImmutable('2026-09-08'));
+
+        $this->assertCount(1, $reportA->lines(), "Tenant A's own report must list only its own Invoice.");
+        $this->assertSame('invoice-tenant-a', $reportA->lines()[0]->invoiceId()->toString());
+        $this->assertSame('100.00', $reportA->lines()[0]->outstandingBalance()->toDecimalString(), "Tenant A's own outstanding balance must not be affected by Tenant B's own allocation, even though both share the same fixture IDs.");
+
+        $this->assertCount(1, $reportB->lines(), "Tenant B's own report must list only its own Invoice.");
+        $this->assertSame('invoice-tenant-b', $reportB->lines()[0]->invoiceId()->toString());
+        $this->assertSame('60.00', $reportB->lines()[0]->outstandingBalance()->toDecimalString());
+    }
+
     public function test_a_fully_paid_invoice_does_not_appear(): void
     {
         $invoice = $this->issuedInvoice('100.00', '2026-08-01', 'invoice-paid');
@@ -202,6 +299,16 @@ final class AgingReportQueryIntegrationTest extends TestCase
         $payment = $this->recordedPayment('100.00', '2026-08-05');
         $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('100.00', $this->myr));
 
+        // Backdated directly (not via the public API, which always
+        // stamps the real "now" — see AgingReportQuery's own P1-4
+        // follow-up docblock) so this test's own historical as-of date
+        // below can meaningfully precede the allocation's own
+        // created_at, exactly as if the allocation had genuinely been
+        // made back in August rather than at real test-run time.
+        DB::connection('pgsql')->table('payment_allocations')
+            ->where('id', $allocation->id()->toString())
+            ->update(['created_at' => '2026-08-05']);
+
         $historicalAsOf = new \DateTimeImmutable('2026-08-10');
 
         $before = $this->query->asOf($this->tenant, $historicalAsOf);
@@ -221,6 +328,46 @@ final class AgingReportQueryIntegrationTest extends TestCase
 
         $today = $this->query->asOf($this->tenant, new \DateTimeImmutable('2026-09-08'));
         $this->assertCount(1, $today->lines(), 'The current-day report must reflect the deallocation, unlike the historical one above.');
+    }
+
+    /**
+     * The exact scenario an external audit found still broken after
+     * the deallocation-side P1-4 fix above (2026-09-11 follow-up): a
+     * Payment dated in the past, allocated to an Invoice only *later*
+     * — the allocation's own `created_at` is genuinely "now" here, not
+     * backdated, unlike the test above. A historical Aging report run
+     * *before* that allocation existed must show the Invoice as fully
+     * outstanding, and — this is the actual regression proof — must
+     * keep showing it that way even after the allocation is made,
+     * never retroactively rewritten to appear already-settled.
+     */
+    public function test_a_late_allocation_against_a_backdated_payment_does_not_rewrite_prior_aging(): void
+    {
+        $invoice = $this->issuedInvoice('100.00', '2026-08-20', 'invoice-late-allocation');
+        $payment = $this->recordedPayment('100.00', '2026-08-05');
+
+        $historicalAsOf = new \DateTimeImmutable('2026-08-10');
+
+        $beforeAllocating = $this->query->asOf($this->tenant, $historicalAsOf);
+        $this->assertCount(1, $beforeAllocating->lines(), 'No allocation exists yet — the Invoice must be fully outstanding as of 2026-08-10.');
+        $this->assertSame('100.00', $beforeAllocating->lines()[0]->outstandingBalance()->toDecimalString());
+
+        // Allocated at real "now" (test-run time), deliberately not
+        // backdated — this is the audit's own scenario: the Payment's
+        // own date is in the past, but the bookkeeping act of
+        // allocating it happened much later.
+        $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('100.00', $this->myr));
+
+        $afterLateAllocationSameHistoricalDate = $this->query->asOf($this->tenant, $historicalAsOf);
+        $this->assertCount(
+            1,
+            $afterLateAllocationSameHistoricalDate->lines(),
+            'The 2026-08-10 report must NOT change just because an allocation was made today for that backdated Payment — it must still show the Invoice as outstanding, exactly as it did before the allocation existed.',
+        );
+        $this->assertSame('100.00', $afterLateAllocationSameHistoricalDate->lines()[0]->outstandingBalance()->toDecimalString());
+
+        $today = $this->query->asOf($this->tenant, new \DateTimeImmutable('2026-09-08'));
+        $this->assertSame([], $today->lines(), 'The current-day report, in contrast, correctly reflects the allocation — the Invoice is now fully settled.');
     }
 
     public function test_an_unpaid_invoice_not_yet_due_is_current(): void
