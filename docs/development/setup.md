@@ -16,7 +16,7 @@ No other services are included. Monitoring, a queue dashboard, object storage (M
 
 All image references are pinned to explicit patch-level versions (no `latest` or bare major/minor floating tags) as of 2026-09-03, resolved against the Docker Hub registry API. `mailpit`'s healthcheck (`/mailpit readyz`) was taken directly from the image's own Dockerfile at tag `v1.31.0` rather than assumed, since Mailpit ships as a minimal Alpine-based binary with its own built-in `HEALTHCHECK` and does not expose an HTTP health path for this purpose.
 
-The `api` base image is pinned to `php:8.5.10-cli` rather than `8.3.x`: the committed `apps/api/composer.lock` resolved `symfony/*` packages that require PHP `>=8.4.1`, which only surfaced when building a clean container image (the host workstation's PHP 8.5.6 masked it). `8.5.10` satisfies both the lock file and `composer.json`'s own `">=8.3 <8.6"` range.
+The `api` base image is pinned to `php:8.5.10-cli` rather than `8.3.x`: the committed `apps/api/composer.lock` resolved `symfony/*` packages that require PHP `>=8.4.1`, which only surfaced when building a clean container image (the host workstation's PHP 8.5.6 masked it). `8.5.10` satisfies the lock file. `composer.json`'s own `require.php` range was, until 2026-09-08 (P1-7 audit remediation), still stated as `">=8.3 <8.6"` — falsely advertising PHP 8.3 support the lock file never actually allowed, `composer install --no-dev` on a real PHP 8.3 host would have failed despite composer.json claiming otherwise. It now correctly reads `">=8.4.1 <8.6"`, matching what this image and CI's own matrix (`backend-ci.yml`) already enforced in practice.
 
 ## Usage
 

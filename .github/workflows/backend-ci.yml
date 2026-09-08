@@ -51,10 +51,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # composer.lock currently resolves symfony/* packages that require
-        # PHP >=8.4.1 (discovered in T0.5B Docker validation), even though
-        # composer.json's own range is ">=8.3 <8.6". PHP 8.3 is excluded
-        # here until that is resolved with a superseding change.
+        # composer.json's own require.php range is ">=8.4.1 <8.6" (P1-7,
+        # 2026-09-08 audit remediation: corrected from ">=8.3 <8.6", which
+        # falsely advertised PHP 8.3 support composer.lock's own resolved
+        # symfony/* packages never actually allowed — discovered in T0.5B
+        # Docker validation). PHP 8.3 is excluded here because it is no
+        # longer a supported version per composer.json, not as a
+        # workaround pending a future fix.
         php: ['8.4', '8.5']
     steps:
       - name: Checkout
