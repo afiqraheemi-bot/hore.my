@@ -8,6 +8,7 @@ use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
+use App\Domain\Accounting\Posting\EvidenceReference;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Shared\Tenancy\TenantId;
@@ -26,6 +27,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CleansSharedAccountingTables;
 use Tests\Feature\Domain\Payments\AllocationServiceIntegrationTest;
 use Tests\TestCase;
@@ -95,8 +97,20 @@ final class TaskServiceIntegrationTest extends TestCase
 
         $this->insertAccount($this->tenantA, 'account-office-supplies', 'Expense');
         $this->insertAccount($this->tenantA, 'account-cash', 'Asset');
+        $this->insertAccount($this->tenantA, 'account-sales-revenue', 'Revenue');
+        $this->insertAccount($this->tenantA, 'account-savings', 'Asset');
+        $this->insertAccount($this->tenantA, 'account-owner-capital', 'Equity');
         $this->insertAccount($this->tenantB, 'account-office-supplies-b', 'Expense');
         $this->insertAccount($this->tenantB, 'account-cash-b', 'Asset');
+    }
+
+    protected function tearDown(): void
+    {
+        if (self::$skipReason === null) {
+            self::cleanSharedAccountingTables();
+        }
+
+        parent::tearDown();
     }
 
     public function test_submit_lands_the_task_in_needs_review_with_a_human_proposal(): void
@@ -140,6 +154,126 @@ final class TaskServiceIntegrationTest extends TestCase
             ->first();
         $this->assertNotNull($journal);
         $this->assertSame('Posted', $journal->state);
+    }
+
+    /**
+     * WTS-002 PTC-002/PTC-005: every Workspace-neutral Account field
+     * reaches the exact business-specific Recording Service and ledger
+     * side the equivalent manual command uses. This deliberately proves
+     * all five currently admitted Command types through real PostgreSQL
+     * and the real Accounting Core; testing Expense alone would leave
+     * the asymmetric Owner Equity constructor mapping unprotected.
+     */
+    #[DataProvider('proposalCommandMappings')]
+    public function test_every_proposal_command_type_maps_accounts_to_the_correct_journal_sides(
+        CommandType $type,
+        string $primary,
+        string $secondary,
+        string $debitAccount,
+        string $creditAccount,
+        string $recordTable,
+    ): void {
+        $task = $this->taskService->submit(
+            $this->tenantA,
+            ActorReference::of('user-mapping'),
+            IdempotencyKey::of('idem-command-mapping-'.$type->name),
+            $type,
+            Money::fromDecimalString('123.45', $this->myr),
+            new \DateTimeImmutable('2026-09-08'),
+            AccountId::of($primary),
+            AccountId::of($secondary),
+            'WTS-002 mapping proof',
+            null,
+        );
+
+        $completed = $this->taskService->approve($this->tenantA, $task->id(), ActorReference::of('user-approver'));
+        $this->assertSame(TaskState::Completed, $completed->state(), $type->name.' did not complete.');
+
+        $lines = DB::connection('pgsql')->table('journal_lines')
+            ->where('tenant_id', $this->tenantA->toString())
+            ->where('journal_id', $completed->resultJournalId()?->toString())
+            ->orderBy('line_position')
+            ->get();
+
+        $this->assertCount(2, $lines, $type->name.' must produce exactly two lines.');
+        $this->assertSame($debitAccount, $lines[0]->account_id, $type->name.' debit Account mapping changed.');
+        $this->assertSame('Debit', $lines[0]->direction, $type->name.' first line must be Debit.');
+        $this->assertSame(12345, $lines[0]->amount, $type->name.' debit amount changed.');
+        $this->assertSame($creditAccount, $lines[1]->account_id, $type->name.' credit Account mapping changed.');
+        $this->assertSame('Credit', $lines[1]->direction, $type->name.' second line must be Credit.');
+        $this->assertSame(12345, $lines[1]->amount, $type->name.' credit amount changed.');
+        $this->assertSame(1, DB::connection('pgsql')->table($recordTable)->count(), $type->name.' did not persist through its expected Recording Service.');
+    }
+
+    /**
+     * @return array<string, array{CommandType, string, string, string, string, string}>
+     */
+    public static function proposalCommandMappings(): array
+    {
+        return [
+            'expense: debit expense, credit payment' => [CommandType::Expense, 'account-office-supplies', 'account-cash', 'account-office-supplies', 'account-cash', 'expenses'],
+            'income: debit deposit, credit revenue' => [CommandType::Income, 'account-sales-revenue', 'account-cash', 'account-cash', 'account-sales-revenue', 'incomes'],
+            'transfer: debit destination, credit source' => [CommandType::Transfer, 'account-cash', 'account-savings', 'account-savings', 'account-cash', 'transfers'],
+            'contribution: debit cash, credit equity' => [CommandType::CapitalContribution, 'account-cash', 'account-owner-capital', 'account-cash', 'account-owner-capital', 'owner_equity_transactions'],
+            'drawing: debit equity, credit cash' => [CommandType::OwnerDrawing, 'account-cash', 'account-owner-capital', 'account-owner-capital', 'account-cash', 'owner_equity_transactions'],
+        ];
+    }
+
+    /**
+     * WTS-002 PTC-003/PTC-004/PTC-006: translation preserves the
+     * approved Proposal's common financial fields, uses the approving
+     * human (not the Proposal producer) as the posting Actor, and uses
+     * the Proposal identity as the stable Command Idempotency Key.
+     */
+    public function test_proposal_common_fields_approving_actor_and_identity_propagate_unchanged(): void
+    {
+        $task = $this->taskService->submit(
+            $this->tenantA,
+            ActorReference::of('user-proposal-producer'),
+            IdempotencyKey::of('idem-common-field-proof'),
+            CommandType::Expense,
+            Money::fromDecimalString('98.76', $this->myr),
+            new \DateTimeImmutable('2026-08-17'),
+            AccountId::of('account-office-supplies'),
+            AccountId::of('account-cash'),
+            'Exact Proposal description',
+            EvidenceReference::of('evidence-workspace-0001'),
+        );
+        $proposal = $this->proposalRepository->getCurrentForTask($this->tenantA, $task->id());
+
+        $completed = $this->taskService->approve(
+            $this->tenantA,
+            $task->id(),
+            ActorReference::of('user-human-approver'),
+        );
+        $journalId = $completed->resultJournalId()?->toString();
+        $this->assertNotNull($journalId);
+
+        $expense = DB::connection('pgsql')->table('expenses')->where('journal_id', $journalId)->first();
+        $this->assertNotNull($expense);
+        $this->assertSame($this->tenantA->toString(), $expense->tenant_id);
+        $this->assertSame(9876, $expense->amount);
+        $this->assertSame('MYR', $expense->currency);
+        $this->assertSame('2026-08-17', $expense->transaction_date);
+        $this->assertSame('Exact Proposal description', $expense->description);
+        $this->assertSame('evidence-workspace-0001', $expense->evidence_reference);
+
+        $journal = DB::connection('pgsql')->table('journals')->where('journal_id', $journalId)->first();
+        $this->assertNotNull($journal);
+        $this->assertSame('2026-08-17', $journal->financial_date);
+
+        $audit = DB::connection('pgsql')->table('audit_events')->where('journal_id', $journalId)->first();
+        $this->assertNotNull($audit);
+        $this->assertSame('user-human-approver', $audit->actor);
+        $this->assertNotSame('user-proposal-producer', $audit->actor);
+
+        $evidenceLink = DB::connection('pgsql')->table('journal_evidence_links')->where('journal_id', $journalId)->first();
+        $this->assertNotNull($evidenceLink);
+        $this->assertSame('evidence-workspace-0001', $evidenceLink->evidence_reference);
+
+        $idempotency = DB::connection('pgsql')->table('posting_idempotency_keys')->where('journal_id', $journalId)->first();
+        $this->assertNotNull($idempotency);
+        $this->assertSame($proposal->id()->toString(), $idempotency->idempotency_key);
     }
 
     public function test_approve_is_rejected_once_already_rejected(): void

@@ -20,10 +20,11 @@ Each document carries its own `Status`: `Draft` → `Active` → `Superseded` or
 | --- | --- | --- | --- |
 | [WTS-000 — Foundation](WTS-000.md) | Active | 1.0.0 | Purpose, scope, authority, product and AI-boundary philosophy, design principles, governance, versioning |
 | [WTS-001 — Task & Proposal State Model](WTS-001-Task-Proposal-State-Model.md) | Active | 2.0.0 | Task states, allowed transitions, the Proposal contract, the transition-audit record shape (`TSK-001`), and 12 `TSK-NNN` invariants covering transition validity, Proposal/Command validation parity, approval-time idempotency (`TSK-004`), closed-Period re-validation at execution time (`TSK-005`), the AI/human approval boundary (`TSK-006`), tenant isolation (`TSK-007`), terminal-state discipline (`TSK-008`–`TSK-009`), and — as of v2.0.0, closing four production blockers a post-implementation QA pass found — atomic multi-row writes (`TSK-010`), Task-submission payload-conflict detection (`TSK-011`), and crash recovery for a Task stranded in `Executing` (`TSK-012`) |
+| [WTS-002 — Proposal-to-Command Translation](WTS-002-Proposal-to-Command-Translation.md) | Active | 1.0.0 | Deterministic mapping from the five currently supported Proposal types to their existing manual-entry Commands; common-field, Account-role, identity/idempotency, validation-parity, result/failure, evidence/source-boundary rules; 12 `PTC-NNN` invariants |
 
 This table, together with [WTS-000 §9](WTS-000.md#9-planned-document-structure), is the single authoritative roadmap for the WTS series — no other document states a competing numbering.
 
-Planned, not-yet-created documents — WTS-002 (Proposal-to-Command Translation), WTS-003 (Task Audit Trail & Evidence Correlation), and WTS-004 (AI-Produced Proposal Intake Contract) — are listed in [WTS-000 §9](WTS-000.md#9-planned-document-structure). They are not reserved or committed to until actually created.
+Planned, not-yet-created documents — WTS-003 (Task Audit Trail & Evidence Correlation) and WTS-004 (AI-Produced Proposal Intake Contract) — are listed in [WTS-000 §9](WTS-000.md#9-planned-document-structure). They are not reserved or committed to until actually created.
 
 ## Test Specifications
 
