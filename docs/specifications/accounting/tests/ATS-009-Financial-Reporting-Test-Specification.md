@@ -1,7 +1,7 @@
 # ATS-009: Financial Reporting Test Specification
 
 - Status: Active
-- Version: 1.2.0
+- Version: 1.3.0
 - Effective date: 2026-09-07
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T045`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
+This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T046`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](ATS-010-Audit-Trail-Test-Specification.md), this document was authored alongside — immediately after — AETS-009's implementation (M10), not before it: every test ID below traces to a concrete, already-passing test in the current suite, not a future target. The traceability matrix in §5 can therefore be verified directly against the repository rather than taken on faith.
 
@@ -58,6 +58,7 @@ This document is subordinate to [AETS-009](../AETS-009-Financial-Reporting.md) a
 | RPT-011 | RPT-T032 |
 | RPT-012 | RPT-T035, RPT-T036, RPT-T040, RPT-T041, RPT-T045 |
 | RPT-013 | RPT-T033, RPT-T034, RPT-T037, RPT-T038 |
+| RPT-014 | RPT-T046 |
 
 ## 6. Test cases
 
@@ -149,6 +150,7 @@ Domain-level tests (`AgingBucket`, `AgingReport`) construct their inputs directl
 | RPT-T043 | `AgingReport::totalForBucket()` sums only lines matching the requested bucket, excluding every other bucket's lines. | Unit |
 | RPT-T044 | An empty `AgingReport` (zero lines) reports zero for its grand total and every bucket total. | Unit |
 | RPT-T045 | A deallocated allocation's Invoice reappears as fully outstanding — proves `AgingReportQuery`'s new `deleted_at IS NULL` filter (P1-3, AETS-009 v1.2.0) preserves this report's exact prior observable behavior after `PaymentAllocation` deletion changed from a hard delete to a soft delete (`RPT-012`). | Integration |
+| RPT-T046 | A fully-allocated Invoice's Aging report for a historical as-of date is identical before and after the contributing allocation is later deallocated; the same-day-or-later as-of date correctly reflects the deallocation instead — proves `AgingReportQuery`'s `deleted_at`-vs-as-of-date comparison (P1-4, AETS-009 v1.3.0) (`RPT-014`). | Integration |
 
 ## 7. RPT-003 — not independently tested by a runtime test
 
@@ -168,6 +170,7 @@ Domain-level tests (`AgingBucket`, `AgingReport`) construct their inputs directl
 
 ## Changelog
 
+- **1.3.0 (2026-09-11):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.3.0 (P1-4: full resolution of the Aging Report historical-reproducibility limitation). Adds `RPT-T046`, proving `AgingReportQuery`'s new `deleted_at`-vs-as-of-date comparison: a historical as-of date's result is identical before and after a later deallocation, while a same-day-or-later as-of date correctly reflects it. Adds `RPT-T046` to a new `RPT-014` traceability row (§5). No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.
 - **1.2.0 (2026-09-11):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.2.0 (P1-3 audit remediation: `PaymentAllocation` deletion changed from a hard delete to a soft delete). Adds `RPT-T045` (§6.7's own §6.8 area), a genuinely new test (unlike v1.1.0's catch-up-only additions) proving `AgingReportQuery`'s new `deleted_at IS NULL` filter preserves the report's exact prior observable behavior — a deallocated allocation's Invoice still reappears as fully outstanding, exactly as under the old hard-delete. Adds `RPT-T045` to `RPT-012`'s traceability row (§5). No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.
 - **1.1.0 (2026-09-08):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.1.0, which added §17 (Debtors and Aging Report) and `RPT-012`/`RPT-013`. Adds new §6.8 (twelve test cases, `RPT-T033`–`RPT-T044`), tracing every ID to an already-existing, already-passing test in `AgingBucketTest`, `AgingReportTest`, and `AgingReportQueryIntegrationTest` — no test was newly written for this version; this document catches up to test coverage the M22 implementation already had. Updates §5's traceability matrix and §2.1/§2.2. Explicitly records two coverage gaps this version does **not** close, both already named by AETS-009 §15: no dedicated cross-tenant isolation test for the Aging Report (unlike `RPT-T028` for §6–§10), and no test for CSV export (a presentation-layer reshaping with no new business logic to prove, per AETS-009 §18). No existing `RPT-NNN` invariant's test coverage, and no existing test ID, changed. Classified **MINOR**, mirroring AETS-009's own v1.1.0 classification.
 - **1.0.0 (2026-09-07):** Initial version, authored immediately after AETS-009's implementation (M10), fulfilling the exact coverage AETS-009 §13 names as required.

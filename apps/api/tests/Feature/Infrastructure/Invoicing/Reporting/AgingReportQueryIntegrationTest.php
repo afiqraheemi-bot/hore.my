@@ -188,6 +188,41 @@ final class AgingReportQueryIntegrationTest extends TestCase
         $this->assertSame('100.00', $reportAfterDeallocation->lines()[0]->outstandingBalance()->toDecimalString());
     }
 
+    /**
+     * The genuine P1-4 proof, resolved 2026-09-11: a *historical*
+     * as-of-date's own result must stay identical across time, even
+     * after a contributing allocation is later deallocated —
+     * distinct from {@see test_a_deallocated_invoice_reappears_as_fully_outstanding()}
+     * above, which only proves *today's* result correctly reflects a
+     * deallocation, not that a *past* result stays reproducible.
+     */
+    public function test_a_historical_as_of_date_stays_reproducible_after_a_later_deallocation(): void
+    {
+        $invoice = $this->issuedInvoice('100.00', '2026-08-20', 'invoice-historical');
+        $payment = $this->recordedPayment('100.00', '2026-08-05');
+        $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('100.00', $this->myr));
+
+        $historicalAsOf = new \DateTimeImmutable('2026-08-10');
+
+        $before = $this->query->asOf($this->tenant, $historicalAsOf);
+        $this->assertSame([], $before->lines(), 'As of 2026-08-10, the Invoice was already fully allocated — it must not appear.');
+
+        // Deallocated well after the historical as-of date above (real
+        // system "now", which in this suite is always later than any
+        // fixture date used).
+        $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0001'));
+
+        $afterDeallocationSameHistoricalDate = $this->query->asOf($this->tenant, $historicalAsOf);
+        $this->assertSame(
+            [],
+            $afterDeallocationSameHistoricalDate->lines(),
+            'The historical 2026-08-10 result must be identical before and after a later deallocation — that is what "point-in-time reproducible" means.',
+        );
+
+        $today = $this->query->asOf($this->tenant, new \DateTimeImmutable('2026-09-08'));
+        $this->assertCount(1, $today->lines(), 'The current-day report must reflect the deallocation, unlike the historical one above.');
+    }
+
     public function test_an_unpaid_invoice_not_yet_due_is_current(): void
     {
         $this->issuedInvoice('100.00', '2026-12-31', 'invoice-future');
@@ -288,7 +323,7 @@ final class AgingReportQueryIntegrationTest extends TestCase
         return $result->invoice();
     }
 
-    private function recordedPayment(string $amount): Payment
+    private function recordedPayment(string $amount, string $paymentDate = '2026-09-01'): Payment
     {
         $idempotencyKey = IdempotencyKey::of('idem-key-payment-'.bin2hex(random_bytes(4)));
 
@@ -300,7 +335,7 @@ final class AgingReportQueryIntegrationTest extends TestCase
             ActorReference::of('user-0001'),
             CustomerId::of('customer-0001'),
             Money::fromDecimalString($amount, $this->myr),
-            new \DateTimeImmutable('2026-09-01'),
+            new \DateTimeImmutable($paymentDate),
             AccountId::of('account-bank'),
             AccountId::of('account-receivable'),
             null,

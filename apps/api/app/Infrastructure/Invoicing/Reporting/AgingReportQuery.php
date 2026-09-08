@@ -22,6 +22,21 @@ use Illuminate\Database\ConnectionInterface;
  * an Invoice's own outstanding balance (a Payment made *after*
  * `asOfDate` cannot retroactively have settled a debt as of that
  * date).
+ *
+ * **Point-in-time correct across a later deallocation (P1-4, resolved
+ * 2026-09-11).** An allocation counts toward a historical `asOfDate`
+ * if it had not yet been deallocated as of that date — `deleted_at IS
+ * NULL` (never deallocated) or `deleted_at`'s own calendar date is
+ * *after* `asOfDate` (deallocated only later than the date being
+ * reported on). Re-running this report for the same historical
+ * `asOfDate` therefore produces the identical result before and after
+ * a later deallocation — the gap AETS-009 §17 previously named as a
+ * currently-open limitation. `deleted_at` (a system timestamp, not a
+ * user-supplied Financial Date) is used here only to answer "had this
+ * fact taken effect yet, as of this date" — it never substitutes for
+ * a Financial Date on a financial event, consistent with AETS-009 §5
+ * rule 5; deallocation, unlike a Payment or an Invoice, has no
+ * business-dated field of its own to prefer instead.
  */
 final class AgingReportQuery
 {
@@ -57,15 +72,14 @@ final class AgingReportQuery
             ->where('payment_allocations.tenant_id', $tenantId->toString())
             ->whereIn('payment_allocations.invoice_id', $invoiceIds)
             ->where('payments.payment_date', '<=', $asOfDateString)
-            // Excludes a deallocated (soft-deleted, P1-3) allocation from
-            // every as-of-date computation, matching how the current
-            // outstanding balance already treats it — never a partial or
-            // historical inclusion. This preserves this query's existing
-            // behavior exactly; it does not, by itself, make a *historical*
-            // as-of-date reproducible after a later deallocation, which
-            // remains a separately-named, still-open limitation
-            // (AETS-009 §17).
-            ->whereNull('payment_allocations.deleted_at')
+            // P1-4: an allocation counts if it had not yet been
+            // deallocated as of $asOfDate — either never deallocated, or
+            // deallocated only after this historical date. See this
+            // class's own docblock.
+            ->where(function ($query) use ($asOfDateString): void {
+                $query->whereNull('payment_allocations.deleted_at')
+                    ->orWhereDate('payment_allocations.deleted_at', '>', $asOfDateString);
+            })
             ->selectRaw('payment_allocations.invoice_id as invoice_id, sum(payment_allocations.amount) as allocated')
             ->groupBy('payment_allocations.invoice_id')
             ->pluck('allocated', 'invoice_id')
