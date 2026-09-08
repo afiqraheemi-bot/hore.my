@@ -21,10 +21,28 @@ interface RequestOptions {
  * cookie, then echoes that token back as `X-XSRF-TOKEN`, exactly the
  * handshake a real browser performs — this composable does it
  * explicitly since there is no axios-style interceptor doing it for us.
+ *
+ * **The API origin's hostname is derived from the page's own
+ * `window.location.hostname` at request time, never baked in at build
+ * time.** Sanctum's CSRF cookie is `SameSite=Lax` — a browser only
+ * sends it back on a request whose target shares the same *site*
+ * (registrable domain) as the page, regardless of port. A fixed build-
+ * time API base (e.g. always `localhost:8000`) silently breaks the
+ * moment the page itself is reached through a different hostname —
+ * confirmed as a real, reproduced bug: opening the app via a LAN IP
+ * (for phone testing) while the API base stayed hardcoded to
+ * `localhost` made every login fail with a 419 CSRF mismatch, because
+ * `<lan-ip>:3000` and `localhost:8000` are different sites. Deriving
+ * the API hostname from `window.location.hostname` — keeping only the
+ * port configurable — means whichever hostname reached the frontend
+ * (`localhost`, `127.0.0.1`, or a LAN IP) is exactly the same hostname
+ * used to reach the API, so they are always same-site, with no
+ * machine-specific override file to keep in sync.
  */
 export function useApi() {
   const config = useRuntimeConfig()
-  const base = config.public.apiBase as string
+  const port = config.public.apiPort as string
+  const base = `${window.location.protocol}//${window.location.hostname}:${port}`
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const method = options.method ?? 'GET'

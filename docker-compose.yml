@@ -58,7 +58,12 @@ services:
     environment:
       NUXT_HOST: "0.0.0.0"
       NUXT_PORT: "3000"
-      NUXT_PUBLIC_API_BASE: "http://localhost:8000"
+      # The API's hostname is derived client-side from the page's own
+      # window.location.hostname (see apps/web/app/composables/useApi.ts) —
+      # only the port is configured, so the same build works whether the
+      # browser reaches this container via localhost, 127.0.0.1, or a LAN
+      # IP, with no machine-specific override needed.
+      NUXT_PUBLIC_API_PORT: "8000"
     volumes:
       - ./apps/web:/app
       - web_node_modules:/app/node_modules

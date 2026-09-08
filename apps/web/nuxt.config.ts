@@ -26,9 +26,13 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      // The Laravel API's origin (ADR-0008: separate origin, Sanctum SPA
-      // cookie auth) — never bundled with a trailing slash.
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      // Only the Laravel API's port is configured here — its hostname
+      // is derived at request time from the page's own
+      // `window.location.hostname` (see `useApi.ts`'s own docblock for
+      // why: a fixed cross-host API base breaks Sanctum's SameSite=Lax
+      // CSRF cookie the moment the page is reached through a different
+      // hostname, e.g. a LAN IP for phone testing).
+      apiPort: process.env.NUXT_PUBLIC_API_PORT || '8000',
     },
   },
 })
