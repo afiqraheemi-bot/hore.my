@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ms">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Panduan produk interaktif hore.my untuk screening visi, aliran pengguna dan kawalan perakaunan."
+    />
+    <title>hore.my — Product Screening</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f7f8f6;
+        --surface: rgba(255, 255, 255, 0.9);
+        --ink: #18201c;
+        --muted: #66706a;
+        --line: #dfe4e0;
+        --brand: #176b50;
+        --brand-soft: #e6f3ed;
+        --blue: #315fd6;
+        --blue-soft: #edf2ff;
+        --amber: #946200;
+        --amber-soft: #fff6d9;
+        --red: #a43c36;
+        --red-soft: #fff0ee;
+        --shadow: 0 20px 60px rgba(25, 40, 31, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 80% -10%, #dceee5 0, transparent 30rem),
+          var(--paper);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+      a { color: inherit; }
+
+      .shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+      .sidebar {
+        position: sticky; top: 0; height: 100vh; padding: 28px 20px;
+        border-right: 1px solid var(--line); background: rgba(247, 248, 246, 0.88);
+        backdrop-filter: blur(18px); overflow-y: auto;
+      }
+      .logo { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 18px; }
+      .mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: var(--ink); color: white; }
+      .eyebrow { margin: 25px 10px 8px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      nav a { display: block; padding: 10px 12px; border-radius: 10px; color: var(--muted); font-size: 14px; text-decoration: none; }
+      nav a:hover, nav a.active { background: white; color: var(--ink); box-shadow: 0 5px 18px rgba(25, 40, 31, .06); }
+      .sidebar-note { margin-top: 26px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+      main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 34px 42px 100px; }
+      section { scroll-margin-top: 24px; margin-bottom: 76px; }
+      .hero { min-height: 72vh; display: grid; align-content: center; }
+      .kicker { color: var(--brand); font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      h1 { max-width: 880px; margin: 16px 0 20px; font-size: clamp(44px, 7vw, 88px); line-height: .98; letter-spacing: -.055em; }
+      h2 { margin: 0 0 12px; font-size: clamp(30px, 4vw, 48px); letter-spacing: -.04em; }
+      h3 { margin: 0 0 8px; font-size: 18px; }
+      p { line-height: 1.7; }
+      .lead { max-width: 780px; color: var(--muted); font-size: 20px; }
+      .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+      .button { border: 1px solid var(--line); border-radius: 999px; padding: 11px 17px; background: white; color: var(--ink); text-decoration: none; font-weight: 700; }
+      .button.primary { border-color: var(--ink); background: var(--ink); color: white; }
+      .status-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 38px; }
+      .pill { border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700; }
+      .pill.good { border-color: #b7ddcc; background: var(--brand-soft); color: var(--brand); }
+      .pill.partial { border-color: #ecd997; background: var(--amber-soft); color: var(--amber); }
+
+      .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+      .section-head p { max-width: 620px; margin: 0; color: var(--muted); }
+      .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+      .card { grid-column: span 4; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 30px rgba(25, 40, 31, .04); }
+      .card.wide { grid-column: span 6; }
+      .card.full { grid-column: 1 / -1; }
+      .card p { margin-bottom: 0; color: var(--muted); font-size: 14px; }
+      .number { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 20px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 800; }
+
+      .journey { display: flex; gap: 0; overflow-x: auto; padding: 18px 0 10px; }
+      .journey button { min-width: 148px; border: 0; background: transparent; text-align: left; }
+      .journey .node { position: relative; padding-top: 40px; color: var(--muted); font-size: 13px; font-weight: 700; }
+      .journey .node::before { content: ""; position: absolute; top: 11px; left: 0; width: 20px; height: 20px; border: 5px solid var(--paper); border-radius: 50%; background: #aab2ad; box-shadow: 0 0 0 1px var(--line); }
+      .journey .node::after { content: ""; position: absolute; top: 20px; left: 20px; width: 128px; height: 1px; background: var(--line); }
+      .journey button:last-child .node::after { display: none; }
+      .journey button.active .node { color: var(--ink); }
+      .journey button.active .node::before { background: var(--brand); }
+      .journey-detail { min-height: 180px; padding: 28px; border: 1px solid var(--line); border-radius: 20px; background: white; box-shadow: var(--shadow); }
+      .journey-detail small { color: var(--brand); font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+
+      .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+      .tab { border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; background: transparent; color: var(--muted); }
+      .tab.active { border-color: var(--ink); background: var(--ink); color: white; }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
+      .accounting-example { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .entry { padding: 18px; border-radius: 14px; background: var(--blue-soft); }
+      .entry.credit { background: var(--brand-soft); }
+      .entry span { display: block; color: var(--muted); font-size: 12px; }
+      .entry strong { display: block; margin-top: 5px; font-size: 19px; }
+
+      .state-map { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; }
+      .state { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+      .state button { width: 100%; border: 0; background: none; color: inherit; text-align: left; font-weight: 800; }
+      .state small { display: block; margin-top: 5px; color: var(--muted); line-height: 1.45; }
+      .state.material { border-color: #ecd997; background: var(--amber-soft); }
+      .state.terminal { background: #f0f2f0; }
+      .state.danger { border-color: #efc3bf; background: var(--red-soft); }
+
+      .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .compare > div { padding: 25px; border: 1px solid var(--line); border-radius: 20px; background: white; }
+      .compare ul, .checklist { padding: 0; list-style: none; }
+      .compare li { margin: 9px 0; color: var(--muted); }
+      .compare li::before { content: "✓"; margin-right: 10px; color: var(--brand); font-weight: 900; }
+      .compare .future li::before { content: "→"; color: var(--amber); }
+
+      .screening-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+      .progress { color: var(--muted); font-size: 13px; }
+      .progress strong { color: var(--ink); }
+      .checklist li { display: flex; gap: 12px; align-items: flex-start; padding: 15px 0; border-bottom: 1px solid var(--line); }
+      .checklist input { width: 19px; height: 19px; margin-top: 2px; accent-color: var(--brand); }
+      .checklist label { flex: 1; line-height: 1.5; }
+      .checklist small { display: block; color: var(--muted); margin-top: 3px; }
+      .reset { border: 0; background: none; color: var(--red); font-weight: 700; }
+
+      .callout { padding: 24px; border-left: 4px solid var(--brand); border-radius: 0 18px 18px 0; background: var(--brand-soft); }
+      .callout strong { display: block; margin-bottom: 5px; }
+      footer { padding-top: 30px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+
+      @media (max-width: 900px) {
+        .shell { display: block; }
+        .sidebar { position: sticky; z-index: 10; height: auto; padding: 12px 18px; border-right: 0; border-bottom: 1px solid var(--line); }
+        .sidebar .eyebrow, .sidebar-note { display: none; }
+        nav { display: flex; gap: 5px; overflow-x: auto; margin-top: 10px; }
+        nav a { white-space: nowrap; }
+        main { padding: 30px 20px 70px; }
+        .hero { min-height: 60vh; }
+        .card, .card.wide { grid-column: span 6; }
+        .state-map { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 600px) {
+        .card, .card.wide { grid-column: 1 / -1; }
+        .compare, .accounting-example { grid-template-columns: 1fr; }
+        .section-head { display: block; }
+        .state-map { grid-template-columns: 1fr; }
+        h1 { font-size: 48px; }
+      }
+      @media print {
+        .sidebar, .hero-actions, .tabs, .screening-toolbar button { display: none; }
+        .shell { display: block; }
+        main { max-width: none; padding: 0; }
+        section { break-inside: avoid; margin-bottom: 38px; }
+        .tab-panel { display: block; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="logo"><span class="mark">H</span> hore.my</div>
+        <div class="eyebrow">Product screening</div>
+        <nav aria-label="Navigasi dokumen">
+          <a href="#overview">Ringkasan</a>
+          <a href="#journey">Perjalanan pengguna</a>
+          <a href="#tasks">Task & Proposal</a>
+          <a href="#accounting">Accounting Core</a>
+          <a href="#modules">Modul produk</a>
+          <a href="#reality">Semasa vs sasaran</a>
+          <a href="#screening">Checklist screening</a>
+        </nav>
+        <div class="sidebar-note">
+          Dokumen ini ialah alat penerangan dan screening produk. Dokumen governance, ADR, AETS dan WTS kekal sebagai sumber teknikal rasmi.
+        </div>
+      </aside>
+
+      <main>
+        <section id="overview" class="hero">
+          <span class="kicker">AI-native accounting workspace</span>
+          <h1>Mudah di hadapan.<br />Tepat di belakang.</h1>
+          <p class="lead">
+            hore.my menukarkan bukti atau arahan kepada cadangan kewangan yang boleh difahami,
+            meminta keputusan manusia, kemudian menyerahkan hanya arahan yang sah kepada enjin
+            perakaunan deterministik.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#journey">Mulakan product tour</a>
+            <a class="button" href="#screening">Buka checklist team</a>
+            <button class="button" type="button" onclick="window.print()">Cetak / simpan PDF</button>
+          </div>
+          <div class="status-strip">
+            <span class="pill good">Accounting foundation tersedia</span>
+            <span class="pill good">Human confirmation tersedia</span>
+            <span class="pill partial">AI & OCR belum lengkap</span>
+            <span class="pill partial">Bukan production-ready</span>
+          </div>
+        </section>
+
+        <section id="journey">
+          <div class="section-head">
+            <div><span class="kicker">01 · Core journey</span><h2>Satu perjalanan, tujuh checkpoint</h2></div>
+            <p>Klik setiap checkpoint untuk melihat tanggungjawab pengguna dan kawalan sistem.</p>
+          </div>
+          <div class="journey" id="journeyButtons" aria-label="Perjalanan pengguna"></div>
+          <article class="journey-detail" id="journeyDetail" aria-live="polite"></article>
+        </section>
+
+        <section id="tasks">
+          <div class="section-head">
+            <div><span class="kicker">02 · Work queue</span><h2>Task bukan chat</h2></div>
+            <p>Setiap Task mempunyai objektif, Proposal, keputusan manusia, audit trail dan hasil terminal.</p>
+          </div>
+          <div class="grid">
+            <article class="card"><div class="number">1</div><h3>Instruction / Evidence</h3><p>Pengguna menaip arahan atau memberikan resit, PDF, CSV, XLSX atau imej.</p></article>
+            <article class="card"><div class="number">2</div><h3>Structured Proposal</h3><p>Amaun, tarikh, kategori, akaun, bukti dan confidence disusun untuk semakan.</p></article>
+            <article class="card"><div class="number">3</div><h3>Human Confirmation</h3><p>Hanya pengguna authenticated boleh meluluskan tindakan yang akan menyentuh ledger.</p></article>
+          </div>
+          <h3 style="margin-top: 28px">State model</h3>
+          <div class="state-map" style="margin-top: 12px">
+            <div class="state"><button>Received</button><small>Arahan atau bukti diterima.</small></div>
+            <div class="state"><button>Processing</button><small>Interpretasi sedang berlaku.</small></div>
+            <div class="state material"><button>NeedsInformation</button><small>Ketidakpastian material memerlukan jawapan.</small></div>
+            <div class="state material"><button>NeedsReview</button><small>Proposal menunggu keputusan manusia.</small></div>
+            <div class="state material"><button>Approved</button><small>Pengguna telah mengesahkan.</small></div>
+            <div class="state material"><button>Executing</button><small>Accounting Command sedang diproses.</small></div>
+            <div class="state terminal"><button>Completed</button><small>Journal berjaya dipost.</small></div>
+            <div class="state danger"><button>Failed</button><small>Accounting Core menolak arahan.</small></div>
+            <div class="state terminal"><button>Rejected</button><small>Proposal ditolak pengguna.</small></div>
+            <div class="state terminal"><button>Cancelled / Superseded</button><small>Task tamat atau digantikan tanpa sejarah dipadam.</small></div>
+          </div>
+        </section>
+
+        <section id="accounting">
+          <div class="section-head">
+            <div><span class="kicker">03 · Financial integrity</span><h2>Tiada satu sen berubah secara senyap</h2></div>
+            <p>Pilih contoh untuk melihat kesan double-entry yang dikawal oleh Accounting Core.</p>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="expense">Perbelanjaan</button>
+            <button class="tab" data-tab="income">Pendapatan</button>
+            <button class="tab" data-tab="invoice">Invois</button>
+            <button class="tab" data-tab="payment">Bayaran</button>
+            <button class="tab" data-tab="transfer">Transfer</button>
+          </div>
+          <div id="accountingPanels"></div>
+          <div class="grid" style="margin-top: 18px">
+            <article class="card wide"><h3>Posting contract</h3><p>Exact money, sekurang-kurangnya dua baris, debit sama dengan kredit, satu transaksi atomik dan Idempotency Key bagi arahan material.</p></article>
+            <article class="card wide"><h3>Correction contract</h3><p>Posted Journal tidak diedit atau dipadam. Pembetulan menghasilkan reversal dan replacement yang boleh dijejaki kepada rekod asal.</p></article>
+          </div>
+        </section>
+
+        <section id="modules">
+          <div class="section-head">
+            <div><span class="kicker">04 · Product modules</span><h2>Dua belas bahagian, satu cerita kewangan</h2></div>
+            <p>Modul dipisahkan mengikut tanggungjawab tetapi kekal dalam Laravel modular monolith.</p>
+          </div>
+          <div class="grid">
+            <article class="card"><h3>Identity & Tenant</h3><p>Login, sesi dan pengasingan data setiap perniagaan.</p></article>
+            <article class="card"><h3>Business Profile</h3><p>Identiti sah, SSM, TIN, alamat dan tahun kewangan.</p></article>
+            <article class="card"><h3>Workspace & Task</h3><p>Work Queue, Proposal, approval, rejection dan transition history.</p></article>
+            <article class="card"><h3>Transactions</h3><p>Expense, income, transfer, modal dan owner drawing.</p></article>
+            <article class="card"><h3>Customers & Invoicing</h3><p>Pelanggan, draft invoice, issue dan receivable.</p></article>
+            <article class="card"><h3>Payments</h3><p>Bayaran masuk dan allocation kepada outstanding invoices.</p></article>
+            <article class="card"><h3>Banking</h3><p>Import penyata CSV, transaksi bank dan match suggestion.</p></article>
+            <article class="card"><h3>Reconciliation</h3><p>Rekonsiliasi hanya selesai apabila perbezaan tepat RM0.00.</p></article>
+            <article class="card"><h3>Accounting Core</h3><p>Journal, period lock, idempotency dan correction chain.</p></article>
+            <article class="card"><h3>Reporting</h3><p>Trial Balance, P&amp;L, Balance Sheet, Ledger, Aging dan Evidence Index.</p></article>
+            <article class="card"><h3>AI Orchestration</h3><p>Interpretasi dan cadangan sahaja; tidak mempunyai laluan menulis ke ledger.</p></article>
+            <article class="card"><h3>Audit & Operations</h3><p>Jejak keputusan, bukti, actor, monitoring, backup dan recovery.</p></article>
+          </div>
+        </section>
+
+        <section id="reality">
+          <div class="section-head">
+            <div><span class="kicker">05 · Reality check</span><h2>Apa yang ada dan apa yang belum</h2></div>
+            <p>Pemisahan ini mengelakkan prototype, foundation dan production readiness disalah anggap sebagai perkara yang sama.</p>
+          </div>
+          <div class="compare">
+            <div>
+              <h3>Foundation yang sudah dibina</h3>
+              <ul>
+                <li>Identity, tenant dan business profile</li>
+                <li>Chart of Accounts dan exact-money model</li>
+                <li>Balanced, atomic, idempotent posting</li>
+                <li>Expense, income, transfer dan owner equity</li>
+                <li>Customers, invoices, payments dan allocations</li>
+                <li>Bank import, matching dan reconciliation</li>
+                <li>Financial reports dan audit/evidence linkage</li>
+                <li>Manual Task → Proposal → confirmation flow</li>
+              </ul>
+            </div>
+            <div class="future">
+              <h3>Pengalaman sasaran yang masih perlu dilengkapkan</h3>
+              <ul>
+                <li>Home sebagai action-first workspace utama</li>
+                <li>Universal composer dan lampiran bukti sebenar</li>
+                <li>Document processing, OCR dan AI proposals</li>
+                <li>NeedsInformation dan edit/supersede Proposal UX</li>
+                <li>MyInvois live adapter dan status reconciliation</li>
+                <li>Quotation, compliance pack dan export menyeluruh</li>
+                <li>PWA dan production operations hardening</li>
+                <li>Proof of Accuracy serta release certification</li>
+              </ul>
+            </div>
+          </div>
+          <div class="callout" style="margin-top: 18px">
+            <strong>North star pengalaman pengguna</strong>
+            Pengguna sepatutnya bermula dengan “Apa yang kau mahu selesaikan hari ini?”, bukan perlu mengetahui menu atau prinsip debit dan kredit.
+          </div>
+        </section>
+
+        <section id="screening">
+          <div class="section-head">
+            <div><span class="kicker">06 · Team review</span><h2>Checklist product screening</h2></div>
+            <p>Tanda bersama Founder, Product, Design dan Engineering. Kemajuan disimpan hanya dalam browser ini.</p>
+          </div>
+          <div class="card full">
+            <div class="screening-toolbar">
+              <div class="progress"><strong id="doneCount">0</strong> daripada <strong id="totalCount">0</strong> disemak</div>
+              <button class="reset" type="button" id="resetChecks">Reset</button>
+            </div>
+            <ul class="checklist" id="screeningChecklist"></ul>
+          </div>
+        </section>
+
+        <footer>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 9 September 2026</p>
+          <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      const journey = [
+        { title: 'Daftar', text: 'Pengguna mencipta identiti, menerima tenant sendiri dan melengkapkan profil perniagaan.', control: 'Sesi authenticated dan Tenant ID menjadi sempadan akses semua data.' },
+        { title: 'Berikan input', text: 'Pengguna memberi arahan, amaun dan akaun; pengalaman sasaran turut menerima imej, PDF, CSV dan XLSX.', control: 'Input dinormalisasi tetapi belum menyentuh ledger.' },
+        { title: 'Task', text: 'Satu objektif kerja diwujudkan dengan status, correlation ID dan transition history.', control: 'Setiap rekod discope kepada tenant dan penciptaan berbilang baris mesti atomik.' },
+        { title: 'Proposal', text: 'Cadangan berstruktur menerangkan amaun, tarikh, kategori, akaun, bukti dan kesan.', control: 'Proposal bukan Journal dan tidak mempunyai kuasa posting.' },
+        { title: 'Semak', text: 'Pengguna menyemak kesan material lalu meluluskan, menolak atau meminta pembetulan.', control: 'Hanya manusia authenticated boleh melakukan Human Confirmation.' },
+        { title: 'Post', text: 'Accounting Core mengesahkan period, akaun, wang, keseimbangan, idempotency dan duplicate protection.', control: 'Semua rekod commit bersama atau rollback bersama.' },
+        { title: 'Jejak', text: 'Task selesai dipautkan kepada Journal, source, bukti, actor dan laporan berkaitan.', control: 'Posted Journal append-only; correction menggunakan reversal + replacement.' },
+      ]
+
+      const entries = {
+        expense: ['Perbelanjaan Shell RM85.40', 'Petrol & Travel', 'Maybank', 'RM85.40'],
+        income: ['Pendapatan servis RM500.00', 'Maybank', 'Service Revenue', 'RM500.00'],
+        invoice: ['Invois pelanggan RM2,500.00', 'Accounts Receivable', 'Service Revenue', 'RM2,500.00'],
+        payment: ['Bayaran pelanggan RM2,500.00', 'Maybank', 'Accounts Receivable', 'RM2,500.00'],
+        transfer: ['Transfer ke Petty Cash RM200.00', 'Petty Cash', 'Maybank', 'RM200.00'],
+      }
+
+      const screeningItems = [
+        ['Nilai produk', 'Pengguna memahami bahawa hore.my menyelesaikan tugasan perakaunan, bukan menawarkan chat terbuka.'],
+        ['First-run experience', 'Selepas onboarding, tindakan seterusnya jelas tanpa pengguna perlu memahami sistem akaun.'],
+        ['Action-first home', 'Home memusatkan composer, tindakan pantas dan perkara yang memerlukan keputusan.'],
+        ['Proposal clarity', 'Amaun, tarikh, kategori, akaun, bukti, confidence dan kesan kewangan mudah disemak.'],
+        ['Human confirmation', 'Tiada tindakan material dipost tanpa keputusan manusia yang jelas dan direkodkan.'],
+        ['Uncertainty handling', 'Sistem bertanya apabila tidak pasti dan tidak membuat tekaan kewangan secara senyap.'],
+        ['Financial integrity', 'Exact money, balanced posting, atomicity dan idempotency dibuktikan oleh ujian.'],
+        ['Correction safety', 'Pembetulan menggunakan reversal/replacement dan sejarah asal kekal dapat dilihat.'],
+        ['Tenant isolation', 'List, direct-object access dan setiap mutation tidak boleh merentas tenant.'],
+        ['Traceability', 'Setiap angka laporan boleh dijejaki kepada Journal, Task, actor dan bukti.'],
+        ['Accessibility', 'Flow utama responsif, keyboard-friendly dan memenuhi sasaran WCAG 2.2 AA.'],
+        ['Release truth', 'Prototype, implemented, tested, deployed dan production-ready dilabel secara berasingan.'],
+      ]
+
+      const buttons = document.getElementById('journeyButtons')
+      const detail = document.getElementById('journeyDetail')
+      function selectJourney(index) {
+        document.querySelectorAll('.journey button').forEach((button, i) => button.classList.toggle('active', i === index))
+        const item = journey[index]
+        detail.innerHTML = `<small>Checkpoint ${index + 1}</small><h3>${item.title}</h3><p>${item.text}</p><p><strong>Kawalan:</strong> ${item.control}</p>`
+      }
+      journey.forEach((item, index) => {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.innerHTML = `<div class="node">${item.title}</div>`
+        button.addEventListener('click', () => selectJourney(index))
+        buttons.appendChild(button)
+      })
+      selectJourney(0)
+
+      const panels = document.getElementById('accountingPanels')
+      Object.entries(entries).forEach(([key, value], index) => {
+        const panel = document.createElement('div')
+        panel.className = `tab-panel${index === 0 ? ' active' : ''}`
+        panel.dataset.panel = key
+        panel.innerHTML = `<div class="card full"><h3>${value[0]}</h3><div class="accounting-example"><div class="entry"><span>DEBIT</span><strong>${value[1]}</strong><span>${value[3]}</span></div><div class="entry credit"><span>KREDIT</span><strong>${value[2]}</strong><span>${value[3]}</span></div></div></div>`
+        panels.appendChild(panel)
+      })
+      document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'))
+        document.querySelectorAll('.tab-panel').forEach((item) => item.classList.remove('active'))
+        tab.classList.add('active')
+        document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active')
+      }))
+
+      const checklist = document.getElementById('screeningChecklist')
+      const storageKey = 'hore-product-screening-v1'
+      let saved = {}
+      try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}') } catch { saved = {} }
+      screeningItems.forEach(([title, description], index) => {
+        const item = document.createElement('li')
+        item.innerHTML = `<input id="check-${index}" type="checkbox" ${saved[index] ? 'checked' : ''}><label for="check-${index}"><strong>${title}</strong><small>${description}</small></label>`
+        checklist.appendChild(item)
+      })
+      function updateProgress() {
+        const checks = [...checklist.querySelectorAll('input')]
+        const state = Object.fromEntries(checks.map((check, index) => [index, check.checked]))
+        localStorage.setItem(storageKey, JSON.stringify(state))
+        document.getElementById('doneCount').textContent = checks.filter((check) => check.checked).length
+        document.getElementById('totalCount').textContent = checks.length
+      }
+      checklist.addEventListener('change', updateProgress)
+      document.getElementById('resetChecks').addEventListener('click', () => {
+        checklist.querySelectorAll('input').forEach((check) => { check.checked = false })
+        updateProgress()
+      })
+      updateProgress()
+
+      const navLinks = [...document.querySelectorAll('nav a')]
+      const sections = [...document.querySelectorAll('main section[id]')]
+      const observer = new IntersectionObserver((entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
+        if (!visible) return
+        navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`))
+      }, { rootMargin: '-20% 0px -65%', threshold: [0, .2, .6] })
+      sections.forEach((section) => observer.observe(section))
+    </script>
+  </body>
+</html>
