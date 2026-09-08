@@ -22,6 +22,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\Feature\Infrastructure\Accounting\ChartOfAccounts\AccountRepositoryIntegrationTest;
 use Tests\TestCase;
 
@@ -40,6 +41,8 @@ use Tests\TestCase;
  */
 final class JournalRepositoryIntegrationTest extends TestCase
 {
+    use DropsTablesDependentOnJournalsAndAccounts;
+
     private const JOURNAL_TABLE = 'journals';
 
     private const LINE_TABLE = 'journal_lines';
@@ -918,6 +921,8 @@ final class JournalRepositoryIntegrationTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         // `migrate:rollback --path=X` only rolls back the most recent
         // *batch*, using `--path` merely to filter which files within

@@ -10,6 +10,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -29,6 +30,8 @@ use Tests\TestCase;
  */
 final class AccountsTableMigrationTest extends TestCase
 {
+    use DropsTablesDependentOnJournalsAndAccounts;
+
     private const TABLE = 'accounts';
 
     private const MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
@@ -391,6 +394,8 @@ final class AccountsTableMigrationTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         // journal_lines (M3-T9) carries a composite foreign key onto
         // this table's (tenant_id, account_id) — if it already exists

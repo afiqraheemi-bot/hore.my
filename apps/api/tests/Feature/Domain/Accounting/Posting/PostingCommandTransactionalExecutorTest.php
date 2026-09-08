@@ -43,6 +43,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Concerns\CleansSharedAccountingTables;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -68,6 +69,7 @@ use Tests\TestCase;
 final class PostingCommandTransactionalExecutorTest extends TestCase
 {
     use CleansSharedAccountingTables;
+    use DropsTablesDependentOnJournalsAndAccounts;
 
     private const IDEMPOTENCY_TABLE = 'posting_idempotency_keys';
 
@@ -924,6 +926,8 @@ final class PostingCommandTransactionalExecutorTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         // Dependency order matters here: `posting_idempotency_keys`
         // holds a composite foreign key referencing `journals`, so

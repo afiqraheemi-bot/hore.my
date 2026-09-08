@@ -26,6 +26,7 @@ use App\Infrastructure\Accounting\ChartOfAccounts\AccountRepository;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -55,6 +56,8 @@ use Tests\TestCase;
  */
 final class PostingCommandAccountValidatorTest extends TestCase
 {
+    use DropsTablesDependentOnJournalsAndAccounts;
+
     private const ACCOUNT_TABLE = 'accounts';
 
     private const ACCOUNTS_MIGRATION_PATH = 'database/migrations/2026_09_04_030000_create_accounts_table.php';
@@ -326,6 +329,7 @@ final class PostingCommandAccountValidatorTest extends TestCase
             return;
         }
 
+        self::dropTablesDependentOnJournalsAndAccounts();
         Schema::connection('pgsql')->dropIfExists('journal_lines');
         Schema::connection('pgsql')->dropIfExists('expenses');
         Schema::connection('pgsql')->dropIfExists('incomes');

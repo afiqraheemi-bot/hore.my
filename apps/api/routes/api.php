@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PeriodController;
 use App\Http\Controllers\Api\ReconciliationController;
 use App\Http\Controllers\Api\ReportingController;
+use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TransferController;
 use Illuminate\Support\Facades\Route;
 
@@ -84,6 +85,13 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/capital-contributions', [CapitalContributionController::class, 'store']);
             Route::post('/owner-drawings', [OwnerDrawingController::class, 'store']);
             Route::post('/periods/close', [PeriodController::class, 'close']);
+
+            Route::get('/tasks', [TaskController::class, 'index']);
+            Route::post('/tasks', [TaskController::class, 'store']);
+            Route::get('/tasks/{taskId}', [TaskController::class, 'show']);
+            Route::post('/tasks/{taskId}/approve', [TaskController::class, 'approve']);
+            Route::post('/tasks/{taskId}/reject', [TaskController::class, 'reject']);
+            Route::post('/tasks/{taskId}/cancel', [TaskController::class, 'cancel']);
 
             Route::prefix('reports')->group(function (): void {
                 Route::get('/trial-balance', [ReportingController::class, 'trialBalance']);

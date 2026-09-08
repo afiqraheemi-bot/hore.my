@@ -60,6 +60,7 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -77,6 +78,8 @@ use Tests\TestCase;
  */
 final class ReportingQueriesIntegrationTest extends TestCase
 {
+    use DropsTablesDependentOnJournalsAndAccounts;
+
     private const EXPENSE_TABLE = 'expenses';
 
     private const INCOME_TABLE = 'incomes';
@@ -662,6 +665,8 @@ final class ReportingQueriesIntegrationTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         if (! Schema::connection('pgsql')->hasTable(self::ACCOUNT_TABLE)) {
             self::forceCleanMigration(self::ACCOUNTS_MIGRATION_PATH, [self::ACCOUNT_TABLE]);

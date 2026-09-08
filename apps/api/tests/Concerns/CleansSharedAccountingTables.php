@@ -30,7 +30,8 @@ use Illuminate\Support\Facades\Schema;
  * `period_closures`, M14's `transfers`, M17's `bank_accounts`/
  * `bank_transactions`/`bank_statement_import_batches`, M18's
  * `matches`/`reconciliations`/`reconciliation_reopenings`, M20's
- * `invoices`/`invoice_lines`), *every*
+ * `invoices`/`invoice_lines`, ADR-0009's `tasks`/`proposals`/
+ * `task_transitions`), *every*
  * existing file needed the identical edit repeated, and a missed file
  * silently reintroduced the exact same class of bug. This trait
  * exists specifically so that the next such table only ever needs to
@@ -73,6 +74,9 @@ trait CleansSharedAccountingTables
         'incomes',
         'transfers',
         'owner_equity_transactions',
+        'task_transitions',
+        'proposals',
+        'tasks',
         'journal_lines',
         'journals',
         'accounts',

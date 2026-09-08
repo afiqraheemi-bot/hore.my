@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Concerns\CleansSharedAccountingTables;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -69,6 +70,7 @@ use Tests\TestCase;
 final class PostingCommandJournalStateResolverTest extends TestCase
 {
     use CleansSharedAccountingTables;
+    use DropsTablesDependentOnJournalsAndAccounts;
 
     private const JOURNAL_TABLE = 'journals';
 
@@ -393,6 +395,8 @@ final class PostingCommandJournalStateResolverTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         // `posting_idempotency_keys` (M4-T15) holds a composite foreign
         // key on (tenant_id, journal_id) referencing this table, so it

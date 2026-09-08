@@ -13,6 +13,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -34,6 +35,8 @@ use Tests\TestCase;
  */
 final class PostingIdempotencyRepositoryIntegrationTest extends TestCase
 {
+    use DropsTablesDependentOnJournalsAndAccounts;
+
     private const TABLE = 'posting_idempotency_keys';
 
     private const JOURNAL_TABLE = 'journals';
@@ -316,6 +319,8 @@ final class PostingIdempotencyRepositoryIntegrationTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         // Dependency order matters here: this table's own migration
         // creates a composite foreign key referencing `journals`, so

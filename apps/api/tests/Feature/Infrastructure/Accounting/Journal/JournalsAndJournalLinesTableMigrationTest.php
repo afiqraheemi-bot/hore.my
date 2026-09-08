@@ -8,6 +8,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\Feature\Infrastructure\Accounting\ChartOfAccounts\AccountsTableMigrationTest;
 use Tests\TestCase;
 
@@ -35,6 +36,8 @@ use Tests\TestCase;
  */
 final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 {
+    use DropsTablesDependentOnJournalsAndAccounts;
+
     private const JOURNAL_TABLE = 'journals';
 
     private const LINE_TABLE = 'journal_lines';
@@ -521,6 +524,8 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         // Reconcile any state left behind by a prior interrupted run
         // before migrating fresh, so this class is idempotent across

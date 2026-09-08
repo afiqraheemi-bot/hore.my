@@ -53,6 +53,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Concerns\CleansSharedAccountingTables;
+use Tests\Concerns\DropsTablesDependentOnJournalsAndAccounts;
 use Tests\TestCase;
 
 /**
@@ -68,6 +69,7 @@ use Tests\TestCase;
 final class MatchingServiceIntegrationTest extends TestCase
 {
     use CleansSharedAccountingTables;
+    use DropsTablesDependentOnJournalsAndAccounts;
 
     private const ACCOUNT_TABLE = 'accounts';
 
@@ -354,6 +356,8 @@ final class MatchingServiceIntegrationTest extends TestCase
 
             return;
         }
+
+        self::dropTablesDependentOnJournalsAndAccounts();
 
         $requiredTables = [
             self::ACCOUNT_TABLE => 'database/migrations/2026_09_04_030000_create_accounts_table.php',

@@ -37,6 +37,9 @@ final class IdentityAndAccountingApiTest extends TestCase
         'incomes',
         'transfers',
         'owner_equity_transactions',
+        'task_transitions',
+        'proposals',
+        'tasks',
         'reconciliation_reopenings',
         'matches',
         'bank_transactions',
@@ -788,6 +791,85 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $response->assertStatus(422);
         $this->assertSame(0, DB::connection('pgsql')->table('expenses')->count());
+    }
+
+    // --- Workspace / Task (ADR-0009, WTS-001) --------------------------
+
+    public function test_a_task_submitted_and_approved_over_http_posts_a_journal(): void
+    {
+        $this->registerAndReturnCredentials('workspace-owner@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Cash', 'Asset');
+
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '75.00',
+            'transaction_date' => '2026-09-08',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+            'description' => 'Printer paper',
+        ], ['Idempotency-Key' => 'task-key-0001']);
+
+        $submitResponse->assertStatus(201);
+        $submitResponse->assertJsonPath('state', 'NeedsReview');
+        $taskId = $submitResponse->json('id');
+
+        $approveResponse = $this->postJson('/api/v1/tasks/'.$taskId.'/approve');
+
+        $approveResponse->assertStatus(200);
+        $approveResponse->assertJsonPath('state', 'Completed');
+        $this->assertNotNull($approveResponse->json('result_journal_id'));
+
+        $showResponse = $this->getJson('/api/v1/tasks/'.$taskId);
+        $showResponse->assertStatus(200);
+        $showResponse->assertJsonPath('proposal.command_type', 'Expense');
+        $transitions = $showResponse->json('transitions');
+        $this->assertCount(6, $transitions);
+    }
+
+    public function test_a_task_can_be_rejected_with_a_reason(): void
+    {
+        $this->registerAndReturnCredentials('workspace-reject@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Cash', 'Asset');
+
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '20.00',
+            'transaction_date' => '2026-09-08',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+            'description' => 'Wrong entry',
+        ], ['Idempotency-Key' => 'task-key-0002']);
+        $taskId = $submitResponse->json('id');
+
+        $rejectResponse = $this->postJson('/api/v1/tasks/'.$taskId.'/reject', ['reason' => 'Wrong account.']);
+
+        $rejectResponse->assertStatus(200);
+        $rejectResponse->assertJsonPath('state', 'Rejected');
+    }
+
+    public function test_a_tenants_tasks_are_never_visible_to_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('workspace-tenant-a@example.my');
+        $accountAId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $cashAId = $this->createAccount('1000', 'Cash', 'Asset');
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '10.00',
+            'transaction_date' => '2026-09-08',
+            'primary_account_id' => $accountAId,
+            'secondary_account_id' => $cashAId,
+            'description' => 'Tenant A task',
+        ], ['Idempotency-Key' => 'task-key-cross-tenant']);
+        $taskId = $submitResponse->json('id');
+        $this->logout();
+
+        $this->registerAndReturnCredentials('workspace-tenant-b@example.my');
+
+        $this->getJson('/api/v1/tasks/'.$taskId)->assertStatus(404);
+        $this->postJson('/api/v1/tasks/'.$taskId.'/approve')->assertStatus(404);
+        $this->assertSame(1, DB::connection('pgsql')->table('tasks')->count());
     }
 
     // --- Expense / Income / Reporting end-to-end ----------------------------
