@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Exception;
 
 use App\Domain\Accounting\Journal\JournalId;
+use App\Domain\Accounting\Money\Money;
+use App\Domain\Invoicing\Invoice;
 use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Invoicing\InvoiceIssuingService;
 use App\Domain\Invoicing\InvoiceStatus;
@@ -55,6 +57,48 @@ final class CorruptInvoiceRecordException extends \RuntimeException
             'Invoice "%s" has an unrecognized status "%s" — expected "Draft" or "Issued".',
             $invoiceId->toString(),
             $status,
+        ));
+    }
+
+    /**
+     * Thrown when reconstituting an Invoice (P0/P1 audit remediation,
+     * 2026-09-11) and one persisted line's own `lineAmount` no longer
+     * equals `unitPrice × quantity` — {@see Invoice::draft()} and
+     * {@see Invoice::update()} always compute `lineAmount` this way, so
+     * this can only mean the row was written outside those two paths
+     * (a manual `UPDATE`, a defective import, or a migration bug).
+     * Silently trusting a mismatched `lineAmount` would let a
+     * corrupted line's amount flow straight into every report and,
+     * were it later Issued, into the Journal Accounting Core posts —
+     * this fails loudly instead, before any of that can happen.
+     */
+    public static function forLineAmountMismatch(InvoiceId $invoiceId, int $lineIndex, Money $expected, Money $actual): self
+    {
+        return new self(sprintf(
+            'Invoice "%s" line %d has lineAmount "%s" but quantity × unitPrice computes to "%s" — this line is corrupt.',
+            $invoiceId->toString(),
+            $lineIndex,
+            $actual->toDecimalString(),
+            $expected->toDecimalString(),
+        ));
+    }
+
+    /**
+     * Thrown when reconstituting an Invoice and its persisted
+     * `totalAmount` no longer equals the sum of its own lines'
+     * `lineAmount`s — {@see Invoice::draft()} and
+     * {@see Invoice::update()} always compute `totalAmount` this way
+     * (via the same `sumLines()`), so this can only mean the row was
+     * written outside those two paths. Fails loudly for the identical
+     * reason {@see forLineAmountMismatch()} does.
+     */
+    public static function forTotalAmountMismatch(InvoiceId $invoiceId, Money $expected, Money $actual): self
+    {
+        return new self(sprintf(
+            'Invoice "%s" has totalAmount "%s" but its own lines sum to "%s" — this Invoice is corrupt.',
+            $invoiceId->toString(),
+            $actual->toDecimalString(),
+            $expected->toDecimalString(),
         ));
     }
 }

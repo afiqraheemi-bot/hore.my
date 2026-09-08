@@ -87,4 +87,19 @@ final class InvoiceLine
     {
         return $this->lineAmount;
     }
+
+    /**
+     * Whether this line's own persisted `lineAmount` still equals
+     * `unitPrice × quantity` — the same computation {@see of()}
+     * performs at creation time, recomputed here so a reconstituted
+     * line (P0/P1 audit remediation, 2026-09-11: an external audit
+     * found `reconstitute()` trusted a persisted `lineAmount` with no
+     * re-check at all) can be verified against direct SQL corruption,
+     * a defective import, or a migration bug — never assumed correct
+     * merely because it was already in the database.
+     */
+    public function hasConsistentLineAmount(): bool
+    {
+        return $this->lineAmount->equals($this->unitPrice->multiply((string) $this->quantity, RoundingMode::Unnecessary));
+    }
 }

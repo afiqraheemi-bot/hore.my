@@ -9,8 +9,10 @@ use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\MinorUnits;
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Money\RoundingMode;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Customers\CustomerId;
+use App\Domain\Invoicing\Exception\CorruptInvoiceRecordException;
 use App\Domain\Invoicing\Exception\EmptyInvoiceCannotBeIssuedException;
 use App\Domain\Invoicing\Exception\InvalidInvoiceDueDateException;
 use App\Domain\Invoicing\Exception\InvalidInvoiceStatusTransitionException;
@@ -92,11 +94,29 @@ final class Invoice
     }
 
     /**
-     * Reconstruct an already-persisted Invoice from storage — no
-     * validation beyond each field's own bound, mirroring every other
-     * `reconstitute()` in this codebase.
+     * Reconstruct an already-persisted Invoice from storage.
+     *
+     * **Not unvalidated, as of 2026-09-11 (P0/P1 audit remediation).**
+     * Every other `reconstitute()` in this codebase trusts persisted
+     * state with no re-check, and this one still does for every field
+     * except the two an external audit specifically flagged: each
+     * line's own `lineAmount` (must equal `unitPrice × quantity`, the
+     * same computation {@see InvoiceLine::of()} performs) and this
+     * Invoice's own `totalAmount` (must equal the sum of its lines,
+     * the same computation {@see sumLines()} performs for both
+     * {@see draft()} and {@see update()}). Both are true by
+     * construction on every write path this class exposes — a
+     * mismatch here can only mean the row was written outside them
+     * (a manual `UPDATE`, a defective import, or a migration bug).
+     * Failing loudly here, at reconstitution, stops a corrupted amount
+     * from silently flowing into a report or, if the Invoice were
+     * later Issued, into the Journal Accounting Core posts.
      *
      * @param  list<InvoiceLine>  $lines
+     *
+     * @throws CorruptInvoiceRecordException if any line's `lineAmount`
+     *                                       does not equal `unitPrice × quantity`, or if `$totalAmount`
+     *                                       does not equal the sum of `$lines`.
      */
     public static function reconstitute(
         InvoiceId $id,
@@ -112,6 +132,19 @@ final class Invoice
         array $lines,
         Money $totalAmount,
     ): self {
+        foreach ($lines as $index => $line) {
+            if (! $line->hasConsistentLineAmount()) {
+                $expected = $line->unitPrice()->multiply((string) $line->quantity(), RoundingMode::Unnecessary);
+
+                throw CorruptInvoiceRecordException::forLineAmountMismatch($id, $index, $expected, $line->lineAmount());
+            }
+        }
+
+        $expectedTotal = self::sumLines($lines, $totalAmount->currency());
+        if (! $totalAmount->equals($expectedTotal)) {
+            throw CorruptInvoiceRecordException::forTotalAmountMismatch($id, $expectedTotal, $totalAmount);
+        }
+
         return new self(
             $id,
             $tenantId,

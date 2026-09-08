@@ -9,6 +9,7 @@ use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Customers\CustomerId;
+use App\Domain\Invoicing\Exception\CorruptInvoiceRecordException;
 use App\Domain\Invoicing\Exception\EmptyInvoiceCannotBeIssuedException;
 use App\Domain\Invoicing\Exception\InvalidInvoiceDueDateException;
 use App\Domain\Invoicing\Exception\InvalidInvoiceStatusTransitionException;
@@ -135,6 +136,78 @@ final class InvoiceTest extends TestCase
         $this->expectException(InvalidInvoiceDueDateException::class);
 
         $invoice->issue('INV-000001', new \DateTimeImmutable('2026-09-08'), JournalId::of('journal-0001'));
+    }
+
+    /**
+     * P0/P1 audit remediation, 2026-09-11: an external audit found
+     * {@see Invoice::reconstitute()} trusted a persisted `lineAmount`
+     * with no re-check at all — a corrupted line (a manual `UPDATE`, a
+     * defective import, or a migration bug) would previously load as a
+     * perfectly valid Invoice. This is the direct proof it no longer
+     * does: an `InvoiceLine::reconstitute()`d line whose `lineAmount`
+     * does not equal `unitPrice × quantity` must fail loudly at
+     * `Invoice::reconstitute()`, before that Invoice can be used at
+     * all.
+     */
+    public function test_reconstitute_rejects_a_line_with_an_inconsistent_line_amount(): void
+    {
+        $currency = Currency::of(self::CURRENCY);
+        $corruptLine = InvoiceLine::reconstitute(
+            'Item A',
+            2,
+            Money::fromDecimalString('50.00', $currency),
+            // Should be 100.00 (2 × 50.00) — deliberately wrong, as if
+            // corrupted at the persistence layer.
+            Money::fromDecimalString('999.00', $currency),
+        );
+
+        $this->expectException(CorruptInvoiceRecordException::class);
+
+        Invoice::reconstitute(
+            InvoiceId::of('invoice-corrupt-line'),
+            TenantId::of('tenant-0001'),
+            CustomerId::of('customer-0001'),
+            null,
+            InvoiceStatus::Draft,
+            null,
+            new \DateTimeImmutable('2026-12-31'),
+            AccountId::of('account-receivable'),
+            AccountId::of('account-revenue'),
+            null,
+            [$corruptLine],
+            Money::fromDecimalString('999.00', $currency),
+        );
+    }
+
+    /**
+     * The companion proof for the aggregate check: every individual
+     * line is internally consistent (`lineAmount = unitPrice ×
+     * quantity`), but the Invoice's own persisted `totalAmount` does
+     * not equal their sum — equally a fail-closed rejection, for the
+     * identical reason.
+     */
+    public function test_reconstitute_rejects_a_mismatched_total_amount(): void
+    {
+        $currency = Currency::of(self::CURRENCY);
+        $line = InvoiceLine::of('Item A', 1, Money::fromDecimalString('100.00', $currency));
+
+        $this->expectException(CorruptInvoiceRecordException::class);
+
+        Invoice::reconstitute(
+            InvoiceId::of('invoice-corrupt-total'),
+            TenantId::of('tenant-0001'),
+            CustomerId::of('customer-0001'),
+            null,
+            InvoiceStatus::Draft,
+            null,
+            new \DateTimeImmutable('2026-12-31'),
+            AccountId::of('account-receivable'),
+            AccountId::of('account-revenue'),
+            null,
+            [$line],
+            // The one line sums to 100.00 — deliberately wrong.
+            Money::fromDecimalString('500.00', $currency),
+        );
     }
 
     public function test_equals_compares_by_identifier(): void
