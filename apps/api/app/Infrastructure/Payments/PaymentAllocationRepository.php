@@ -7,6 +7,7 @@ namespace App\Infrastructure\Payments;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\MinorUnits;
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Payments\AllocationService;
 use App\Domain\Payments\PaymentAllocation;
@@ -27,6 +28,13 @@ use Illuminate\Database\ConnectionInterface;
  * (Master Context §10): an allocation total is always computed fresh
  * from the actual rows, never trusted from a separately-maintained
  * counter that could drift.
+ *
+ * **Soft-deleted (P1-3, 2026-09-08 audit remediation).** Every read
+ * method below filters `deleted_at IS NULL` — a deallocated row is
+ * never physically removed ({@see softDelete()}), so it never
+ * contributes to a sum or a listing, but it survives as its own audit
+ * trail (who deallocated it, and when) instead of vanishing without a
+ * trace.
  */
 final class PaymentAllocationRepository
 {
@@ -53,12 +61,23 @@ final class PaymentAllocationRepository
         ]);
     }
 
-    public function delete(TenantId $tenantId, PaymentAllocationId $allocationId): void
+    /**
+     * Marks an allocation deleted without physically removing it
+     * (P1-3): `deleted_at`/`deleted_by_actor` are set, and every read
+     * method below excludes it from that point on, but the row itself
+     * — amount, Payment, Invoice, and now who deallocated it and when
+     * — is retained.
+     */
+    public function softDelete(TenantId $tenantId, PaymentAllocationId $allocationId, ActorReference $actor): void
     {
         $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('id', $allocationId->toString())
-            ->delete();
+            ->update([
+                'deleted_at' => now(),
+                'deleted_by_actor' => $actor->toString(),
+                'updated_at' => now(),
+            ]);
     }
 
     public function findById(TenantId $tenantId, PaymentAllocationId $allocationId): ?PaymentAllocation
@@ -67,6 +86,7 @@ final class PaymentAllocationRepository
         $row = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('id', $allocationId->toString())
+            ->whereNull('deleted_at')
             ->first();
 
         if ($row === null) {
@@ -85,6 +105,7 @@ final class PaymentAllocationRepository
         $rows = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('payment_id', $paymentId->toString())
+            ->whereNull('deleted_at')
             ->get()
             ->all();
 
@@ -100,6 +121,7 @@ final class PaymentAllocationRepository
         $rows = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('invoice_id', $invoiceId->toString())
+            ->whereNull('deleted_at')
             ->get()
             ->all();
 
@@ -111,6 +133,7 @@ final class PaymentAllocationRepository
         $sum = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('payment_id', $paymentId->toString())
+            ->whereNull('deleted_at')
             ->sum('amount');
 
         return Money::fromMinorUnits(MinorUnits::of((string) $sum), $currency);
@@ -121,6 +144,7 @@ final class PaymentAllocationRepository
         $sum = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('invoice_id', $invoiceId->toString())
+            ->whereNull('deleted_at')
             ->sum('amount');
 
         return Money::fromMinorUnits(MinorUnits::of((string) $sum), $currency);

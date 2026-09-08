@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Payments;
 
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Invoicing\Exception\InvoiceNotFoundException;
 use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Invoicing\InvoiceStatus;
@@ -117,10 +118,20 @@ final class AllocationService
     }
 
     /**
+     * Removes an allocation's effect (freeing both the Invoice's
+     * outstanding balance and the Payment's unallocated amount by the
+     * same amount) without physically deleting the row — `$actor` is
+     * recorded alongside the deletion timestamp as this operation's
+     * own audit trail (P1-3, 2026-09-08 audit remediation; see
+     * {@see PaymentAllocationRepository::softDelete()}).
+     *
      * @throws PaymentAllocationNotFoundException if no allocation
-     *                                            exists for `$allocationId` under this Tenant.
+     *                                            exists for `$allocationId` under this Tenant. Re-deallocating an
+     *                                            already-deallocated allocation throws the identical exception —
+     *                                            `findById()` excludes soft-deleted rows, so this is idempotent
+     *                                            in its failure mode, never a silent no-op success.
      */
-    public function deallocate(TenantId $tenantId, PaymentAllocationId $allocationId): void
+    public function deallocate(TenantId $tenantId, PaymentAllocationId $allocationId, ActorReference $actor): void
     {
         $allocation = $this->allocationRepository->findById($tenantId, $allocationId);
 
@@ -128,7 +139,7 @@ final class AllocationService
             throw PaymentAllocationNotFoundException::forId($allocationId);
         }
 
-        $this->allocationRepository->delete($tenantId, $allocationId);
+        $this->allocationRepository->softDelete($tenantId, $allocationId, $actor);
     }
 
     public function outstandingBalanceFor(TenantId $tenantId, InvoiceId $invoiceId, Money $totalAmount): Money

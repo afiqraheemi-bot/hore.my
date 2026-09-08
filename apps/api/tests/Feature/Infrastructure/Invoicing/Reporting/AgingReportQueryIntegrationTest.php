@@ -162,6 +162,32 @@ final class AgingReportQueryIntegrationTest extends TestCase
         $this->assertSame([], $report->lines());
     }
 
+    /**
+     * Regression proof for P1-3's `whereNull('deleted_at')` addition
+     * to {@see AgingReportQuery}: a *deallocated* allocation must
+     * still stop counting toward the paid-down amount — mirrors
+     * {@see test_a_fully_paid_invoice_does_not_appear()} exactly, then
+     * deallocates and asserts the Invoice reappears as fully
+     * outstanding, exactly as it would have under the old hard-delete
+     * (this proves the soft-delete migration did not silently change
+     * this query's observable behavior).
+     */
+    public function test_a_deallocated_invoice_reappears_as_fully_outstanding(): void
+    {
+        $invoice = $this->issuedInvoice('100.00', '2026-08-01', 'invoice-deallocated');
+        $payment = $this->recordedPayment('100.00');
+        $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('100.00', $this->myr));
+
+        $reportWhileAllocated = $this->query->asOf($this->tenant, new \DateTimeImmutable('2026-09-08'));
+        $this->assertSame([], $reportWhileAllocated->lines());
+
+        $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0001'));
+
+        $reportAfterDeallocation = $this->query->asOf($this->tenant, new \DateTimeImmutable('2026-09-08'));
+        $this->assertCount(1, $reportAfterDeallocation->lines());
+        $this->assertSame('100.00', $reportAfterDeallocation->lines()[0]->outstandingBalance()->toDecimalString());
+    }
+
     public function test_an_unpaid_invoice_not_yet_due_is_current(): void
     {
         $this->issuedInvoice('100.00', '2026-12-31', 'invoice-future');

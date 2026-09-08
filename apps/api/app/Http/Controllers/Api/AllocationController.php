@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
+use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Invoicing\Exception\InvoiceNotFoundException;
 use App\Domain\Invoicing\Invoice;
 use App\Domain\Invoicing\InvoiceId;
@@ -25,7 +26,9 @@ use App\Http\Support\CurrentTenant;
 use App\Infrastructure\Invoicing\InvoiceRepository;
 use App\Infrastructure\Payments\PaymentAllocationRepository;
 use App\Infrastructure\Payments\PaymentRepository;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Allocates an already-recorded Payment against an Issued Invoice, and
@@ -93,10 +96,17 @@ final class AllocationController extends Controller
         return response()->json($this->toArray($allocation), 201);
     }
 
-    public function destroy(CurrentTenant $currentTenant, string $allocationId): JsonResponse
+    public function destroy(Request $request, CurrentTenant $currentTenant, string $allocationId): JsonResponse
     {
+        /** @var User $user */
+        $user = $request->user();
+
         try {
-            $this->allocationService->deallocate($currentTenant->id(), PaymentAllocationId::of($allocationId));
+            $this->allocationService->deallocate(
+                $currentTenant->id(),
+                PaymentAllocationId::of($allocationId),
+                ActorReference::of($user->id),
+            );
         } catch (PaymentAllocationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);
         }

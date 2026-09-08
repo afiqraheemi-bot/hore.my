@@ -57,6 +57,15 @@ final class AgingReportQuery
             ->where('payment_allocations.tenant_id', $tenantId->toString())
             ->whereIn('payment_allocations.invoice_id', $invoiceIds)
             ->where('payments.payment_date', '<=', $asOfDateString)
+            // Excludes a deallocated (soft-deleted, P1-3) allocation from
+            // every as-of-date computation, matching how the current
+            // outstanding balance already treats it — never a partial or
+            // historical inclusion. This preserves this query's existing
+            // behavior exactly; it does not, by itself, make a *historical*
+            // as-of-date reproducible after a later deallocation, which
+            // remains a separately-named, still-open limitation
+            // (AETS-009 §17).
+            ->whereNull('payment_allocations.deleted_at')
             ->selectRaw('payment_allocations.invoice_id as invoice_id, sum(payment_allocations.amount) as allocated')
             ->groupBy('payment_allocations.invoice_id')
             ->pluck('allocated', 'invoice_id')

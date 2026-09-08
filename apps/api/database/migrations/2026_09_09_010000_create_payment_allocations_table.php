@@ -23,11 +23,18 @@ use Illuminate\Support\Facades\Schema;
  * sum of allocations from one Payment must never exceed that Payment's
  * own `amount` ({@see AllocationService}).
  *
- * **Hard-deletable.** Unlike a Posted Journal, an allocation is pure
- * sub-ledger bookkeeping with no ledger effect to reverse — removing a
- * mistaken allocation is a plain delete, mirroring how a Draft Invoice
- * itself may be hard-deleted (M20) for the identical "no ledger effect
- * yet" reason.
+ * **Deletable with no ledger effect to reverse.** Unlike a Posted
+ * Journal, an allocation is pure sub-ledger bookkeeping — removing a
+ * mistaken allocation touches no Journal, mirroring how a Draft
+ * Invoice itself may be hard-deleted (M20) for the identical "no
+ * ledger effect yet" reason.
+ *
+ * **Amended 2026-09-11 (P1-3, audit remediation): this is no longer a
+ * physical `DELETE`.** The
+ * `2026_09_11_000000_add_soft_delete_audit_trail_to_payment_allocations_table`
+ * migration adds `deleted_at`/`deleted_by_actor` so a removed
+ * allocation survives as its own audit trail — the ledger-correctness
+ * reasoning above is unchanged and was never the gap; traceability was.
  */
 return new class extends Migration
 {

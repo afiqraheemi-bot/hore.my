@@ -252,17 +252,47 @@ final class AllocationServiceIntegrationTest extends TestCase
         $payment = $this->recordedPayment('300.00');
         $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('300.00', $this->myr));
 
-        $this->allocationService->deallocate($this->tenant, $allocation->id());
+        $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0001'));
 
         $outstanding = $this->allocationService->outstandingBalanceFor($this->tenant, $invoice->id(), $invoice->totalAmount());
         $this->assertSame('300.00', $outstanding->toDecimalString());
+    }
+
+    public function test_deallocate_soft_deletes_leaving_an_audit_trail(): void
+    {
+        $invoice = $this->issuedInvoice('300.00');
+        $payment = $this->recordedPayment('300.00');
+        $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('300.00', $this->myr));
+
+        $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0001'));
+
+        $row = DB::connection('pgsql')->table('payment_allocations')
+            ->where('tenant_id', $this->tenant->toString())
+            ->where('id', $allocation->id()->toString())
+            ->first();
+
+        $this->assertNotNull($row, 'Deallocating must not physically delete the row (P1-3) — the row must survive as its own audit trail.');
+        $this->assertNotNull($row->deleted_at);
+        $this->assertSame('user-0001', $row->deleted_by_actor);
     }
 
     public function test_deallocating_a_nonexistent_allocation_is_rejected(): void
     {
         $this->expectException(PaymentAllocationNotFoundException::class);
 
-        $this->allocationService->deallocate($this->tenant, PaymentAllocationId::of('does-not-exist'));
+        $this->allocationService->deallocate($this->tenant, PaymentAllocationId::of('does-not-exist'), ActorReference::of('user-0001'));
+    }
+
+    public function test_deallocating_an_already_deallocated_allocation_is_rejected(): void
+    {
+        $invoice = $this->issuedInvoice('300.00');
+        $payment = $this->recordedPayment('300.00');
+        $allocation = $this->allocationService->allocate($this->tenant, $payment->id(), $invoice->id(), Money::fromDecimalString('300.00', $this->myr));
+        $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0001'));
+
+        $this->expectException(PaymentAllocationNotFoundException::class);
+
+        $this->allocationService->deallocate($this->tenant, $allocation->id(), ActorReference::of('user-0002'));
     }
 
     private function issuedInvoice(string $totalAmount, string $invoiceId = 'invoice-0001'): Invoice
