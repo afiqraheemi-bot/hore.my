@@ -23,79 +23,101 @@ interface Account {
   account_type: string
 }
 
+/**
+ * `primaryAccount*`/`secondaryAccount*` are deliberately
+ * accounting-side-neutral (2026-09-11 audit remediation: an earlier
+ * version of this file named these `debitLabel`/`creditLabel`, which
+ * was wrong for three of the five types below — Income actually
+ * credits its "primary" field's account, Transfer's "From account"
+ * is actually the credit side, and Owner Drawing's own Cash account
+ * is the credit side too, opposite of Capital Contribution despite
+ * sharing the identical field shape). "Primary"/"secondary" only ever
+ * means "first field shown"/"second field shown" — never a claim
+ * about which side of the Journal either one posts to. The real
+ * Debit/Credit mapping for each type is documented once, per type,
+ * below; the payload keys sent to each endpoint (`expense_account_id`,
+ * `income_account_id`, etc.) are what actually determines posting —
+ * this naming confusion never reached the ledger itself, only this
+ * file's own internal variable names.
+ */
 interface TransactionType {
   key: string
   label: string
   icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart'
   endpoint: string
-  debitLabel: string
-  debitKey: string
-  debitTypes: string[]
-  creditLabel: string
-  creditKey: string
-  creditTypes: string[]
+  primaryAccountLabel: string
+  primaryAccountKey: string
+  primaryAccountTypes: string[]
+  secondaryAccountLabel: string
+  secondaryAccountKey: string
+  secondaryAccountTypes: string[]
 }
 
 const types: TransactionType[] = [
+  // Expense: Debit primary (Expense), Credit secondary (Payment) — see ExpenseToPostingCommandTranslator.
   {
     key: 'expense',
     label: 'Expense',
     icon: 'receipt',
     endpoint: '/api/v1/expenses',
-    debitLabel: 'Expense account',
-    debitKey: 'expense_account_id',
-    debitTypes: ['Expense'],
-    creditLabel: 'Paid from',
-    creditKey: 'payment_account_id',
-    creditTypes: ['Asset'],
+    primaryAccountLabel: 'Expense account',
+    primaryAccountKey: 'expense_account_id',
+    primaryAccountTypes: ['Expense'],
+    secondaryAccountLabel: 'Paid from',
+    secondaryAccountKey: 'payment_account_id',
+    secondaryAccountTypes: ['Asset'],
   },
+  // Income: Credit primary (Income), Debit secondary (Deposit) — see IncomeToPostingCommandTranslator.
   {
     key: 'income',
     label: 'Income',
     icon: 'wallet',
     endpoint: '/api/v1/incomes',
-    debitLabel: 'Income account',
-    debitKey: 'income_account_id',
-    debitTypes: ['Revenue'],
-    creditLabel: 'Deposited to',
-    creditKey: 'deposit_account_id',
-    creditTypes: ['Asset'],
+    primaryAccountLabel: 'Income account',
+    primaryAccountKey: 'income_account_id',
+    primaryAccountTypes: ['Revenue'],
+    secondaryAccountLabel: 'Deposited to',
+    secondaryAccountKey: 'deposit_account_id',
+    secondaryAccountTypes: ['Asset'],
   },
+  // Transfer: Credit primary (From/Source), Debit secondary (To/Destination) — see TransferToPostingCommandTranslator.
   {
     key: 'transfer',
     label: 'Transfer',
     icon: 'bank',
     endpoint: '/api/v1/transfers',
-    debitLabel: 'From account',
-    debitKey: 'source_account_id',
-    debitTypes: ['Asset', 'Liability'],
-    creditLabel: 'To account',
-    creditKey: 'destination_account_id',
-    creditTypes: ['Asset', 'Liability'],
+    primaryAccountLabel: 'From account',
+    primaryAccountKey: 'source_account_id',
+    primaryAccountTypes: ['Asset', 'Liability'],
+    secondaryAccountLabel: 'To account',
+    secondaryAccountKey: 'destination_account_id',
+    secondaryAccountTypes: ['Asset', 'Liability'],
   },
+  // Capital contribution: Debit primary (Cash), Credit secondary (Equity) — see OwnerEquityTransactionToPostingCommandTranslator (Contribution).
   {
     key: 'capital',
     label: 'Capital contribution',
     icon: 'building',
     endpoint: '/api/v1/capital-contributions',
-    debitLabel: 'Cash account',
-    debitKey: 'cash_account_id',
-    debitTypes: ['Asset'],
-    creditLabel: 'Equity account',
-    creditKey: 'equity_account_id',
-    creditTypes: ['Equity'],
+    primaryAccountLabel: 'Cash account',
+    primaryAccountKey: 'cash_account_id',
+    primaryAccountTypes: ['Asset'],
+    secondaryAccountLabel: 'Equity account',
+    secondaryAccountKey: 'equity_account_id',
+    secondaryAccountTypes: ['Equity'],
   },
+  // Owner drawing: Credit primary (Cash), Debit secondary (Equity) — the reverse of Capital Contribution despite the identical field shape — see OwnerEquityTransactionToPostingCommandTranslator (Drawing).
   {
     key: 'drawing',
     label: 'Owner drawing',
     icon: 'chart',
     endpoint: '/api/v1/owner-drawings',
-    debitLabel: 'Cash account',
-    debitKey: 'cash_account_id',
-    debitTypes: ['Asset'],
-    creditLabel: 'Equity account',
-    creditKey: 'equity_account_id',
-    creditTypes: ['Equity'],
+    primaryAccountLabel: 'Cash account',
+    primaryAccountKey: 'cash_account_id',
+    primaryAccountTypes: ['Asset'],
+    secondaryAccountLabel: 'Equity account',
+    secondaryAccountKey: 'equity_account_id',
+    secondaryAccountTypes: ['Equity'],
   },
 ]
 
@@ -109,21 +131,21 @@ const activeType = ref<TransactionType>(types[0]!)
 
 const amount = ref('')
 const transactionDate = ref(new Date().toISOString().slice(0, 10))
-const debitAccountId = ref('')
-const creditAccountId = ref('')
+const primaryAccountId = ref('')
+const secondaryAccountId = ref('')
 const description = ref('')
 const submitting = ref(false)
 const error = ref<string | null>(null)
 const justCreated = ref(false)
 
-const debitOptions = computed(() =>
+const primaryAccountOptions = computed(() =>
   accounts.value
-    .filter((a) => activeType.value.debitTypes.includes(a.account_type))
+    .filter((a) => activeType.value.primaryAccountTypes.includes(a.account_type))
     .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
 )
-const creditOptions = computed(() =>
+const secondaryAccountOptions = computed(() =>
   accounts.value
-    .filter((a) => activeType.value.creditTypes.includes(a.account_type))
+    .filter((a) => activeType.value.secondaryAccountTypes.includes(a.account_type))
     .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
 )
 
@@ -138,16 +160,16 @@ function open() {
 
 function selectType(type: TransactionType) {
   activeType.value = type
-  debitAccountId.value = ''
-  creditAccountId.value = ''
+  primaryAccountId.value = ''
+  secondaryAccountId.value = ''
   error.value = null
 }
 
 function resetForm() {
   amount.value = ''
   description.value = ''
-  debitAccountId.value = ''
-  creditAccountId.value = ''
+  primaryAccountId.value = ''
+  secondaryAccountId.value = ''
 }
 
 async function onSubmit() {
@@ -160,8 +182,8 @@ async function onSubmit() {
       body: {
         amount: amount.value,
         transaction_date: transactionDate.value,
-        [activeType.value.debitKey]: debitAccountId.value,
-        [activeType.value.creditKey]: creditAccountId.value,
+        [activeType.value.primaryAccountKey]: primaryAccountId.value,
+        [activeType.value.secondaryAccountKey]: secondaryAccountId.value,
         description: description.value,
       },
     })
@@ -226,18 +248,18 @@ onMounted(loadAccounts)
       </div>
 
       <div v-if="expanded" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <AppField :label="activeType.debitLabel">
+        <AppField :label="activeType.primaryAccountLabel">
           <AppSelect
-            v-model="debitAccountId"
-            :options="debitOptions"
+            v-model="primaryAccountId"
+            :options="primaryAccountOptions"
             placeholder="Select an account"
             required
           />
         </AppField>
-        <AppField :label="activeType.creditLabel">
+        <AppField :label="activeType.secondaryAccountLabel">
           <AppSelect
-            v-model="creditAccountId"
-            :options="creditOptions"
+            v-model="secondaryAccountId"
+            :options="secondaryAccountOptions"
             placeholder="Select an account"
             required
           />
