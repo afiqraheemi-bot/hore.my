@@ -2,6 +2,7 @@
 definePageMeta({ middleware: 'guest', layout: false })
 
 const { register } = useAuth()
+const { init: initTheme } = useTheme()
 const router = useRouter()
 
 const name = ref('')
@@ -31,68 +32,64 @@ async function onSubmit() {
     submitting.value = false
   }
 }
+
+onMounted(initTheme)
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50">
-    <form
-      class="w-full max-w-sm space-y-4 rounded border border-gray-200 bg-white p-6"
-      @submit.prevent="onSubmit"
-    >
-      <h1 class="text-lg font-semibold">Register</h1>
-      <p v-if="error" class="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</p>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Name</label>
-        <input
-          v-model="name"
-          type="text"
-          required
-          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-        />
+  <div class="flex min-h-screen items-center justify-center bg-surface px-4 py-10">
+    <div class="w-full max-w-sm">
+      <div class="mb-8 flex flex-col items-center gap-2">
+        <span
+          class="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-lg font-bold text-accent-contrast"
+          >H</span
+        >
+        <h1 class="text-lg font-semibold text-ink">Create your account</h1>
       </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Email</label>
-        <input
-          v-model="email"
-          type="email"
-          required
-          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Password</label>
-        <input
-          v-model="password"
-          type="password"
-          required
-          minlength="8"
-          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Confirm password</label>
-        <input
-          v-model="passwordConfirmation"
-          type="password"
-          required
-          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-        />
-      </div>
-      <label class="flex items-start gap-2 text-sm text-gray-700">
-        <input v-model="termsAccepted" type="checkbox" required class="mt-1" />
-        <span>I agree to the Terms of Service and Privacy Notice.</span>
-      </label>
-      <button
-        type="submit"
-        :disabled="submitting"
-        class="w-full rounded bg-gray-900 px-3 py-2 text-white disabled:opacity-50"
-      >
-        {{ submitting ? 'Registering…' : 'Register' }}
-      </button>
-      <p class="text-center text-sm text-gray-600">
-        Already have an account?
-        <NuxtLink to="/login" class="font-medium text-gray-900 underline">Log in</NuxtLink>
-      </p>
-    </form>
+      <form class="space-y-4" @submit.prevent="onSubmit">
+        <p v-if="error" class="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">
+          {{ error }}
+        </p>
+        <AppField label="Name">
+          <AppInput v-model="name" required autocomplete="name" />
+        </AppField>
+        <AppField label="Email">
+          <AppInput v-model="email" type="email" required autocomplete="username" />
+        </AppField>
+        <AppField label="Password">
+          <AppInput
+            v-model="password"
+            type="password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          />
+        </AppField>
+        <AppField label="Confirm password">
+          <AppInput
+            v-model="passwordConfirmation"
+            type="password"
+            required
+            autocomplete="new-password"
+          />
+        </AppField>
+        <label class="flex items-start gap-2 text-sm text-ink-secondary">
+          <input
+            v-model="termsAccepted"
+            type="checkbox"
+            required
+            class="mt-0.5 h-4 w-4 rounded border-border text-accent focus:ring-accent"
+          />
+          <span>I agree to the Terms of Service and Privacy Notice.</span>
+        </label>
+        <AppButton type="submit" variant="primary" :disabled="submitting" class="w-full">
+          {{ submitting ? 'Registering…' : 'Register' }}
+        </AppButton>
+        <p class="text-center text-sm text-ink-tertiary">
+          Already have an account?
+          <NuxtLink to="/login" class="font-medium text-accent hover:underline">Log in</NuxtLink>
+        </p>
+      </form>
+    </div>
   </div>
 </template>

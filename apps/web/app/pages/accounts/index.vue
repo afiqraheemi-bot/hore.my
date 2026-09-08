@@ -10,19 +10,31 @@ interface Account {
   posting_eligible: boolean
 }
 
+const TYPE_TONE: Record<string, 'success' | 'danger' | 'accent' | 'warning' | 'neutral'> = {
+  Asset: 'success',
+  Liability: 'danger',
+  Equity: 'accent',
+  Revenue: 'success',
+  Expense: 'warning',
+}
+
 const { request } = useApi()
 
 const accounts = ref<Account[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+const showForm = ref(false)
 const accountCode = ref('')
 const accountName = ref('')
 const accountType = ref('Asset')
 const creating = ref(false)
 const createError = ref<string | null>(null)
 
-const accountTypes = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense']
+const accountTypeOptions = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'].map((t) => ({
+  value: t,
+  label: t,
+}))
 
 async function loadAccounts() {
   loading.value = true
@@ -51,6 +63,7 @@ async function onCreate() {
     })
     accountCode.value = ''
     accountName.value = ''
+    showForm.value = false
     await loadAccounts()
   } catch {
     createError.value = 'Failed to create account — the code may already be in use.'
@@ -63,67 +76,67 @@ onMounted(loadAccounts)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">Chart of Accounts</h1>
+  <div>
+    <PageHeader title="Chart of Accounts" description="Every Account your Journals can post to.">
+      <template #actions>
+        <AppButton variant="primary" @click="showForm = !showForm">
+          <AppIcon name="plus" :size="15" /> New account
+        </AppButton>
+      </template>
+    </PageHeader>
 
-    <form
-      class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4"
-      @submit.prevent="onCreate"
-    >
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Code</label>
-        <input
-          v-model="accountCode"
-          required
-          class="mt-1 w-28 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Name</label>
-        <input
-          v-model="accountName"
-          required
-          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Type</label>
-        <select v-model="accountType" class="mt-1 rounded border border-gray-300 px-2 py-1">
-          <option v-for="type in accountTypes" :key="type" :value="type">{{ type }}</option>
-        </select>
-      </div>
-      <button
-        type="submit"
-        :disabled="creating"
-        class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
-        {{ creating ? 'Adding…' : 'Add account' }}
-      </button>
-      <p v-if="createError" class="w-full text-sm text-red-700">{{ createError }}</p>
-    </form>
+    <AppCard v-if="showForm" class="mb-6">
+      <form class="flex flex-wrap items-end gap-3" @submit.prevent="onCreate">
+        <div class="w-28">
+          <AppField label="Code">
+            <AppInput v-model="accountCode" required />
+          </AppField>
+        </div>
+        <div class="w-56">
+          <AppField label="Name">
+            <AppInput v-model="accountName" required />
+          </AppField>
+        </div>
+        <div class="w-40">
+          <AppField label="Type">
+            <AppSelect v-model="accountType" :options="accountTypeOptions" />
+          </AppField>
+        </div>
+        <AppButton type="submit" variant="primary" :disabled="creating">
+          {{ creating ? 'Adding…' : 'Add' }}
+        </AppButton>
+        <p v-if="createError" class="w-full text-sm text-danger">{{ createError }}</p>
+      </form>
+    </AppCard>
 
-    <p v-if="loading" class="text-sm text-gray-500">Loading…</p>
-    <p v-else-if="error" class="text-sm text-red-700">{{ error }}</p>
-    <table v-else class="w-full text-left text-sm">
-      <thead>
-        <tr class="border-b border-gray-200 text-gray-500">
-          <th class="py-2">Code</th>
-          <th class="py-2">Name</th>
-          <th class="py-2">Type</th>
-          <th class="py-2">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="account in accounts" :key="account.id" class="border-b border-gray-100">
-          <td class="py-2">{{ account.account_code }}</td>
-          <td class="py-2">{{ account.account_name }}</td>
-          <td class="py-2">{{ account.account_type }}</td>
-          <td class="py-2">{{ account.active ? 'Active' : 'Inactive' }}</td>
-        </tr>
-        <tr v-if="accounts.length === 0">
-          <td colspan="4" class="py-4 text-center text-gray-400">No accounts yet.</td>
-        </tr>
-      </tbody>
-    </table>
+    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
+    <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+    <EmptyState
+      v-else-if="accounts.length === 0"
+      title="No accounts yet"
+      description="Add your first account to start recording transactions."
+    />
+    <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <AppCard v-for="account in accounts" :key="account.id">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-ink">{{ account.account_name }}</p>
+            <p class="text-xs text-ink-tertiary">{{ account.account_code }}</p>
+          </div>
+          <AppBadge :tone="TYPE_TONE[account.account_type] ?? 'neutral'">{{
+            account.account_type
+          }}</AppBadge>
+        </div>
+        <div class="mt-3 flex items-center gap-1.5">
+          <span
+            class="h-1.5 w-1.5 rounded-full"
+            :class="account.active ? 'bg-success' : 'bg-ink-tertiary'"
+          />
+          <span class="text-xs text-ink-tertiary">{{
+            account.active ? 'Active' : 'Inactive'
+          }}</span>
+        </div>
+      </AppCard>
+    </div>
   </div>
 </template>

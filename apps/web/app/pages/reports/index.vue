@@ -116,16 +116,19 @@ async function selectTab(tab: (typeof tabs)[number]) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 class="text-xl font-semibold">Reports</h1>
+  <div>
+    <PageHeader title="Reports" />
 
-    <div class="flex flex-wrap gap-2 border-b border-gray-200 text-sm">
+    <div class="mb-4 flex flex-wrap gap-1 border-b border-border">
       <button
         v-for="tab in tabs"
         :key="tab"
-        class="border-b-2 px-3 py-2"
+        type="button"
+        class="border-b-2 px-3 py-2 text-sm font-medium transition-colors"
         :class="
-          activeTab === tab ? 'border-gray-900 font-medium' : 'border-transparent text-gray-500'
+          activeTab === tab
+            ? 'border-accent text-ink'
+            : 'border-transparent text-ink-tertiary hover:text-ink'
         "
         @click="selectTab(tab)"
       >
@@ -133,66 +136,63 @@ async function selectTab(tab: (typeof tabs)[number]) {
       </button>
     </div>
 
-    <div class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4">
-      <div
-        v-if="
-          activeTab === 'Trial Balance' ||
-          activeTab === 'Balance Sheet' ||
-          activeTab === 'Aging Report'
-        "
-      >
-        <label class="block text-xs font-medium text-gray-500">As of</label>
-        <input v-model="asOf" type="date" class="mt-1 rounded border border-gray-300 px-2 py-1" />
-      </div>
-      <template
-        v-if="
-          activeTab !== 'Trial Balance' &&
-          activeTab !== 'Balance Sheet' &&
-          activeTab !== 'Aging Report'
-        "
-      >
-        <div>
-          <label class="block text-xs font-medium text-gray-500">Period start</label>
-          <input
-            v-model="periodStart"
-            type="date"
-            class="mt-1 rounded border border-gray-300 px-2 py-1"
-          />
+    <AppCard class="mb-4">
+      <div class="flex flex-wrap items-end gap-3">
+        <div
+          v-if="
+            activeTab === 'Trial Balance' ||
+            activeTab === 'Balance Sheet' ||
+            activeTab === 'Aging Report'
+          "
+        >
+          <AppField label="As of">
+            <AppInput v-model="asOf" type="date" />
+          </AppField>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500">Period end</label>
-          <input
-            v-model="periodEnd"
-            type="date"
-            class="mt-1 rounded border border-gray-300 px-2 py-1"
-          />
+        <template
+          v-if="
+            activeTab !== 'Trial Balance' &&
+            activeTab !== 'Balance Sheet' &&
+            activeTab !== 'Aging Report'
+          "
+        >
+          <div>
+            <AppField label="Period start">
+              <AppInput v-model="periodStart" type="date" />
+            </AppField>
+          </div>
+          <div>
+            <AppField label="Period end">
+              <AppInput v-model="periodEnd" type="date" />
+            </AppField>
+          </div>
+        </template>
+        <div v-if="activeTab === 'General Ledger'" class="w-64">
+          <AppField label="Account">
+            <AppSelect
+              v-model="selectedAccountId"
+              :options="
+                accounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.account_code} — ${a.account_name}`,
+                }))
+              "
+            />
+          </AppField>
         </div>
-      </template>
-      <div v-if="activeTab === 'General Ledger'">
-        <label class="block text-xs font-medium text-gray-500">Account</label>
-        <select v-model="selectedAccountId" class="mt-1 rounded border border-gray-300 px-2 py-1">
-          <option v-for="account in accounts" :key="account.id" :value="account.id">
-            {{ account.account_code }} — {{ account.account_name }}
-          </option>
-        </select>
+        <AppButton variant="primary" @click="runReport">Run</AppButton>
+        <AppButton :disabled="exporting" @click="downloadCsv">
+          <AppIcon name="download" :size="14" /> {{ exporting ? 'Exporting…' : 'CSV' }}
+        </AppButton>
       </div>
-      <button class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white" @click="runReport">
-        Run
-      </button>
-      <button
-        class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-        :disabled="exporting"
-        @click="downloadCsv"
-      >
-        {{ exporting ? 'Exporting…' : 'Download CSV' }}
-      </button>
-    </div>
+    </AppCard>
 
-    <p v-if="loading" class="text-sm text-gray-500">Loading…</p>
-    <p v-else-if="error" class="text-sm text-red-700">{{ error }}</p>
-    <pre
-      v-else-if="result"
-      class="overflow-x-auto rounded border border-gray-200 bg-white p-4 text-xs"
-      >{{ JSON.stringify(result, null, 2) }}</pre>
+    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
+    <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+    <AppCard v-else-if="result" :padded="false">
+      <pre class="overflow-x-auto p-4 text-xs text-ink-secondary">{{
+        JSON.stringify(result, null, 2)
+      }}</pre>
+    </AppCard>
   </div>
 </template>

@@ -7,6 +7,17 @@ export default defineNuxtConfig({
   // with no server-side cookie-forwarding complexity to get right.
   ssr: false,
   modules: ['@nuxt/eslint', '@nuxtjs/tailwindcss'],
+  css: ['~/assets/css/main.css'],
+  // Every component (including app/components/ui/*) auto-imports by
+  // its own filename only — no directory-name prefix (Nuxt's default
+  // would otherwise register app/components/ui/AppButton.vue as
+  // <UiAppButton>, not <AppButton>).
+  components: [{ path: '~/components', pathPrefix: false }],
+  app: {
+    head: {
+      htmlAttrs: { lang: 'en' },
+    },
+  },
   eslint: {
     config: {
       // Prettier owns formatting; ESLint stays focused on code-quality rules.

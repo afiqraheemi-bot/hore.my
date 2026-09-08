@@ -18,6 +18,7 @@ const customers = ref<Customer[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+const showForm = ref(false)
 const name = ref('')
 const email = ref('')
 const phone = ref('')
@@ -28,9 +29,6 @@ const editingId = ref<string | null>(null)
 const editName = ref('')
 const editEmail = ref('')
 const editPhone = ref('')
-const editAddress = ref('')
-const editTaxId = ref('')
-const editNotes = ref('')
 const editActive = ref(true)
 const saving = ref(false)
 const editError = ref<string | null>(null)
@@ -63,6 +61,7 @@ async function onCreate() {
     name.value = ''
     email.value = ''
     phone.value = ''
+    showForm.value = false
     await loadCustomers()
   } catch {
     createError.value = 'Failed to create customer — check the name and email.'
@@ -76,9 +75,6 @@ function startEdit(customer: Customer) {
   editName.value = customer.name
   editEmail.value = customer.email ?? ''
   editPhone.value = customer.phone ?? ''
-  editAddress.value = customer.address ?? ''
-  editTaxId.value = customer.tax_identification_number ?? ''
-  editNotes.value = customer.notes ?? ''
   editActive.value = customer.active
   editError.value = null
 }
@@ -97,9 +93,6 @@ async function onSaveEdit(customerId: string) {
         name: editName.value,
         email: editEmail.value || undefined,
         phone: editPhone.value || undefined,
-        address: editAddress.value || undefined,
-        tax_identification_number: editTaxId.value || undefined,
-        notes: editNotes.value || undefined,
         active: editActive.value,
       },
     })
@@ -116,122 +109,95 @@ onMounted(loadCustomers)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">Customers</h1>
+  <div>
+    <PageHeader title="Customers">
+      <template #actions>
+        <AppButton variant="primary" @click="showForm = !showForm">
+          <AppIcon name="plus" :size="15" /> New customer
+        </AppButton>
+      </template>
+    </PageHeader>
 
-    <form
-      class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4"
-      @submit.prevent="onCreate"
-    >
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Name</label>
-        <input
-          v-model="name"
-          required
-          placeholder="Kedai Runcit Aminah"
-          class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Email</label>
-        <input
-          v-model="email"
-          type="email"
-          placeholder="optional"
-          class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Phone</label>
-        <input
-          v-model="phone"
-          placeholder="optional"
-          class="mt-1 w-40 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <button
-        type="submit"
-        :disabled="creating"
-        class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
-        {{ creating ? 'Adding…' : 'Add customer' }}
-      </button>
-      <p v-if="createError" class="w-full text-sm text-red-700">{{ createError }}</p>
-    </form>
+    <AppCard v-if="showForm" class="mb-6">
+      <form class="flex flex-wrap items-end gap-3" @submit.prevent="onCreate">
+        <div class="w-56">
+          <AppField label="Name">
+            <AppInput v-model="name" required placeholder="Kedai Runcit Aminah" />
+          </AppField>
+        </div>
+        <div class="w-56">
+          <AppField label="Email">
+            <AppInput v-model="email" type="email" placeholder="optional" />
+          </AppField>
+        </div>
+        <div class="w-40">
+          <AppField label="Phone">
+            <AppInput v-model="phone" placeholder="optional" />
+          </AppField>
+        </div>
+        <AppButton type="submit" variant="primary" :disabled="creating">
+          {{ creating ? 'Adding…' : 'Add' }}
+        </AppButton>
+        <p v-if="createError" class="w-full text-sm text-danger">{{ createError }}</p>
+      </form>
+    </AppCard>
 
-    <p v-if="loading" class="text-sm text-gray-500">Loading…</p>
-    <p v-else-if="error" class="text-sm text-red-700">{{ error }}</p>
-    <table v-else class="w-full text-left text-sm">
-      <thead>
-        <tr class="border-b border-gray-200 text-gray-500">
-          <th class="py-2">Name</th>
-          <th class="py-2">Email</th>
-          <th class="py-2">Phone</th>
-          <th class="py-2">Status</th>
-          <th class="py-2"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <template v-for="customer in customers" :key="customer.id">
-          <tr v-if="editingId !== customer.id" class="border-b border-gray-100">
-            <td class="py-2">{{ customer.name }}</td>
-            <td class="py-2">{{ customer.email ?? '—' }}</td>
-            <td class="py-2">{{ customer.phone ?? '—' }}</td>
-            <td class="py-2">{{ customer.active ? 'Active' : 'Inactive' }}</td>
-            <td class="py-2 text-right">
-              <button
-                type="button"
-                class="text-xs text-gray-600 underline hover:text-gray-900"
-                @click="startEdit(customer)"
-              >
-                Edit
-              </button>
-            </td>
-          </tr>
-          <tr v-else class="border-b border-gray-100 bg-gray-50">
-            <td class="py-2 pr-2">
-              <input v-model="editName" class="w-full rounded border border-gray-300 px-2 py-1" />
-            </td>
-            <td class="py-2 pr-2">
-              <input
-                v-model="editEmail"
-                type="email"
-                class="w-full rounded border border-gray-300 px-2 py-1"
-              />
-            </td>
-            <td class="py-2 pr-2">
-              <input v-model="editPhone" class="w-full rounded border border-gray-300 px-2 py-1" />
-            </td>
-            <td class="py-2 pr-2">
-              <label class="flex items-center gap-1 text-xs">
-                <input v-model="editActive" type="checkbox" />
-                Active
-              </label>
-            </td>
-            <td class="space-x-2 py-2 text-right">
-              <button
-                type="button"
-                :disabled="saving"
-                class="rounded bg-gray-900 px-2 py-1 text-xs text-white disabled:opacity-50"
-                @click="onSaveEdit(customer.id)"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                class="rounded border border-gray-300 px-2 py-1 text-xs"
-                @click="cancelEdit"
-              >
-                Cancel
-              </button>
-            </td>
-          </tr>
+    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
+    <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+    <EmptyState v-else-if="customers.length === 0" title="No customers yet" />
+    <div v-else class="space-y-2">
+      <AppCard v-for="customer in customers" :key="customer.id">
+        <template v-if="editingId !== customer.id">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-ink">{{ customer.name }}</p>
+              <p class="text-xs text-ink-tertiary">
+                {{ customer.email ?? 'No email'
+                }}<template v-if="customer.phone"> · {{ customer.phone }}</template>
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <AppBadge :tone="customer.active ? 'success' : 'neutral'">
+                {{ customer.active ? 'Active' : 'Inactive' }}
+              </AppBadge>
+              <AppButton size="sm" variant="ghost" @click="startEdit(customer)">Edit</AppButton>
+            </div>
+          </div>
         </template>
-        <tr v-if="customers.length === 0">
-          <td colspan="5" class="py-4 text-center text-gray-400">No customers yet.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p v-if="editError" class="text-sm text-red-700">{{ editError }}</p>
+        <template v-else>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <AppField label="Name">
+              <AppInput v-model="editName" />
+            </AppField>
+            <AppField label="Email">
+              <AppInput v-model="editEmail" type="email" />
+            </AppField>
+            <AppField label="Phone">
+              <AppInput v-model="editPhone" />
+            </AppField>
+            <label class="flex items-center gap-2 self-end pb-2 text-sm text-ink-secondary">
+              <input
+                v-model="editActive"
+                type="checkbox"
+                class="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+              />
+              Active
+            </label>
+          </div>
+          <p v-if="editError" class="mt-2 text-sm text-danger">{{ editError }}</p>
+          <div class="mt-3 flex items-center gap-2">
+            <AppButton
+              size="sm"
+              variant="primary"
+              :disabled="saving"
+              @click="onSaveEdit(customer.id)"
+            >
+              {{ saving ? 'Saving…' : 'Save' }}
+            </AppButton>
+            <AppButton size="sm" variant="ghost" @click="cancelEdit">Cancel</AppButton>
+          </div>
+        </template>
+      </AppCard>
+    </div>
   </div>
 </template>

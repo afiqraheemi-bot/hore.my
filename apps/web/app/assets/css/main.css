@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens (HORE_MY_MASTER_CONTEXT.md §5): a minimal, ChatGPT-like
+ * interaction pattern without copying its visual identity — a neutral
+ * grayscale surface system (the structural pattern) paired with a
+ * distinct warm-amber accent (the identity), never ChatGPT's own teal.
+ * Light and dark are both first-class; every color lives here, never
+ * hard-coded in a component, so the theme toggle only ever flips one
+ * class on <html>.
+ */
+:root {
+  --color-bg: 255 255 255;
+  --color-bg-secondary: 247 247 248;
+  --color-bg-tertiary: 236 236 238;
+  --color-bg-hover: 243 243 245;
+  --color-border: 229 229 231;
+  --color-border-strong: 209 209 214;
+  --color-text: 23 23 26;
+  --color-text-secondary: 107 107 115;
+  --color-text-tertiary: 150 150 158;
+
+  --color-accent: 217 96 41;
+  --color-accent-hover: 191 82 33;
+  --color-accent-contrast: 255 255 255;
+  --color-accent-soft: 253 234 222;
+
+  --color-success: 22 163 74;
+  --color-success-soft: 220 245 227;
+  --color-danger: 220 38 38;
+  --color-danger-soft: 253 226 226;
+  --color-warning: 217 119 6;
+  --color-warning-soft: 254 240 216;
+
+  --shadow-color: 23 23 26;
+}
+
+.dark {
+  --color-bg: 24 24 27;
+  --color-bg-secondary: 16 16 18;
+  --color-bg-tertiary: 39 39 42;
+  --color-bg-hover: 33 33 36;
+  --color-border: 51 51 55;
+  --color-border-strong: 70 70 75;
+  --color-text: 237 237 240;
+  --color-text-secondary: 172 172 179;
+  --color-text-tertiary: 128 128 136;
+
+  --color-accent: 232 138 78;
+  --color-accent-hover: 240 155 100;
+  --color-accent-contrast: 23 23 26;
+  --color-accent-soft: 63 42 26;
+
+  --color-success: 74 222 128;
+  --color-success-soft: 20 45 30;
+  --color-danger: 248 113 113;
+  --color-danger-soft: 55 24 24;
+  --color-warning: 251 191 36;
+  --color-warning-soft: 55 42 15;
+
+  --shadow-color: 0 0 0;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text));
+}
+
+/* A visible, consistent focus ring everywhere (WCAG 2.2 AA) — never
+   suppressed with outline:none without a replacement. */
+:focus-visible {
+  outline: 2px solid rgb(var(--color-accent));
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-color: rgb(var(--color-border-strong)) transparent;
+}

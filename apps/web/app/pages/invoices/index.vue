@@ -42,6 +42,7 @@ const accounts = ref<Account[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+const showForm = ref(false)
 const customerId = ref('')
 const dueDate = ref('')
 const receivableAccountId = ref('')
@@ -61,8 +62,17 @@ function issueDateFor(invoiceId: string): string {
   return issueDates.value[invoiceId] ?? today
 }
 
-const receivableAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Asset'))
-const revenueAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Revenue'))
+const customerOptions = computed(() => customers.value.map((c) => ({ value: c.id, label: c.name })))
+const receivableAccountOptions = computed(() =>
+  accounts.value
+    .filter((a) => a.account_type === 'Asset')
+    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+)
+const revenueAccountOptions = computed(() =>
+  accounts.value
+    .filter((a) => a.account_type === 'Revenue')
+    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+)
 
 async function loadInvoices() {
   loading.value = true
@@ -114,6 +124,7 @@ async function onCreate() {
     receivableAccountId.value = ''
     revenueAccountId.value = ''
     lineDrafts.value = [{ description: '', quantity: 1, unit_price: '' }]
+    showForm.value = false
     await loadInvoices()
   } catch {
     createError.value = 'Failed to create invoice draft — check the fields above.'
@@ -159,154 +170,132 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">Invoices</h1>
+  <div>
+    <PageHeader title="Invoices">
+      <template #actions>
+        <AppButton variant="primary" @click="showForm = !showForm">
+          <AppIcon name="plus" :size="15" /> New invoice
+        </AppButton>
+      </template>
+    </PageHeader>
 
-    <form class="space-y-3 rounded border border-gray-200 bg-white p-4" @submit.prevent="onCreate">
-      <div class="flex flex-wrap items-end gap-3">
-        <div>
-          <label class="block text-xs font-medium text-gray-500">Customer</label>
-          <select
-            v-model="customerId"
-            required
-            class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
-          >
-            <option value="" disabled>Select a customer</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500">Due date</label>
-          <input
-            v-model="dueDate"
-            type="date"
-            required
-            class="mt-1 rounded border border-gray-300 px-2 py-1"
-          />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500">Receivable account</label>
-          <select
-            v-model="receivableAccountId"
-            required
-            class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
-          >
-            <option value="" disabled>Select an Asset account</option>
-            <option v-for="a in receivableAccounts" :key="a.id" :value="a.id">
-              {{ a.account_code }} — {{ a.account_name }}
-            </option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500">Revenue account</label>
-          <select
-            v-model="revenueAccountId"
-            required
-            class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
-          >
-            <option value="" disabled>Select a Revenue account</option>
-            <option v-for="a in revenueAccounts" :key="a.id" :value="a.id">
-              {{ a.account_code }} — {{ a.account_name }}
-            </option>
-          </select>
-        </div>
-      </div>
-
-      <div class="space-y-2">
-        <label class="block text-xs font-medium text-gray-500">Lines</label>
-        <div v-for="(line, i) in lineDrafts" :key="i" class="flex items-end gap-2">
-          <input
-            v-model="line.description"
-            placeholder="Description"
-            class="w-64 rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-          <input
-            v-model.number="line.quantity"
-            type="number"
-            min="1"
-            placeholder="Qty"
-            class="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-          <input
-            v-model="line.unit_price"
-            placeholder="Unit price"
-            class="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-          <button type="button" class="text-xs text-gray-500 underline" @click="removeLine(i)">
-            Remove
-          </button>
-        </div>
-        <button type="button" class="text-xs text-gray-700 underline" @click="addLine">
-          + Add line
-        </button>
-      </div>
-
-      <button
-        type="submit"
-        :disabled="creating"
-        class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
-        {{ creating ? 'Saving…' : 'Save as Draft' }}
-      </button>
-      <p v-if="createError" class="text-sm text-red-700">{{ createError }}</p>
-    </form>
-
-    <p v-if="actionError" class="text-sm text-red-700">{{ actionError }}</p>
-
-    <p v-if="loading" class="text-sm text-gray-500">Loading…</p>
-    <p v-else-if="error" class="text-sm text-red-700">{{ error }}</p>
-    <div v-else class="space-y-3">
-      <div
-        v-for="invoice in invoices"
-        :key="invoice.id"
-        class="rounded border border-gray-200 bg-white p-4 text-sm"
-      >
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <span class="font-medium">{{ invoice.invoice_number ?? 'Draft' }}</span>
-            <span class="ml-2 text-gray-600">{{ customerName(invoice.customer_id) }}</span>
-            <span class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">
-              {{ invoice.status }}
-            </span>
-            <span class="ml-2 text-gray-500">Due {{ invoice.due_date }}</span>
-            <span class="ml-2 font-medium">RM{{ invoice.total_amount }}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <input
-              v-if="invoice.status === 'Draft'"
-              :value="issueDateFor(invoice.id)"
-              type="date"
-              class="rounded border border-gray-300 px-1 py-1 text-xs"
-              @input="issueDates[invoice.id] = ($event.target as HTMLInputElement).value"
+    <AppCard v-if="showForm" class="mb-6">
+      <form class="space-y-4" @submit.prevent="onCreate">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <AppField label="Customer">
+            <AppSelect
+              v-model="customerId"
+              :options="customerOptions"
+              placeholder="Select a customer"
+              required
             />
+          </AppField>
+          <AppField label="Due date">
+            <AppInput v-model="dueDate" type="date" required />
+          </AppField>
+          <AppField label="Receivable account">
+            <AppSelect
+              v-model="receivableAccountId"
+              :options="receivableAccountOptions"
+              placeholder="Select an Asset account"
+              required
+            />
+          </AppField>
+          <AppField label="Revenue account">
+            <AppSelect
+              v-model="revenueAccountId"
+              :options="revenueAccountOptions"
+              placeholder="Select a Revenue account"
+              required
+            />
+          </AppField>
+        </div>
+
+        <div class="space-y-2">
+          <p class="text-xs font-medium text-ink-secondary">Lines</p>
+          <div v-for="(line, i) in lineDrafts" :key="i" class="flex items-end gap-2">
+            <div class="flex-1">
+              <AppInput v-model="line.description" placeholder="Description" />
+            </div>
+            <div class="w-20">
+              <AppInput v-model.number="line.quantity" type="number" min="1" placeholder="Qty" />
+            </div>
+            <div class="w-28">
+              <AppInput v-model="line.unit_price" placeholder="Unit price" />
+            </div>
             <button
-              v-if="invoice.status === 'Draft'"
               type="button"
-              :disabled="issuingId === invoice.id"
-              class="rounded bg-gray-900 px-2 py-1 text-xs text-white disabled:opacity-50"
-              @click="onIssue(invoice.id)"
+              class="mb-2.5 text-ink-tertiary hover:text-danger"
+              @click="removeLine(i)"
             >
-              Issue
-            </button>
-            <button
-              v-if="invoice.status === 'Draft'"
-              type="button"
-              class="rounded border border-gray-300 px-2 py-1 text-xs"
-              @click="onDelete(invoice.id)"
-            >
-              Delete
+              <AppIcon name="trash" :size="16" />
             </button>
           </div>
+          <AppButton size="sm" variant="ghost" type="button" @click="addLine">
+            <AppIcon name="plus" :size="13" /> Add line
+          </AppButton>
         </div>
-        <ul v-if="invoice.lines.length > 0" class="mt-2 space-y-1 text-xs text-gray-600">
+
+        <p v-if="createError" class="text-sm text-danger">{{ createError }}</p>
+        <AppButton type="submit" variant="primary" :disabled="creating">
+          {{ creating ? 'Saving…' : 'Save as Draft' }}
+        </AppButton>
+      </form>
+    </AppCard>
+
+    <p v-if="actionError" class="mb-3 text-sm text-danger">{{ actionError }}</p>
+
+    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
+    <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+    <EmptyState v-else-if="invoices.length === 0" title="No invoices yet" />
+    <div v-else class="space-y-2">
+      <AppCard v-for="invoice in invoices" :key="invoice.id">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <p class="font-medium text-ink">{{ invoice.invoice_number ?? 'Draft' }}</p>
+              <AppBadge :tone="invoice.status === 'Issued' ? 'success' : 'neutral'">{{
+                invoice.status
+              }}</AppBadge>
+            </div>
+            <p class="mt-0.5 text-sm text-ink-tertiary">
+              {{ customerName(invoice.customer_id) }} · Due {{ invoice.due_date }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <p class="text-lg font-semibold text-ink">RM{{ invoice.total_amount }}</p>
+            <template v-if="invoice.status === 'Draft'">
+              <input
+                :value="issueDateFor(invoice.id)"
+                type="date"
+                class="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-ink-secondary"
+                @input="issueDates[invoice.id] = ($event.target as HTMLInputElement).value"
+              />
+              <AppButton
+                size="sm"
+                variant="primary"
+                :disabled="issuingId === invoice.id"
+                @click="onIssue(invoice.id)"
+              >
+                Issue
+              </AppButton>
+              <AppButton size="sm" variant="ghost" @click="onDelete(invoice.id)">
+                <AppIcon name="trash" :size="14" />
+              </AppButton>
+            </template>
+          </div>
+        </div>
+        <ul
+          v-if="invoice.lines.length > 0"
+          class="mt-3 space-y-1 border-t border-border pt-3 text-xs text-ink-tertiary"
+        >
           <li v-for="(line, i) in invoice.lines" :key="i">
             {{ line.description }} — {{ line.quantity }} × RM{{ line.unit_price }} = RM{{
               line.line_amount
             }}
           </li>
         </ul>
-      </div>
-      <p v-if="invoices.length === 0" class="text-sm text-gray-400">No invoices yet.</p>
+      </AppCard>
     </div>
   </div>
 </template>

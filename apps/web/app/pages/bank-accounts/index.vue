@@ -44,17 +44,35 @@ interface Reconciliation {
   difference: { amount: string; sign: 'Over' | 'Short' | null; is_zero: boolean } | null
 }
 
+const RECONCILIATION_TONE: Record<
+  Reconciliation['state'],
+  'neutral' | 'warning' | 'success' | 'accent'
+> = {
+  Draft: 'neutral',
+  InReview: 'warning',
+  Balanced: 'success',
+  Completed: 'accent',
+}
+
 const { request } = useApi()
 
 const accounts = ref<Account[]>([])
 const bankAccounts = ref<BankAccount[]>([])
 const loading = ref(true)
 
+const showRegisterForm = ref(false)
 const linkedAccountId = ref('')
 const bankName = ref('')
 const accountNumberLast4 = ref('')
 const registering = ref(false)
 const registerError = ref<string | null>(null)
+
+const linkedAccountOptions = computed(() =>
+  accounts.value.map((a) => ({
+    value: a.id,
+    label: `${a.account_code} — ${a.account_name} (${a.account_type})`,
+  })),
+)
 
 const selectedBankAccountId = ref<string | null>(null)
 const transactions = ref<BankTransaction[]>([])
@@ -69,6 +87,7 @@ const matchError = ref<string | null>(null)
 const matchMessage = ref<string | null>(null)
 
 const reconciliations = ref<Reconciliation[]>([])
+const showReconciliationForm = ref(false)
 const periodStart = ref('')
 const periodEnd = ref('')
 const openingBalance = ref('')
@@ -106,6 +125,7 @@ async function onRegister() {
     })
     bankName.value = ''
     accountNumberLast4.value = ''
+    showRegisterForm.value = false
     await loadAll()
   } catch {
     registerError.value =
@@ -152,6 +172,7 @@ async function onOpenReconciliation() {
     periodEnd.value = ''
     openingBalance.value = ''
     closingBalance.value = ''
+    showReconciliationForm.value = false
     await loadReconciliations(selectedBankAccountId.value)
   } catch {
     reconciliationError.value = 'Failed to open the reconciliation — check the dates and amounts.'
@@ -234,11 +255,6 @@ async function onConfirmMatch(suggestion: MatchSuggestion) {
   }
 }
 
-function onFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  importFile.value = target.files?.[0] ?? null
-}
-
 async function onImport() {
   if (!selectedBankAccountId.value || !importFile.value) return
 
@@ -262,6 +278,7 @@ async function onImport() {
     importSummary.value = result.is_new_import
       ? `Imported ${result.inserted_count} new row(s), skipped ${result.duplicate_count} duplicate(s).`
       : 'This exact file was already imported — nothing new to add.'
+    importFile.value = null
 
     await selectBankAccount(selectedBankAccountId.value)
   } catch {
@@ -276,65 +293,56 @@ onMounted(loadAll)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">Bank accounts</h1>
+  <div>
+    <PageHeader title="Bank accounts">
+      <template #actions>
+        <AppButton variant="primary" @click="showRegisterForm = !showRegisterForm">
+          <AppIcon name="plus" :size="15" /> Register bank account
+        </AppButton>
+      </template>
+    </PageHeader>
 
-    <form
-      class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4"
-      @submit.prevent="onRegister"
-    >
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Linked account (Asset)</label>
-        <select
-          v-model="linkedAccountId"
-          required
-          class="mt-1 rounded border border-gray-300 px-2 py-1"
-        >
-          <option value="" disabled>Select an account</option>
-          <option v-for="account in accounts" :key="account.id" :value="account.id">
-            {{ account.account_code }} — {{ account.account_name }} ({{ account.account_type }})
-          </option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Bank name</label>
-        <input
-          v-model="bankName"
-          required
-          placeholder="Maybank"
-          class="mt-1 w-40 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Last 4 digits</label>
-        <input
-          v-model="accountNumberLast4"
-          maxlength="4"
-          placeholder="1234"
-          class="mt-1 w-20 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <button
-        type="submit"
-        :disabled="registering"
-        class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
-        {{ registering ? 'Registering…' : 'Register bank account' }}
-      </button>
-      <p v-if="registerError" class="w-full text-sm text-red-700">{{ registerError }}</p>
-    </form>
+    <AppCard v-if="showRegisterForm" class="mb-6">
+      <form class="flex flex-wrap items-end gap-3" @submit.prevent="onRegister">
+        <div class="w-64">
+          <AppField label="Linked account (Asset)">
+            <AppSelect
+              v-model="linkedAccountId"
+              :options="linkedAccountOptions"
+              placeholder="Select an account"
+              required
+            />
+          </AppField>
+        </div>
+        <div class="w-40">
+          <AppField label="Bank name">
+            <AppInput v-model="bankName" required placeholder="Maybank" />
+          </AppField>
+        </div>
+        <div class="w-24">
+          <AppField label="Last 4 digits">
+            <AppInput v-model="accountNumberLast4" maxlength="4" placeholder="1234" />
+          </AppField>
+        </div>
+        <AppButton type="submit" variant="primary" :disabled="registering">
+          {{ registering ? 'Registering…' : 'Register' }}
+        </AppButton>
+        <p v-if="registerError" class="w-full text-sm text-danger">{{ registerError }}</p>
+      </form>
+    </AppCard>
 
-    <p v-if="loading" class="text-sm text-gray-500">Loading…</p>
+    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <template v-else>
       <div class="flex flex-wrap gap-2">
         <button
           v-for="bankAccount in bankAccounts"
           :key="bankAccount.id"
-          class="rounded border px-3 py-1.5 text-sm"
+          type="button"
+          class="rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
           :class="
             selectedBankAccountId === bankAccount.id
-              ? 'border-gray-900 bg-gray-900 text-white'
-              : 'border-gray-300 bg-white text-gray-700'
+              ? 'border-accent bg-accent text-accent-contrast'
+              : 'border-border bg-surface text-ink-secondary hover:bg-surface-hover'
           "
           @click="selectBankAccount(bankAccount.id)"
         >
@@ -343,226 +351,213 @@ onMounted(loadAll)
             >···{{ bankAccount.account_number_last4 }}</span
           >
         </button>
-        <p v-if="bankAccounts.length === 0" class="text-sm text-gray-400">
+        <p v-if="bankAccounts.length === 0" class="text-sm text-ink-tertiary">
           No bank accounts registered yet.
         </p>
       </div>
 
-      <div
-        v-if="selectedBankAccountId"
-        class="space-y-4 rounded border border-gray-200 bg-white p-4"
-      >
-        <div class="flex flex-wrap items-end gap-3">
-          <div>
-            <label class="block text-xs font-medium text-gray-500">
-              Statement CSV (date,description,amount,direction,balance,reference)
-            </label>
-            <input type="file" accept=".csv,text/csv" class="mt-1 text-sm" @change="onFileChange" />
+      <div v-if="selectedBankAccountId" class="mt-6 space-y-6">
+        <AppCard>
+          <p class="mb-3 text-sm font-medium text-ink">Import statement</p>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div class="flex-1">
+              <AppDropzone
+                v-model="importFile"
+                accept=".csv,text/csv"
+                hint="CSV: date,description,amount,direction,balance,reference"
+              />
+            </div>
+            <AppButton variant="primary" :disabled="importing || !importFile" @click="onImport">
+              {{ importing ? 'Importing…' : 'Import' }}
+            </AppButton>
           </div>
-          <button
-            type="button"
-            :disabled="importing || !importFile"
-            class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            @click="onImport"
-          >
-            {{ importing ? 'Importing…' : 'Import statement' }}
-          </button>
+          <p v-if="importError" class="mt-2 text-sm text-danger">{{ importError }}</p>
+          <p v-if="importSummary" class="mt-2 text-sm text-success">{{ importSummary }}</p>
+        </AppCard>
+
+        <div>
+          <h2 class="mb-2 text-sm font-medium text-ink-secondary">Transactions</h2>
+          <EmptyState v-if="transactions.length === 0" title="No transactions imported yet" />
+          <div v-else class="space-y-1.5">
+            <AppCard v-for="transaction in transactions" :key="transaction.id" :padded="false">
+              <div class="flex items-center gap-3 px-4 py-2.5">
+                <span
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  :class="
+                    transaction.direction === 'MoneyIn'
+                      ? 'bg-success-soft text-success'
+                      : 'bg-danger-soft text-danger'
+                  "
+                >
+                  <AppIcon
+                    :name="transaction.direction === 'MoneyIn' ? 'download' : 'send'"
+                    :size="13"
+                  />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-ink">{{ transaction.description }}</p>
+                  <p class="text-xs text-ink-tertiary">
+                    {{ transaction.transaction_date
+                    }}<template v-if="transaction.reference">
+                      · {{ transaction.reference }}</template
+                    >
+                  </p>
+                </div>
+                <p
+                  class="shrink-0 text-sm font-medium"
+                  :class="transaction.direction === 'MoneyIn' ? 'text-success' : 'text-danger'"
+                >
+                  {{ transaction.direction === 'MoneyIn' ? '+' : '−' }}RM{{ transaction.amount }}
+                </p>
+              </div>
+            </AppCard>
+          </div>
         </div>
-        <p v-if="importError" class="text-sm text-red-700">{{ importError }}</p>
-        <p v-if="importSummary" class="text-sm text-green-700">{{ importSummary }}</p>
 
-        <table class="w-full text-left text-sm">
-          <thead>
-            <tr class="border-b border-gray-200 text-gray-500">
-              <th class="py-2">Date</th>
-              <th class="py-2">Description</th>
-              <th class="py-2">Amount</th>
-              <th class="py-2">Direction</th>
-              <th class="py-2">Balance</th>
-              <th class="py-2">Reference</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="transaction in transactions"
-              :key="transaction.id"
-              class="border-b border-gray-100"
-            >
-              <td class="py-2">{{ transaction.transaction_date }}</td>
-              <td class="py-2">{{ transaction.description }}</td>
-              <td class="py-2">{{ transaction.amount }}</td>
-              <td class="py-2">{{ transaction.direction === 'MoneyIn' ? 'In' : 'Out' }}</td>
-              <td class="py-2">{{ transaction.balance ?? '—' }}</td>
-              <td class="py-2">{{ transaction.reference || '—' }}</td>
-            </tr>
-            <tr v-if="transactions.length === 0">
-              <td colspan="6" class="py-4 text-center text-gray-400">
-                No transactions imported yet.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="space-y-2">
-          <h2 class="text-sm font-semibold text-gray-700">Match suggestions</h2>
-          <p v-if="matchError" class="text-sm text-red-700">{{ matchError }}</p>
-          <p v-if="matchMessage" class="text-sm text-green-700">{{ matchMessage }}</p>
-          <ul class="space-y-2">
-            <li
+        <div>
+          <h2 class="mb-2 text-sm font-medium text-ink-secondary">Match suggestions</h2>
+          <p v-if="matchError" class="mb-2 text-sm text-danger">{{ matchError }}</p>
+          <p v-if="matchMessage" class="mb-2 text-sm text-success">{{ matchMessage }}</p>
+          <EmptyState v-if="suggestions.length === 0" title="No unmatched suggestions right now" />
+          <div v-else class="space-y-1.5">
+            <AppCard
               v-for="suggestion in suggestions"
               :key="suggestion.bank_transaction_id + suggestion.journal_id"
-              class="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm"
             >
-              <div>
-                <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">{{
-                  suggestion.source_type
-                }}</span>
-                <span class="ml-2 text-gray-700">{{ suggestion.rationale }}</span>
-              </div>
-              <button
-                type="button"
-                :disabled="confirmingId === suggestion.bank_transaction_id"
-                class="rounded bg-gray-900 px-2.5 py-1 text-xs text-white disabled:opacity-50"
-                @click="onConfirmMatch(suggestion)"
-              >
-                {{
-                  confirmingId === suggestion.bank_transaction_id ? 'Confirming…' : 'Confirm match'
-                }}
-              </button>
-            </li>
-            <li v-if="suggestions.length === 0" class="text-sm text-gray-400">
-              No unmatched suggestions right now.
-            </li>
-          </ul>
-        </div>
-
-        <div class="space-y-3 border-t border-gray-200 pt-4">
-          <h2 class="text-sm font-semibold text-gray-700">Reconciliations</h2>
-          <form
-            class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-gray-50 p-3"
-            @submit.prevent="onOpenReconciliation"
-          >
-            <div>
-              <label class="block text-xs font-medium text-gray-500">Period start</label>
-              <input
-                v-model="periodStart"
-                type="date"
-                required
-                class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500">Period end</label>
-              <input
-                v-model="periodEnd"
-                type="date"
-                required
-                class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500">Opening balance</label>
-              <input
-                v-model="openingBalance"
-                placeholder="1000.00"
-                required
-                class="mt-1 w-28 rounded border border-gray-300 px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500">Closing balance</label>
-              <input
-                v-model="closingBalance"
-                placeholder="1500.00"
-                required
-                class="mt-1 w-28 rounded border border-gray-300 px-2 py-1 text-sm"
-              />
-            </div>
-            <button
-              type="submit"
-              :disabled="opening"
-              class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            >
-              {{ opening ? 'Opening…' : 'Open reconciliation' }}
-            </button>
-          </form>
-          <p v-if="reconciliationError" class="text-sm text-red-700">{{ reconciliationError }}</p>
-
-          <div
-            v-for="reconciliation in reconciliations"
-            :key="reconciliation.id"
-            class="space-y-2 rounded border border-gray-200 p-3 text-sm"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <span class="font-medium"
-                  >{{ reconciliation.period_start }} → {{ reconciliation.period_end }}</span
-                >
-                <span
-                  class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700"
-                  >{{ reconciliation.state }}</span
-                >
-                <span
-                  v-if="reconciliation.difference"
-                  class="ml-2 text-xs"
-                  :class="reconciliation.difference.is_zero ? 'text-green-700' : 'text-red-700'"
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <AppBadge tone="accent">{{ suggestion.source_type }}</AppBadge>
+                  <p class="mt-1 text-sm text-ink-secondary">{{ suggestion.rationale }}</p>
+                </div>
+                <AppButton
+                  size="sm"
+                  variant="primary"
+                  :disabled="confirmingId === suggestion.bank_transaction_id"
+                  @click="onConfirmMatch(suggestion)"
                 >
                   {{
-                    reconciliation.difference.is_zero
-                      ? 'Balanced (RM0.00)'
-                      : `Difference: RM${reconciliation.difference.amount} (${reconciliation.difference.sign})`
+                    confirmingId === suggestion.bank_transaction_id
+                      ? 'Confirming…'
+                      : 'Confirm match'
                   }}
-                </span>
+                </AppButton>
               </div>
-              <div class="flex gap-2">
-                <button
-                  v-if="reconciliation.state === 'Draft'"
-                  type="button"
-                  :disabled="transitioning === reconciliation.id"
-                  class="rounded border border-gray-300 px-2 py-1 text-xs"
-                  @click="onTransition(reconciliation.id, 'start-review')"
-                >
-                  Start review
-                </button>
-                <button
-                  v-if="reconciliation.state === 'InReview'"
-                  type="button"
-                  :disabled="transitioning === reconciliation.id"
-                  class="rounded border border-gray-300 px-2 py-1 text-xs"
-                  @click="onTransition(reconciliation.id, 'mark-balanced')"
-                >
-                  Mark balanced
-                </button>
-                <button
-                  v-if="reconciliation.state === 'Balanced'"
-                  type="button"
-                  :disabled="transitioning === reconciliation.id"
-                  class="rounded border border-gray-300 px-2 py-1 text-xs"
-                  @click="onTransition(reconciliation.id, 'complete')"
-                >
-                  Complete
-                </button>
-              </div>
-            </div>
-            <div v-if="reconciliation.state === 'Completed'" class="flex items-center gap-2">
-              <input
-                v-model="reopenReason[reconciliation.id]"
-                placeholder="Reason for reopening"
-                class="w-64 rounded border border-gray-300 px-2 py-1 text-xs"
-              />
-              <button
-                type="button"
-                :disabled="transitioning === reconciliation.id || !reopenReason[reconciliation.id]"
-                class="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
-                @click="onReopen(reconciliation.id)"
-              >
-                Reopen
-              </button>
-            </div>
+            </AppCard>
           </div>
-          <p v-if="reconciliations.length === 0" class="text-sm text-gray-400">
-            No reconciliations opened yet.
+        </div>
+
+        <div class="border-t border-border pt-6">
+          <div class="mb-2 flex items-center justify-between">
+            <h2 class="text-sm font-medium text-ink-secondary">Reconciliations</h2>
+            <AppButton
+              size="sm"
+              variant="ghost"
+              @click="showReconciliationForm = !showReconciliationForm"
+            >
+              <AppIcon name="plus" :size="14" /> Open reconciliation
+            </AppButton>
+          </div>
+
+          <AppCard v-if="showReconciliationForm" class="mb-3">
+            <form class="flex flex-wrap items-end gap-3" @submit.prevent="onOpenReconciliation">
+              <div>
+                <AppField label="Period start">
+                  <AppInput v-model="periodStart" type="date" required />
+                </AppField>
+              </div>
+              <div>
+                <AppField label="Period end">
+                  <AppInput v-model="periodEnd" type="date" required />
+                </AppField>
+              </div>
+              <div class="w-28">
+                <AppField label="Opening balance">
+                  <AppInput v-model="openingBalance" placeholder="1000.00" required />
+                </AppField>
+              </div>
+              <div class="w-28">
+                <AppField label="Closing balance">
+                  <AppInput v-model="closingBalance" placeholder="1500.00" required />
+                </AppField>
+              </div>
+              <AppButton type="submit" variant="primary" :disabled="opening">
+                {{ opening ? 'Opening…' : 'Open' }}
+              </AppButton>
+            </form>
+          </AppCard>
+          <p v-if="reconciliationError" class="mb-2 text-sm text-danger">
+            {{ reconciliationError }}
           </p>
+
+          <EmptyState v-if="reconciliations.length === 0" title="No reconciliations opened yet" />
+          <div v-else class="space-y-2">
+            <AppCard v-for="reconciliation in reconciliations" :key="reconciliation.id">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-ink"
+                    >{{ reconciliation.period_start }} → {{ reconciliation.period_end }}</span
+                  >
+                  <AppBadge :tone="RECONCILIATION_TONE[reconciliation.state]">{{
+                    reconciliation.state
+                  }}</AppBadge>
+                  <span
+                    v-if="reconciliation.difference"
+                    class="text-xs font-medium"
+                    :class="reconciliation.difference.is_zero ? 'text-success' : 'text-danger'"
+                  >
+                    {{
+                      reconciliation.difference.is_zero
+                        ? 'Balanced (RM0.00)'
+                        : `Difference: RM${reconciliation.difference.amount} (${reconciliation.difference.sign})`
+                    }}
+                  </span>
+                </div>
+                <div class="flex gap-2">
+                  <AppButton
+                    v-if="reconciliation.state === 'Draft'"
+                    size="sm"
+                    :disabled="transitioning === reconciliation.id"
+                    @click="onTransition(reconciliation.id, 'start-review')"
+                  >
+                    Start review
+                  </AppButton>
+                  <AppButton
+                    v-if="reconciliation.state === 'InReview'"
+                    size="sm"
+                    :disabled="transitioning === reconciliation.id"
+                    @click="onTransition(reconciliation.id, 'mark-balanced')"
+                  >
+                    Mark balanced
+                  </AppButton>
+                  <AppButton
+                    v-if="reconciliation.state === 'Balanced'"
+                    size="sm"
+                    :disabled="transitioning === reconciliation.id"
+                    @click="onTransition(reconciliation.id, 'complete')"
+                  >
+                    Complete
+                  </AppButton>
+                </div>
+              </div>
+              <div v-if="reconciliation.state === 'Completed'" class="mt-2 flex items-center gap-2">
+                <div class="w-64">
+                  <AppInput
+                    v-model="reopenReason[reconciliation.id]"
+                    placeholder="Reason for reopening"
+                  />
+                </div>
+                <AppButton
+                  size="sm"
+                  :disabled="
+                    transitioning === reconciliation.id || !reopenReason[reconciliation.id]
+                  "
+                  @click="onReopen(reconciliation.id)"
+                >
+                  Reopen
+                </AppButton>
+              </div>
+            </AppCard>
+          </div>
         </div>
       </div>
     </template>

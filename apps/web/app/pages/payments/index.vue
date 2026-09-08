@@ -51,6 +51,7 @@ const allocationsByPayment = ref<Record<string, Allocation[]>>({})
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+const showForm = ref(false)
 const customerId = ref('')
 const amount = ref('')
 const paymentDate = ref('')
@@ -65,8 +66,16 @@ const allocateInvoiceId = ref('')
 const allocateAmount = ref('')
 const actionError = ref<string | null>(null)
 
-const depositAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Asset'))
-const receivableAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Asset'))
+const depositAccountOptions = computed(() =>
+  accounts.value
+    .filter((a) => a.account_type === 'Asset')
+    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+)
+const receivableAccountOptions = depositAccountOptions
+const customerOptions = computed(() => customers.value.map((c) => ({ value: c.id, label: c.name })))
+const outstandingInvoiceOptions = computed(() =>
+  outstandingInvoices.value.map((inv) => ({ value: inv.id, label: invoiceLabel(inv) })),
+)
 
 async function loadPayments() {
   loading.value = true
@@ -124,6 +133,7 @@ async function onCreate() {
     depositAccountId.value = ''
     receivableAccountId.value = ''
     reference.value = ''
+    showForm.value = false
     await Promise.all([loadPayments(), loadOutstandingInvoices()])
   } catch {
     createError.value = 'Failed to record payment — check the fields above.'
@@ -177,179 +187,141 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">Payments</h1>
+  <div>
+    <PageHeader title="Payments">
+      <template #actions>
+        <AppButton variant="primary" @click="showForm = !showForm">
+          <AppIcon name="plus" :size="15" /> Record payment
+        </AppButton>
+      </template>
+    </PageHeader>
 
-    <form
-      class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4"
-      @submit.prevent="onCreate"
-    >
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Customer</label>
-        <select
-          v-model="customerId"
-          required
-          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
-        >
-          <option value="" disabled>Select</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Amount</label>
-        <input
-          v-model="amount"
-          placeholder="300.00"
-          required
-          class="mt-1 w-28 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Payment date</label>
-        <input
-          v-model="paymentDate"
-          type="date"
-          required
-          class="mt-1 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Deposit account</label>
-        <select
-          v-model="depositAccountId"
-          required
-          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
-        >
-          <option value="" disabled>Select an Asset account</option>
-          <option v-for="a in depositAccounts" :key="a.id" :value="a.id">
-            {{ a.account_code }} — {{ a.account_name }}
-          </option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Receivable account</label>
-        <select
-          v-model="receivableAccountId"
-          required
-          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
-        >
-          <option value="" disabled>Select an Asset account</option>
-          <option v-for="a in receivableAccounts" :key="a.id" :value="a.id">
-            {{ a.account_code }} — {{ a.account_name }}
-          </option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Reference</label>
-        <input
-          v-model="reference"
-          placeholder="optional"
-          class="mt-1 w-32 rounded border border-gray-300 px-2 py-1"
-        />
-      </div>
-      <button
-        type="submit"
-        :disabled="creating"
-        class="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
-        {{ creating ? 'Recording…' : 'Record payment' }}
-      </button>
-      <p v-if="createError" class="w-full text-sm text-red-700">{{ createError }}</p>
-    </form>
+    <AppCard v-if="showForm" class="mb-6">
+      <form class="flex flex-wrap items-end gap-3" @submit.prevent="onCreate">
+        <div class="w-48">
+          <AppField label="Customer">
+            <AppSelect
+              v-model="customerId"
+              :options="customerOptions"
+              placeholder="Select"
+              required
+            />
+          </AppField>
+        </div>
+        <div class="w-28">
+          <AppField label="Amount">
+            <AppInput v-model="amount" placeholder="300.00" required />
+          </AppField>
+        </div>
+        <div>
+          <AppField label="Payment date">
+            <AppInput v-model="paymentDate" type="date" required />
+          </AppField>
+        </div>
+        <div class="w-48">
+          <AppField label="Deposit account">
+            <AppSelect
+              v-model="depositAccountId"
+              :options="depositAccountOptions"
+              placeholder="Select an Asset account"
+              required
+            />
+          </AppField>
+        </div>
+        <div class="w-48">
+          <AppField label="Receivable account">
+            <AppSelect
+              v-model="receivableAccountId"
+              :options="receivableAccountOptions"
+              placeholder="Select an Asset account"
+              required
+            />
+          </AppField>
+        </div>
+        <div class="w-32">
+          <AppField label="Reference">
+            <AppInput v-model="reference" placeholder="optional" />
+          </AppField>
+        </div>
+        <AppButton type="submit" variant="primary" :disabled="creating">
+          {{ creating ? 'Recording…' : 'Record' }}
+        </AppButton>
+        <p v-if="createError" class="w-full text-sm text-danger">{{ createError }}</p>
+      </form>
+    </AppCard>
 
-    <p v-if="actionError" class="text-sm text-red-700">{{ actionError }}</p>
+    <p v-if="actionError" class="mb-3 text-sm text-danger">{{ actionError }}</p>
 
-    <p v-if="loading" class="text-sm text-gray-500">Loading…</p>
-    <p v-else-if="error" class="text-sm text-red-700">{{ error }}</p>
-    <div v-else class="space-y-3">
-      <div
-        v-for="payment in payments"
-        :key="payment.id"
-        class="rounded border border-gray-200 bg-white p-4 text-sm"
-      >
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <span class="font-medium">RM{{ payment.amount }}</span>
-            <span class="ml-2 text-gray-600">{{ customerName(payment.customer_id) }}</span>
-            <span class="ml-2 text-gray-500">{{ payment.payment_date }}</span>
-            <span v-if="payment.reference" class="ml-2 text-gray-400"
-              >({{ payment.reference }})</span
-            >
-            <span class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">
-              Unallocated: RM{{ payment.unallocated_amount }}
-            </span>
+    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
+    <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+    <EmptyState v-else-if="payments.length === 0" title="No payments yet" />
+    <div v-else class="space-y-2">
+      <AppCard v-for="payment in payments" :key="payment.id">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <p class="text-lg font-semibold text-ink">RM{{ payment.amount }}</p>
+              <AppBadge tone="neutral">Unallocated RM{{ payment.unallocated_amount }}</AppBadge>
+            </div>
+            <p class="text-sm text-ink-tertiary">
+              {{ customerName(payment.customer_id) }} · {{ payment.payment_date }}
+              <template v-if="payment.reference"> · {{ payment.reference }}</template>
+            </p>
           </div>
-          <button
+          <AppButton
             v-if="payment.unallocated_amount !== '0.00'"
-            type="button"
-            class="rounded bg-gray-900 px-2 py-1 text-xs text-white"
+            size="sm"
+            variant="primary"
             @click="startAllocate(payment.id)"
           >
             Allocate
-          </button>
+          </AppButton>
         </div>
 
         <ul
           v-if="(allocationsByPayment[payment.id] ?? []).length > 0"
-          class="mt-2 space-y-1 text-xs text-gray-600"
+          class="mt-3 space-y-1.5 border-t border-border pt-3"
         >
           <li
             v-for="allocation in allocationsByPayment[payment.id]"
             :key="allocation.id"
-            class="flex items-center gap-2"
+            class="flex items-center justify-between text-xs text-ink-secondary"
           >
             <span>Invoice {{ allocation.invoice_id.slice(0, 8) }} — RM{{ allocation.amount }}</span>
             <button
               type="button"
-              class="text-red-600 underline"
+              class="text-ink-tertiary hover:text-danger"
               @click="onDeallocate(allocation.id)"
             >
-              Remove
+              <AppIcon name="x" :size="13" />
             </button>
           </li>
         </ul>
 
         <div
           v-if="allocatingPaymentId === payment.id"
-          class="mt-3 flex items-end gap-2 rounded border border-gray-200 bg-gray-50 p-2"
+          class="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-surface-secondary p-3"
         >
-          <div>
-            <label class="block text-xs font-medium text-gray-500">Invoice</label>
-            <select
-              v-model="allocateInvoiceId"
-              class="mt-1 w-56 rounded border border-gray-300 px-2 py-1 text-xs"
-            >
-              <option value="" disabled>Select an outstanding invoice</option>
-              <option v-for="inv in outstandingInvoices" :key="inv.id" :value="inv.id">
-                {{ invoiceLabel(inv) }}
-              </option>
-            </select>
+          <div class="w-64">
+            <AppField label="Invoice">
+              <AppSelect
+                v-model="allocateInvoiceId"
+                :options="outstandingInvoiceOptions"
+                placeholder="Select an outstanding invoice"
+              />
+            </AppField>
           </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-500">Amount</label>
-            <input
-              v-model="allocateAmount"
-              placeholder="100.00"
-              class="mt-1 w-24 rounded border border-gray-300 px-2 py-1 text-xs"
-            />
+          <div class="w-28">
+            <AppField label="Amount">
+              <AppInput v-model="allocateAmount" placeholder="100.00" />
+            </AppField>
           </div>
-          <button
-            type="button"
-            class="rounded bg-gray-900 px-2 py-1 text-xs text-white"
-            @click="onAllocate(payment.id)"
+          <AppButton size="sm" variant="primary" @click="onAllocate(payment.id)">Confirm</AppButton>
+          <AppButton size="sm" variant="ghost" @click="allocatingPaymentId = null"
+            >Cancel</AppButton
           >
-            Confirm
-          </button>
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-2 py-1 text-xs"
-            @click="allocatingPaymentId = null"
-          >
-            Cancel
-          </button>
         </div>
-      </div>
-      <p v-if="payments.length === 0" class="text-sm text-gray-400">No payments yet.</p>
+      </AppCard>
     </div>
   </div>
 </template>
