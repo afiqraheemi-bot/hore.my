@@ -193,6 +193,110 @@ final class InvoiceIssuingServiceIntegrationTest extends TestCase
         $this->issue($invoice->id(), 'idem-key-second');
     }
 
+    /**
+     * The definitive proof for P0-1: two genuinely concurrent OS
+     * processes, each independently bootstrapping Laravel and calling
+     * the real `InvoiceIssuingService::issue()` against the *same*
+     * Draft Invoice with *different* Idempotency Keys — the exact
+     * double-click/racing-retry scenario the audit described. PHPUnit
+     * is single-threaded and this codebase's own `Tests\TestCase`
+     * performs no per-test rollback, so a single-process test (however
+     * cleverly it holds a lock) cannot reproduce a genuine race between
+     * two overlapping transactions the way spawning two real processes
+     * can. See `tests/bin/concurrent_issue_worker.php`'s own docblock
+     * for the full synchronization mechanism.
+     *
+     * Before the fix, this reliably produced two Posted Journals for
+     * one Invoice — confirmed directly, by temporarily restoring the
+     * pre-fix version of `InvoiceIssuingService` and running this exact
+     * test three times (three failures, each with two distinct
+     * `journal_id` values and two consumed Invoice numbers for the one
+     * Invoice), then restoring the fix and confirming five clean runs.
+     */
+    public function test_two_concurrent_issue_attempts_never_post_two_journals(): void
+    {
+        $invoice = $this->draftInvoice([InvoiceLine::of('Item', 1, Money::fromDecimalString('10.00', $this->myr))], 'invoice-concurrency');
+        $this->invoiceRepository->save($invoice);
+
+        $tmp = sys_get_temp_dir();
+        $readyA = tempnam($tmp, 'ready_a_');
+        $readyB = tempnam($tmp, 'ready_b_');
+        $goFile = tempnam($tmp, 'go_');
+        $resultA = tempnam($tmp, 'result_a_');
+        $resultB = tempnam($tmp, 'result_b_');
+        // tempnam() already creates each file — the workers below poll
+        // for existence of the *ready*/*go* files specifically to
+        // signal state, so start clean.
+        unlink($readyA);
+        unlink($readyB);
+        unlink($goFile);
+
+        $workerScript = base_path('tests/bin/concurrent_issue_worker.php');
+
+        $processA = proc_open(
+            ['php', $workerScript, $this->tenant->toString(), $invoice->id()->toString(), 'idem-key-concurrent-a', $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, $this->tenant->toString(), $invoice->id()->toString(), 'idem-key-concurrent-b', $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($readyA) && file_exists($readyB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker processes to signal ready.');
+            }
+            usleep(2000);
+        }
+
+        touch($goFile);
+
+        foreach ([$processA, $processB] as $process) {
+            proc_close($process);
+        }
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($resultA) && file_exists($resultB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker results.');
+            }
+            usleep(2000);
+        }
+
+        $resultAData = json_decode((string) file_get_contents($resultA), true);
+        $resultBData = json_decode((string) file_get_contents($resultB), true);
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            @unlink($file);
+        }
+
+        $outcomes = [$resultAData, $resultBData];
+        $newlyIssuedCount = count(array_filter($outcomes, static fn (array $r): bool => ($r['newly_issued'] ?? false) === true));
+        $rejectedCount = count(array_filter($outcomes, static fn (array $r): bool => ($r['exception'] ?? null) === InvalidInvoiceStatusTransitionException::class));
+
+        $this->assertSame(
+            1,
+            $newlyIssuedCount,
+            'Exactly one of the two concurrent Issue attempts must newly issue the Invoice. Got: '.json_encode($outcomes),
+        );
+        $this->assertSame(
+            1,
+            $rejectedCount,
+            'The other concurrent attempt must be rejected as a non-Draft transition (different Idempotency Keys, so it cannot be a replay). Got: '.json_encode($outcomes),
+        );
+
+        $journalCount = DB::connection('pgsql')->table('journals')
+            ->where('tenant_id', $this->tenant->toString())
+            ->count();
+        $this->assertSame(1, $journalCount, 'Exactly one Journal must exist for this Tenant — a second concurrent Issue attempt must never post its own.');
+    }
+
     private function issue(InvoiceId $invoiceId, string $idempotencyKeyValue = 'idem-key-default'): InvoiceIssuingResult
     {
         $idempotencyKey = IdempotencyKey::of($idempotencyKeyValue);

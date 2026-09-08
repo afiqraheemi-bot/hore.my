@@ -7,6 +7,7 @@ namespace App\Domain\Invoicing\Exception;
 use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Invoicing\InvoiceIssuingService;
+use App\Domain\Invoicing\InvoiceStatus;
 use App\Domain\Transactions\Income\Exception\CorruptIncomeRecordException;
 
 /**
@@ -33,6 +34,27 @@ final class CorruptInvoiceRecordException extends \RuntimeException
             'Journal "%s" was reported as an idempotent replay for Invoice "%s", but that Invoice is still Draft.',
             $journalId->toString(),
             $invoiceId->toString(),
+        ));
+    }
+
+    /**
+     * Thrown when a persisted `invoices.status` value is neither
+     * `Draft` nor `Issued` — the only two values
+     * {@see InvoiceStatus} and the table's own
+     * `CHECK` constraint permit. Reaching this means the row was
+     * written outside `InvoiceRepository`'s own insert/update paths
+     * (a manual `UPDATE`, a bypassed migration, or genuine data
+     * corruption). Silently reinterpreting an unrecognized value as
+     * `Draft` would let a corrupted, possibly-already-Issued row become
+     * editable/deletable again through the ordinary Draft-invoice
+     * endpoints — this fails loudly instead.
+     */
+    public static function forUnrecognizedStatus(InvoiceId $invoiceId, string $status): self
+    {
+        return new self(sprintf(
+            'Invoice "%s" has an unrecognized status "%s" — expected "Draft" or "Issued".',
+            $invoiceId->toString(),
+            $status,
         ));
     }
 }

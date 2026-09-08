@@ -51,7 +51,11 @@ const reportEndpoints: Record<(typeof tabs)[number], string> = {
 }
 
 function currentReportQuery(): Record<string, string> {
-  if (activeTab.value === 'Trial Balance' || activeTab.value === 'Balance Sheet' || activeTab.value === 'Aging Report') {
+  if (
+    activeTab.value === 'Trial Balance' ||
+    activeTab.value === 'Balance Sheet' ||
+    activeTab.value === 'Aging Report'
+  ) {
     return { as_of: asOf.value }
   }
   if (activeTab.value === 'General Ledger') {
@@ -130,7 +134,13 @@ async function selectTab(tab: (typeof tabs)[number]) {
     </div>
 
     <div class="flex flex-wrap items-end gap-3 rounded border border-gray-200 bg-white p-4">
-      <div v-if="activeTab === 'Trial Balance' || activeTab === 'Balance Sheet' || activeTab === 'Aging Report'">
+      <div
+        v-if="
+          activeTab === 'Trial Balance' ||
+          activeTab === 'Balance Sheet' ||
+          activeTab === 'Aging Report'
+        "
+      >
         <label class="block text-xs font-medium text-gray-500">As of</label>
         <input v-model="asOf" type="date" class="mt-1 rounded border border-gray-300 px-2 py-1" />
       </div>

@@ -38,6 +38,21 @@ use Illuminate\Database\ConnectionInterface;
  * (though a genuinely concurrent race still can — accepted, see
  * {@see InvoiceNumberGenerator}'s own docblock).
  *
+ * **Concurrency — `SELECT ... FOR UPDATE` on the Invoice row is the
+ * very first statement inside the transaction, before the Invoice is
+ * even loaded into a domain object.** An earlier version of this class
+ * loaded the Invoice, ran its Draft/Issued checks, and only *then*
+ * opened the transaction — two concurrent Issue attempts against the
+ * same Draft Invoice (different Idempotency Keys, e.g. a genuine
+ * double-click or a retry racing the original) could each observe
+ * `Draft`, each proceed to post its *own* Journal, and only the last
+ * writer's `markIssued()` call would "win" the Invoice row — silently
+ * orphaning the other Journal in the ledger with no Invoice ever
+ * pointing back to it, a real double-posting of the same economic
+ * event. The lock closes this: a second concurrent caller blocks until
+ * the first transaction commits, then observes `Issued` and correctly
+ * takes the replay-or-reject branch below instead of posting again.
+ *
  * **Idempotency — the Journal's own `JournalId` is deterministically
  * derived from the Idempotency Key by the caller** (mirroring Income's
  * `DeterministicIdempotentId` convention), so
@@ -75,29 +90,39 @@ final class InvoiceIssuingService
         ActorReference $actor,
         \DateTimeImmutable $issueDate,
     ): InvoiceIssuingResult {
-        $invoice = $this->invoiceRepository->findById($tenantId, $invoiceId);
+        return $this->connection->transaction(function () use ($tenantId, $invoiceId, $journalId, $idempotencyKey, $actor, $issueDate): InvoiceIssuingResult {
+            // Lock first, before any read informs a decision — see this
+            // class's own docblock ("Concurrency"). `first()`'s return
+            // value is discarded; only the row lock this acquires
+            // matters here, `findById()` immediately below is what
+            // actually loads the typed Invoice.
+            $this->connection->table('invoices')
+                ->where('tenant_id', $tenantId->toString())
+                ->where('id', $invoiceId->toString())
+                ->lockForUpdate()
+                ->first();
 
-        if ($invoice === null) {
-            throw InvoiceNotFoundException::forId($invoiceId);
-        }
+            $invoice = $this->invoiceRepository->findById($tenantId, $invoiceId);
 
-        // Checked here, before any transaction opens or Posting Command
-        // is even built — an empty Invoice would otherwise reach
-        // Accounting Core as a degenerate zero-amount Posting Command
-        // and fail there with a less specific, less actionable error.
-        if ($invoice->status() === InvoiceStatus::Draft && $invoice->lines() === []) {
-            throw EmptyInvoiceCannotBeIssuedException::forInvoice($invoiceId);
-        }
-
-        if ($invoice->status() === InvoiceStatus::Issued) {
-            if ($invoice->journalId() !== null && $invoice->journalId()->toString() === $journalId->toString()) {
-                return InvoiceIssuingResult::replayed($invoice);
+            if ($invoice === null) {
+                throw InvoiceNotFoundException::forId($invoiceId);
             }
 
-            throw InvalidInvoiceStatusTransitionException::forNonDraftInvoice($invoiceId, $invoice->status());
-        }
+            // An empty Invoice would otherwise reach Accounting Core as
+            // a degenerate zero-amount Posting Command and fail there
+            // with a less specific, less actionable error.
+            if ($invoice->status() === InvoiceStatus::Draft && $invoice->lines() === []) {
+                throw EmptyInvoiceCannotBeIssuedException::forInvoice($invoiceId);
+            }
 
-        return $this->connection->transaction(function () use ($invoice, $journalId, $idempotencyKey, $actor, $issueDate): InvoiceIssuingResult {
+            if ($invoice->status() === InvoiceStatus::Issued) {
+                if ($invoice->journalId() !== null && $invoice->journalId()->toString() === $journalId->toString()) {
+                    return InvoiceIssuingResult::replayed($invoice);
+                }
+
+                throw InvalidInvoiceStatusTransitionException::forNonDraftInvoice($invoiceId, $invoice->status());
+            }
+
             $postingCommand = $this->translator->translate($invoice, $journalId, $idempotencyKey, $actor, $issueDate);
             $postingResult = $this->postingExecutor->execute($postingCommand);
 

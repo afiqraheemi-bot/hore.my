@@ -54,6 +54,12 @@ const createError = ref<string | null>(null)
 
 const issuingId = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+const today = new Date().toISOString().slice(0, 10)
+const issueDates = ref<Record<string, string>>({})
+
+function issueDateFor(invoiceId: string): string {
+  return issueDates.value[invoiceId] ?? today
+}
 
 const receivableAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Asset'))
 const revenueAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Revenue'))
@@ -122,6 +128,7 @@ async function onIssue(invoiceId: string) {
   try {
     await request(`/api/v1/invoices/${invoiceId}/issue`, {
       method: 'POST',
+      body: { issue_date: issueDateFor(invoiceId) },
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     })
     await loadInvoices()
@@ -155,25 +162,35 @@ onMounted(async () => {
   <div class="space-y-6">
     <h1 class="text-xl font-semibold">Invoices</h1>
 
-    <form
-      class="space-y-3 rounded border border-gray-200 bg-white p-4"
-      @submit.prevent="onCreate"
-    >
+    <form class="space-y-3 rounded border border-gray-200 bg-white p-4" @submit.prevent="onCreate">
       <div class="flex flex-wrap items-end gap-3">
         <div>
           <label class="block text-xs font-medium text-gray-500">Customer</label>
-          <select v-model="customerId" required class="mt-1 w-56 rounded border border-gray-300 px-2 py-1">
+          <select
+            v-model="customerId"
+            required
+            class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
+          >
             <option value="" disabled>Select a customer</option>
             <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500">Due date</label>
-          <input v-model="dueDate" type="date" required class="mt-1 rounded border border-gray-300 px-2 py-1" />
+          <input
+            v-model="dueDate"
+            type="date"
+            required
+            class="mt-1 rounded border border-gray-300 px-2 py-1"
+          />
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500">Receivable account</label>
-          <select v-model="receivableAccountId" required class="mt-1 w-56 rounded border border-gray-300 px-2 py-1">
+          <select
+            v-model="receivableAccountId"
+            required
+            class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
+          >
             <option value="" disabled>Select an Asset account</option>
             <option v-for="a in receivableAccounts" :key="a.id" :value="a.id">
               {{ a.account_code }} — {{ a.account_name }}
@@ -182,7 +199,11 @@ onMounted(async () => {
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500">Revenue account</label>
-          <select v-model="revenueAccountId" required class="mt-1 w-56 rounded border border-gray-300 px-2 py-1">
+          <select
+            v-model="revenueAccountId"
+            required
+            class="mt-1 w-56 rounded border border-gray-300 px-2 py-1"
+          >
             <option value="" disabled>Select a Revenue account</option>
             <option v-for="a in revenueAccounts" :key="a.id" :value="a.id">
               {{ a.account_code }} — {{ a.account_name }}
@@ -211,15 +232,13 @@ onMounted(async () => {
             placeholder="Unit price"
             class="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
           />
-          <button
-            type="button"
-            class="text-xs text-gray-500 underline"
-            @click="removeLine(i)"
-          >
+          <button type="button" class="text-xs text-gray-500 underline" @click="removeLine(i)">
             Remove
           </button>
         </div>
-        <button type="button" class="text-xs text-gray-700 underline" @click="addLine">+ Add line</button>
+        <button type="button" class="text-xs text-gray-700 underline" @click="addLine">
+          + Add line
+        </button>
       </div>
 
       <button
@@ -252,7 +271,14 @@ onMounted(async () => {
             <span class="ml-2 text-gray-500">Due {{ invoice.due_date }}</span>
             <span class="ml-2 font-medium">RM{{ invoice.total_amount }}</span>
           </div>
-          <div class="flex gap-2">
+          <div class="flex items-center gap-2">
+            <input
+              v-if="invoice.status === 'Draft'"
+              :value="issueDateFor(invoice.id)"
+              type="date"
+              class="rounded border border-gray-300 px-1 py-1 text-xs"
+              @input="issueDates[invoice.id] = ($event.target as HTMLInputElement).value"
+            />
             <button
               v-if="invoice.status === 'Draft'"
               type="button"
@@ -274,7 +300,9 @@ onMounted(async () => {
         </div>
         <ul v-if="invoice.lines.length > 0" class="mt-2 space-y-1 text-xs text-gray-600">
           <li v-for="(line, i) in invoice.lines" :key="i">
-            {{ line.description }} — {{ line.quantity }} × RM{{ line.unit_price }} = RM{{ line.line_amount }}
+            {{ line.description }} — {{ line.quantity }} × RM{{ line.unit_price }} = RM{{
+              line.line_amount
+            }}
           </li>
         </ul>
       </div>

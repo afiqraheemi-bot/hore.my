@@ -1,7 +1,7 @@
 # AETS-009: Financial Reporting
 
 - Status: Active
-- Version: 1.0.2
+- Version: 1.1.0
 - Effective date: 2026-09-06
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -27,13 +27,14 @@ Exactly the SRS §4.9 requirements this codebase's existing modules can support 
 - **Lejar Am / General Ledger drill-down** (SRS RPT-005) — §9.
 - **Indeks Bukti / Evidence Index** (SRS RPT-008) — §10.
 - The shared derivation rule every report in scope obeys: Tenant-scoped, Posted-Journal-only, exact Money arithmetic, rebuildable from the ledger alone (§5).
+- **As of v1.1.0: Penghutang / Debtors and Aging Report** (SRS RPT-006) — §17, now that its prerequisite Invoice/Accounts-Receivable module (Invoicing, M20; Payments, M21) exists.
+- **As of v1.1.0: Eksport CSV** (SRS RPT-009, CSV only) — §18, for every report this document defines.
 
 ### 2.2 Out of scope
 
 - **Aliran Tunai / Cash Flow Statement** (SRS RPT-003) — requires an operating/investing/financing activity classification scheme [AETS-005](AETS-005-Chart-of-Accounts.md)'s current five-Account-Type contract does not define. Inventing one speculatively, with no consuming report contract reviewed yet, is exactly the kind of premature design this series' own established convention avoids (mirroring, for example, how [AETS-007 §1](AETS-007-Posting-Command.md#1-purpose) deferred every business-specific Accounting Command until its consumer was actually being built).
-- **Penghutang / Debtors and Aging** (SRS RPT-006) — requires an Invoice/Accounts-Receivable module. No such module exists in this codebase yet (only Expense, M7, and Income, M9, exist as Transactions consumers, neither of which produces a receivable). Deferred until that module exists.
 - **Laporan Rekonsiliasi / Reconciliation Report** (SRS RPT-007) — requires Bank Reconciliation ([AETS-008](AETS-000.md#10-planned-document-structure), not yet created). Deferred until that module exists.
-- **Eksport PDF/XLSX/CSV** (SRS RPT-009) — a presentation/export concern layered on top of the report data this document defines, not a data-derivation concern. This document defines what each report *contains*; how it is rendered, formatted, or exported to a file format is deferred to a future UI/export task, not decided here.
+- **Eksport PDF/XLSX** (SRS RPT-009, PDF and XLSX only) — CSV is now in scope (§18); PDF requires an invoice layout/branding decision that is a Founder-level product call, and XLSX would need a new dependency for marginal gain over CSV at this stage. Both remain deferred to a future UI/export task.
 - **Reproducibility as a formally tested guarantee** (SRS RPT-010) — SRS's own priority key marks this `Disyorkan` (recommended), not `Wajib`. This document's own rebuildability requirement (§5) already implies it structurally (a report with no stored, independent state is trivially reproducible from the same posted data), so no separate mechanism is invented merely to formally test what §5 already guarantees by construction.
 - **Accounting Period entities, period close/reopen enforcement** — [AETS-014](AETS-000.md#10-planned-document-structure) (Period Management, not yet created) owns whether a period can be closed and whether closed-period posting is rejected. This document uses `financialDate` ([AETS-004 §9.1](AETS-004-Journal-Posting-Model.md#91-financial-date-and-posted-at)) as a plain date-range filter for a report — it does not require, and does not wait for, a formal Accounting Period aggregate to exist first.
 - **Report performance/scaling architecture** (read replicas, caching, pre-aggregation) — [`HORE_MY_MASTER_CONTEXT.md`](../../product/reference/HORE_MY_MASTER_CONTEXT.md) §14's p95-under-two-seconds target is a non-functional requirement this document's derivation rules do not preclude meeting (a direct SQL aggregation over a solopreneur-scale ledger), but the document does not design caching or read-replica infrastructure — that remains an implementation/ops decision, revisited only if a real performance problem is measured.
@@ -130,6 +131,8 @@ Each invariant below is Financial-Reporting-specific, additional to [AETS-002](A
 | RPT-009 | **Golden-report consistency.** A Profit & Loss's and a Balance Sheet's own totals MUST each be a strict subset-and-regrouping of the same Trial Balance computation for the same Tenant and date/Period — never a separately-derived figure that could disagree with it (§6, §7, §8). |
 | RPT-010 | **General Ledger traceability.** Every entry the General Ledger drill-down lists MUST resolve back to a real, Posted Journal Line belonging to the Tenant and Account requested (§9). |
 | RPT-011 | **No fabricated Evidence status.** The Evidence Index MUST report a Journal's true linked-Evidence state exactly as [AETS-010](AETS-010-Audit-Trail-Evidence-Linkage.md) records it — never inferring, assuming, or fabricating an Evidence Reference that was not actually linked (§10). |
+| RPT-012 | **Aging completeness.** The Debtors/Aging report MUST list every Issued Invoice belonging to the Tenant with a non-zero outstanding balance as of the requested date exactly once, in exactly one bucket; a fully-paid, Draft, or not-yet-issued (as of that date) Invoice MUST NOT appear (§17). |
+| RPT-013 | **Aging bucket determinism.** An Invoice's aging bucket MUST be computed solely from whole days overdue (as-of date minus due date), never from an Account's Normal Balance, a Journal Line's Direction, or any other unrelated signal; the same (Invoice, as-of date) pair MUST always resolve to the same bucket (§17). |
 
 ## 13. ATS Requirements
 
@@ -147,6 +150,7 @@ A Financial Reporting ATS MUST include:
 - **Evidence Index accuracy proof** — a Journal with linked Evidence appears with it; a Journal with none appears with an explicit absence, never a fabricated reference (`RPT-011`).
 - **Real PostgreSQL integration tests** — every claim above proven against a real PostgreSQL instance, never SQLite, consistent with this series' own established precedent.
 - **No-write architecture proof** — a static/architectural test proving no report class's source contains an `insert`/`update`/`delete` call against any production table (`RPT-006`), mirroring `JRN-T032`/`POST-T022`'s existing no-network/no-side-effect technique.
+- **As of v1.1.0: Aging completeness and bucket determinism proof** — a fully-paid, Draft, and not-yet-issued Invoice each proven absent from the Aging report; an Invoice at each bucket boundary (0, 1, 30, 31, 60, 61, 90, 91+ days overdue) proven to land in the correct bucket; a partially-allocated Invoice's outstanding balance proven to reflect only allocations from Payments made on or before the as-of date (`RPT-012`, `RPT-013`, §17).
 
 ## 14. Examples (Informative)
 
@@ -158,13 +162,15 @@ These examples are illustrative only and are not normative.
 ## 15. Deferred Items
 
 - **Cash Flow Statement** (SRS RPT-003) — deferred pending an operating/investing/financing Account classification scheme (§2.2).
-- **Debtors and Aging report** (SRS RPT-006) — deferred pending an Invoice/Accounts-Receivable module (§2.2).
+- ~~**Debtors and Aging report**~~ — resolved; see §17. Its prerequisite Invoice/Accounts-Receivable module (Invoicing, M20; Payments, M21) now exists.
 - **Reconciliation Report** (SRS RPT-007) — deferred pending Bank Reconciliation, AETS-008 (§2.2).
-- **Export to PDF/XLSX/CSV** (SRS RPT-009) — a presentation-layer concern, deferred to a future UI/export task (§2.2).
+- **Export to PDF/XLSX** (SRS RPT-009, PDF and XLSX only) — a presentation-layer concern, deferred to a future UI/export task (§2.2). CSV is resolved; see §18.
 - **Formal reproducibility testing** (SRS RPT-010, `Disyorkan`) — implied structurally by §5's rebuildability rule; not separately tested by name (§2.2).
+- **Aging Report historical reproducibility across time** — named as a deliberate, currently-unresolved limitation, not silently accepted (§17): a Payment Allocation's hard delete ({@see AllocationService::deallocate()}) leaves no history, so a historical as-of-date Aging Report can change if re-run after a contributing allocation is later deallocated. Closing this would require an append-only allocation/deallocation log, not designed here.
+- **Aging Report cross-tenant isolation test** — `AgingReportQuery` scopes every query by `tenant_id` (§17), consistent with §11, but no dedicated test proves two Tenants' Aging Reports never leak into each other, unlike `RPT-002`'s dedicated proof for §6–§10's reports (`RPT-T028`). Tracked as an open test-coverage gap, not a known defect.
 - ~~**Period Management integration**~~ — resolved; see [AETS-014](AETS-014-Period-Management.md), which specifies Period closing. No change to this document's own Balance Sheet computation was needed: a closing Journal's zeroing lines are ordinary Posted Journal Lines, so `ProfitAndLossQuery::forPeriod([inception, asOfDate])`'s existing "since inception" aggregation automatically nets a closed range's original activity against that same range's closing entries to zero, leaving the "unclosed books" Cumulative Net Income line correctly reflecting only activity since the last closing — verified directly (`PeriodClosingServiceIntegrationTest::test_the_unclosed_books_convention_correctly_shows_only_post_closing_activity`).
 - **Report caching/performance infrastructure** — read replicas, pre-aggregation, or caching, should a real performance problem be measured against the p95 target ([`HORE_MY_MASTER_CONTEXT.md`](../../product/reference/HORE_MY_MASTER_CONTEXT.md) §14) — not designed speculatively here (§2.2).
-- ~~**This document's own future ATS-009**~~ — written; see [ATS-009](tests/ATS-009-Financial-Reporting-Test-Specification.md) (1.0.0, 2026-09-07), which fulfills exactly the coverage §13 named as required.
+- **This document's own future ATS-009 update for §17/§18** — §13's new bullet states the required coverage; [ATS-009](tests/ATS-009-Financial-Reporting-Test-Specification.md) is updated alongside this version (see its own changelog) to trace `RPT-012`/`RPT-013` to the already-existing Aging test suite, but does not yet add the dedicated cross-tenant Aging test the bullet above names as missing.
 
 ## 16. Change Governance
 
@@ -172,8 +178,46 @@ This document follows [AETS-000](AETS-000.md)'s governance rules in full — it 
 
 A change to any `RPT-NNN` invariant, or to any MUST-level requirement in §5–§11, is a MAJOR change under that rule. Adding a new report definition for a capability already `Wajib` in SRS but currently deferred here (§2.2) — once its prerequisite module exists — is at minimum a MINOR change; it MUST NOT weaken or contradict any invariant this version already establishes.
 
+## 17. Debtors and Aging Report (SRS RPT-006)
+
+For a given as-of date, the Debtors/Aging report lists every Issued Invoice belonging to the Tenant with a non-zero outstanding balance as of that date, each assigned to exactly one aging bucket based on how overdue its due date is relative to the as-of date — resolving the deferral §2.2/§15 previously stated pending "an Invoice/Accounts-Receivable module." That module (Invoicing, M20; Payments, M21) now exists, and this section specifies the report exactly as already implemented, per [AETS-000 §9.1](AETS-000.md#91-per-document-version)'s rule that resolving a named deferred item is itself at minimum a MINOR change.
+
+**Outstanding balance**, for an Invoice as of a given date, is its `totalAmount` minus the sum of every Payment Allocation against it where the allocating Payment's own `paymentDate <= as-of date` — never the full allocation total regardless of date, since a Payment made after the as-of date cannot retroactively have settled a debt as of that date.
+
+**Aging buckets** are computed from whole days overdue (`as-of date` minus `dueDate`), never from an Account's Normal Balance, a Journal Line's Direction, or any other unrelated signal (`RPT-013`):
+
+| Days overdue | Bucket |
+| --- | --- |
+| ≤ 0 (not yet due, or due exactly on the as-of date) | Current |
+| 1–30 | Overdue 1 to 30 days |
+| 31–60 | Overdue 31 to 60 days |
+| 61–90 | Overdue 61 to 90 days |
+| 91+ | Overdue 91+ days |
+
+- A Draft Invoice never appears — only `Issued` Invoices are eligible (`RPT-012`).
+- An Invoice issued after the as-of date never appears, regardless of status.
+- A fully-paid Invoice (outstanding balance exactly zero as of the as-of date) contributes no line (`RPT-012`).
+- The report's grand total, and each bucket's own subtotal, are the exact sum (via `Money::add()`, never native arithmetic) of every listed line's own outstanding balance (§5 rule 4, applied here unchanged).
+- Tenant isolation (§11) applies unchanged: a report requested for one Tenant never reflects another Tenant's Invoices, Payments, or Allocations — though see §15's own note on this specifically not yet having a dedicated test, unlike `RPT-002`'s proof for §6–§10.
+
+**This report's relationship to §5's shared derivation rule.** Rules 1 (Posted-only, read as "only an Issued Invoice's own posted effects count" here), 2 (Tenant-scoped), 4 (exact Money arithmetic), and 6 (no write) apply to this report exactly as to every other (§6–§10). This report additionally reads `invoices` and `payment_allocations` directly — tables §5 did not originally anticipate a report reading from (§6–§10 read only `journals`/`journal_lines`/`accounts`, plus, for §9–§10, `audit_events`/`journal_evidence_links`) — because an outstanding balance is a receivables-subledger fact, not a Journal Line sum: [AETS-007 §26.7](AETS-007-Posting-Command.md#267-payment-allocation--not-an-accounting-command-m21) already establishes that Payment Allocation posts no Journal at all, so no Journal Line exists for this report to sum in the first place. Rule 5 (Financial Date as the reporting clock) is honored in spirit — this report filters on Invoice's own `issue_date` and Payment's own `payment_date`, the same accounting-date fields [AETS-007 §26.5–§26.6](AETS-007-Posting-Command.md#265-invoice-issuing-command-m20) already established as each command's own Financial Date — but not by a Journal's `financialDate` field directly, for the same reason.
+
+**A named limitation, not a defect: historical reproducibility depends on allocation history being intact.** Rule 3 (rebuildable) holds exactly as stated — two independent computations of this report against the *same* database state, for the same Tenant and as-of date, always produce identical output. What this report does **not** guarantee is that a *past* as-of date's result stays identical *across time* if a Payment Allocation contributing to it is later deallocated: `PaymentAllocation` deletion ({@see App\Domain\Payments\AllocationService::deallocate()}) is a hard delete with no retained history, so an Aging Report computed for a historical as-of date, re-run after such a deallocation, reflects the allocation's absence even though it existed as of that historical date. This is recorded as a genuine, currently open item (§15), not silently accepted — a future revision introducing allocation history (an append-only allocation/deallocation log) would close it; this document does not design that mechanism now.
+
+- Implemented by [`AgingReportQuery`](../../../apps/api/app/Infrastructure/Invoicing/Reporting/AgingReportQuery.php), returning an [`AgingReport`](../../../apps/api/app/Domain/Invoicing/Reporting/AgingReport.php) of [`AgingReportLine`](../../../apps/api/app/Domain/Invoicing/Reporting/AgingReportLine.php)s, each assigned an [`AgingBucket`](../../../apps/api/app/Domain/Invoicing/Reporting/AgingBucket.php).
+
+## 18. Export presentation — CSV (SRS RPT-009, CSV portion only)
+
+Resolving, for CSV specifically, the deferral §2.2/§15 previously stated in full for "PDF/XLSX/CSV": every report this document defines (§6–§10, §17) MAY be requested in CSV form instead of JSON, via a `format=csv` request parameter, unchanged in every other respect — the same Query-layer computation (§5) runs; only the HTTP-layer presentation differs.
+
+- **No new business logic.** CSV rendering reshapes an already-computed report's own existing fields into rows and a header line; it introduces no new report field, no new computation, and no new validation rule. §5's entire derivation rule (Posted-only, Tenant-scoped, rebuildable, exact Money arithmetic, Financial-Date-governed, no write) governs the underlying computation exactly as for the JSON form — CSV is a pure reshaping of the same output.
+- **Money values render as exact decimal strings** (`Money::toDecimalString()`), never a native float — the same representation the JSON form already uses.
+- PDF and XLSX remain deferred (§15): PDF requires an invoice layout/branding decision this document does not make (a Founder-level product call, not an engineering default), and XLSX would need a new dependency for marginal gain over CSV at this stage.
+- Implemented by [`CsvResponseBuilder`](../../../apps/api/app/Http/Support/CsvResponseBuilder.php), invoked from [`ReportingController`](../../../apps/api/app/Http/Controllers/Api/ReportingController.php) for every report this document defines.
+
 ## Changelog
 
+- **1.1.0 (2026-09-08):** Resolved a governance gap an external audit surfaced: M22 (Aging Report) and M23 (CSV export) had both shipped, with real Query/Controller code and real tests, without this document ever being updated to specify either — §2.2/§15 still described both as fully deferred, pending prerequisites that had in fact already been built. Adds new **§17, Debtors and Aging Report**, specifying the outstanding-balance computation, the five aging buckets, and this report's relationship to §5's shared derivation rule (including one explicitly named, currently-unresolved limitation: historical reproducibility across time is not guaranteed once a contributing Payment Allocation is later deallocated, since deallocation is a hard delete with no retained history). Adds new **§18, Export presentation — CSV**, resolving the CSV portion only of SRS RPT-009 for every report this document defines; PDF and XLSX remain deferred. Adds `RPT-012` (Aging completeness) and `RPT-013` (Aging bucket determinism) to §12, and a corresponding ATS-009 coverage bullet to §13. Updates §2.1/§2.2/§15 to move Debtors/Aging and CSV export from deferred to specified, while explicitly recording two residual open items §15 now names for the first time: the historical-reproducibility limitation above, and the absence of a dedicated cross-tenant isolation test for the Aging Report specifically (unlike `RPT-002`'s existing proof for §6–§10). No existing report definition, `RPT-NNN` invariant, or previously specified MUST-level requirement in §5–§11 changed — classified **MINOR** per [AETS-000 §9.1](AETS-000.md#91-per-document-version) and this document's own §16 rule ("adding a new report definition... once its prerequisite module exists — is at minimum a MINOR change").
 - **1.0.2 (2026-09-07):** Editorial: §15's Period Management deferral is resolved — [AETS-014](AETS-014-Period-Management.md) now exists, and this document's own Balance Sheet computation required no code change (verified directly). No invariant or previously specified behavior changed.
 - **1.0.1 (2026-09-07):** Editorial: §15's forward-reference to this document's own future ATS-009 now links to that document, which has since been written. No invariant, MUST-level requirement, or previously specified behavior changed.
 - **1.0.0 (2026-09-06):** Initial creation. Specifies Trial Balance (RPT-004), Profit & Loss (RPT-001), Balance Sheet (RPT-002), General Ledger drill-down (RPT-005), and Evidence Index (RPT-008) — the five SRS §4.9 `Wajib` reports this codebase's existing Accounting Core (M1–M8) and Transactions consumers (M7, M9) can support without depending on a not-yet-built module. Cash Flow (RPT-003), Debtors/Aging (RPT-006), and Reconciliation Report (RPT-007) are explicitly deferred by name (§2.2, §15), each blocked on a specific, named future module — not silently dropped. Introduces `RPT-001`–`RPT-011`. Documents the "unclosed books" Cumulative Net Income convention (§8) as a deliberate, named design decision pending AETS-014 (Period Management). Reviewed and marked `Active` per the Founder's M10 Architecture Review approval (GO for this exact scope; RPT-003/006/007 explicitly NO-GO pending their prerequisite modules).

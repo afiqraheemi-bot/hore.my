@@ -160,7 +160,10 @@ async function onOpenReconciliation() {
   }
 }
 
-async function onTransition(reconciliationId: string, action: 'start-review' | 'mark-balanced' | 'complete') {
+async function onTransition(
+  reconciliationId: string,
+  action: 'start-review' | 'mark-balanced' | 'complete',
+) {
   if (!selectedBankAccountId.value) return
 
   reconciliationError.value = null
@@ -336,14 +339,19 @@ onMounted(loadAll)
           @click="selectBankAccount(bankAccount.id)"
         >
           {{ bankAccount.bank_name }}
-          <span v-if="bankAccount.account_number_last4">···{{ bankAccount.account_number_last4 }}</span>
+          <span v-if="bankAccount.account_number_last4"
+            >···{{ bankAccount.account_number_last4 }}</span
+          >
         </button>
         <p v-if="bankAccounts.length === 0" class="text-sm text-gray-400">
           No bank accounts registered yet.
         </p>
       </div>
 
-      <div v-if="selectedBankAccountId" class="space-y-4 rounded border border-gray-200 bg-white p-4">
+      <div
+        v-if="selectedBankAccountId"
+        class="space-y-4 rounded border border-gray-200 bg-white p-4"
+      >
         <div class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-xs font-medium text-gray-500">
@@ -375,7 +383,11 @@ onMounted(loadAll)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="transaction in transactions" :key="transaction.id" class="border-b border-gray-100">
+            <tr
+              v-for="transaction in transactions"
+              :key="transaction.id"
+              class="border-b border-gray-100"
+            >
               <td class="py-2">{{ transaction.transaction_date }}</td>
               <td class="py-2">{{ transaction.description }}</td>
               <td class="py-2">{{ transaction.amount }}</td>
@@ -384,7 +396,9 @@ onMounted(loadAll)
               <td class="py-2">{{ transaction.reference || '—' }}</td>
             </tr>
             <tr v-if="transactions.length === 0">
-              <td colspan="6" class="py-4 text-center text-gray-400">No transactions imported yet.</td>
+              <td colspan="6" class="py-4 text-center text-gray-400">
+                No transactions imported yet.
+              </td>
             </tr>
           </tbody>
         </table>
@@ -411,7 +425,9 @@ onMounted(loadAll)
                 class="rounded bg-gray-900 px-2.5 py-1 text-xs text-white disabled:opacity-50"
                 @click="onConfirmMatch(suggestion)"
               >
-                {{ confirmingId === suggestion.bank_transaction_id ? 'Confirming…' : 'Confirm match' }}
+                {{
+                  confirmingId === suggestion.bank_transaction_id ? 'Confirming…' : 'Confirm match'
+                }}
               </button>
             </li>
             <li v-if="suggestions.length === 0" class="text-sm text-gray-400">
@@ -428,19 +444,39 @@ onMounted(loadAll)
           >
             <div>
               <label class="block text-xs font-medium text-gray-500">Period start</label>
-              <input v-model="periodStart" type="date" required class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm" />
+              <input
+                v-model="periodStart"
+                type="date"
+                required
+                class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500">Period end</label>
-              <input v-model="periodEnd" type="date" required class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm" />
+              <input
+                v-model="periodEnd"
+                type="date"
+                required
+                class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500">Opening balance</label>
-              <input v-model="openingBalance" placeholder="1000.00" required class="mt-1 w-28 rounded border border-gray-300 px-2 py-1 text-sm" />
+              <input
+                v-model="openingBalance"
+                placeholder="1000.00"
+                required
+                class="mt-1 w-28 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500">Closing balance</label>
-              <input v-model="closingBalance" placeholder="1500.00" required class="mt-1 w-28 rounded border border-gray-300 px-2 py-1 text-sm" />
+              <input
+                v-model="closingBalance"
+                placeholder="1500.00"
+                required
+                class="mt-1 w-28 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
             </div>
             <button
               type="submit"
@@ -459,10 +495,13 @@ onMounted(loadAll)
           >
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <span class="font-medium">{{ reconciliation.period_start }} → {{ reconciliation.period_end }}</span>
-                <span class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">{{
-                  reconciliation.state
-                }}</span>
+                <span class="font-medium"
+                  >{{ reconciliation.period_start }} → {{ reconciliation.period_end }}</span
+                >
+                <span
+                  class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700"
+                  >{{ reconciliation.state }}</span
+                >
                 <span
                   v-if="reconciliation.difference"
                   class="ml-2 text-xs"

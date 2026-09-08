@@ -7,6 +7,7 @@ namespace App\Infrastructure\Invoicing;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Customers\CustomerId;
+use App\Domain\Invoicing\Exception\CorruptInvoiceRecordException;
 use App\Domain\Invoicing\Invoice;
 use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Invoicing\InvoiceLine;
@@ -43,23 +44,27 @@ final class InvoiceRepository
 
     public function save(Invoice $invoice): void
     {
-        $this->connection->table(self::TABLE)->insert($this->invoiceRowFor($invoice));
-        $this->replaceLines($invoice);
+        $this->connection->transaction(function () use ($invoice): void {
+            $this->connection->table(self::TABLE)->insert($this->invoiceRowFor($invoice));
+            $this->replaceLines($invoice);
+        });
     }
 
     public function update(Invoice $invoice): void
     {
-        $this->connection->table(self::TABLE)
-            ->where('tenant_id', $invoice->tenantId()->toString())
-            ->where('id', $invoice->id()->toString())
-            ->update([
-                'due_date' => $invoice->dueDate()->format('Y-m-d'),
-                'receivable_account_id' => $invoice->receivableAccountId()->toString(),
-                'revenue_account_id' => $invoice->revenueAccountId()->toString(),
-                'total_amount' => $this->money->toPersistedAmount($invoice->totalAmount()),
-                'updated_at' => now(),
-            ]);
-        $this->replaceLines($invoice);
+        $this->connection->transaction(function () use ($invoice): void {
+            $this->connection->table(self::TABLE)
+                ->where('tenant_id', $invoice->tenantId()->toString())
+                ->where('id', $invoice->id()->toString())
+                ->update([
+                    'due_date' => $invoice->dueDate()->format('Y-m-d'),
+                    'receivable_account_id' => $invoice->receivableAccountId()->toString(),
+                    'revenue_account_id' => $invoice->revenueAccountId()->toString(),
+                    'total_amount' => $this->money->toPersistedAmount($invoice->totalAmount()),
+                    'updated_at' => now(),
+                ]);
+            $this->replaceLines($invoice);
+        });
     }
 
     public function markIssued(Invoice $invoice): void
@@ -80,15 +85,17 @@ final class InvoiceRepository
 
     public function delete(TenantId $tenantId, InvoiceId $invoiceId): void
     {
-        $this->connection->table(self::LINES_TABLE)
-            ->where('tenant_id', $tenantId->toString())
-            ->where('invoice_id', $invoiceId->toString())
-            ->delete();
+        $this->connection->transaction(function () use ($tenantId, $invoiceId): void {
+            $this->connection->table(self::LINES_TABLE)
+                ->where('tenant_id', $tenantId->toString())
+                ->where('invoice_id', $invoiceId->toString())
+                ->delete();
 
-        $this->connection->table(self::TABLE)
-            ->where('tenant_id', $tenantId->toString())
-            ->where('id', $invoiceId->toString())
-            ->delete();
+            $this->connection->table(self::TABLE)
+                ->where('tenant_id', $tenantId->toString())
+                ->where('id', $invoiceId->toString())
+                ->delete();
+        });
     }
 
     public function findById(TenantId $tenantId, InvoiceId $invoiceId): ?Invoice
@@ -172,12 +179,20 @@ final class InvoiceRepository
      */
     private function fromPersisted(object $row): Invoice
     {
+        $invoiceId = InvoiceId::of($row->id);
+
+        $status = match ($row->status) {
+            InvoiceStatus::Draft->name => InvoiceStatus::Draft,
+            InvoiceStatus::Issued->name => InvoiceStatus::Issued,
+            default => throw CorruptInvoiceRecordException::forUnrecognizedStatus($invoiceId, $row->status),
+        };
+
         return Invoice::reconstitute(
-            InvoiceId::of($row->id),
+            $invoiceId,
             TenantId::of($row->tenant_id),
             CustomerId::of($row->customer_id),
             $row->invoice_number,
-            $row->status === InvoiceStatus::Issued->name ? InvoiceStatus::Issued : InvoiceStatus::Draft,
+            $status,
             $row->issue_date === null ? null : new \DateTimeImmutable($row->issue_date),
             new \DateTimeImmutable($row->due_date),
             AccountId::of($row->receivable_account_id),

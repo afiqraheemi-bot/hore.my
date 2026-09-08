@@ -380,13 +380,13 @@ final class IdentityAndAccountingApiTest extends TestCase
         $updated->assertStatus(200);
         $updated->assertJsonPath('total_amount', '450.00');
 
-        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-invoice-issue-0001']);
+        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()], ['Idempotency-Key' => 'key-invoice-issue-0001']);
         $issued->assertStatus(201);
         $issued->assertJsonPath('status', 'Issued');
         $issued->assertJsonPath('invoice_number', 'INV-000001');
         $this->assertNotNull($issued->json('journal_id'));
 
-        $trialBalance = $this->getJson('/api/v1/reports/trial-balance?as_of=2026-09-08');
+        $trialBalance = $this->getJson('/api/v1/reports/trial-balance?as_of='.now()->toDateString());
         $trialBalance->assertStatus(200);
     }
 
@@ -406,7 +406,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         ]);
         $invoiceId = $draft->json('id');
 
-        $this->postJson("/api/v1/invoices/{$invoiceId}/issue")->assertStatus(422);
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()])->assertStatus(422);
     }
 
     public function test_issuing_an_empty_draft_invoice_is_rejected_via_the_api(): void
@@ -425,7 +425,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         $draft->assertStatus(201);
         $invoiceId = $draft->json('id');
 
-        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-empty-invoice'])
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()], ['Idempotency-Key' => 'key-empty-invoice'])
             ->assertStatus(422);
     }
 
@@ -445,7 +445,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         ]);
         $invoiceId = $draft->json('id');
 
-        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-delete-issued'])
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()], ['Idempotency-Key' => 'key-delete-issued'])
             ->assertStatus(201);
 
         $this->deleteJson("/api/v1/invoices/{$invoiceId}")->assertStatus(409);
@@ -1713,7 +1713,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         /** @var string $invoiceId */
         $invoiceId = $draft->json('id');
 
-        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", [], ['Idempotency-Key' => 'key-issue-'.$invoiceId]);
+        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()], ['Idempotency-Key' => 'key-issue-'.$invoiceId]);
         $issued->assertStatus(201);
 
         return $invoiceId;

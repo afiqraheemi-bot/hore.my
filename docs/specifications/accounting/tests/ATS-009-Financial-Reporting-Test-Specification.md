@@ -1,7 +1,7 @@
 # ATS-009: Financial Reporting Test Specification
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-07
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T032`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
+This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T044`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](ATS-010-Audit-Trail-Test-Specification.md), this document was authored alongside — immediately after — AETS-009's implementation (M10), not before it: every test ID below traces to a concrete, already-passing test in the current suite, not a future target. The traceability matrix in §5 can therefore be verified directly against the repository rather than taken on faith.
 
@@ -17,13 +17,16 @@ Like [ATS-010](ATS-010-Audit-Trail-Test-Specification.md), this document was aut
 
 ### 2.1 In scope
 
-- A complete traceability matrix from `RPT-001`–`RPT-011` to test IDs.
-- Concrete test cases for Trial Balance, Profit & Loss, Balance Sheet, General Ledger drill-down, and Evidence Index — the five reports AETS-009 §2.1 defines.
+- A complete traceability matrix from `RPT-001`–`RPT-013` to test IDs.
+- Concrete test cases for Trial Balance, Profit & Loss, Balance Sheet, General Ledger drill-down, Evidence Index, and, as of v1.1.0, the Debtors/Aging Report — the reports AETS-009 §2.1 defines.
 - Golden-dataset reconciliation against real Expense (M7) and Income (M9) postings, Draft-exclusion, tenant isolation, `financialDate`-vs-`postedAt`, M5 correction-chain robustness, General Ledger traceability, Evidence Index accuracy, and a no-write architecture proof — the exact list AETS-009 §13 requires.
+- **As of v1.1.0:** Aging completeness and bucket determinism proof, per AETS-009 §13's own new bullet.
 
 ### 2.2 Out of scope
 
-- Cash Flow, Debtors/Aging, Reconciliation Report, Export, and formal reproducibility testing — each deferred by AETS-009 itself (§15), pending a prerequisite module that does not yet exist. No test below claims coverage of any of these.
+- Cash Flow, Reconciliation Report, PDF/XLSX export, and formal reproducibility testing — each deferred by AETS-009 itself (§15), pending a prerequisite module that does not yet exist. No test below claims coverage of any of these.
+- **CSV export tests** (AETS-009 §18) — a presentation-layer reshaping of an already-tested report's own output; not separately tested by this document, consistent with AETS-009 §18 itself stating CSV rendering introduces no new business logic to prove.
+- **A dedicated cross-tenant isolation test for the Aging Report** — AETS-009 §15 names this as an open item, not yet closed. No test below claims this coverage; §8 tracks it as deferred, not silently dropped.
 - Money, Journal, Chart of Accounts, Posting Command, and Audit Trail's own construction/validation tests — already fully specified by [ATS-003](ATS-003-Money-Test-Specification.md), [ATS-004](ATS-004-Journal-Posting-Test-Specification.md), [ATS-005](ATS-005-Chart-of-Accounts-Test-Specification.md), [ATS-007](ATS-007-Posting-Pipeline-Test-Specification.md), and [ATS-010](ATS-010-Audit-Trail-Test-Specification.md).
 - Period Management's interaction with reporting — deferred alongside AETS-009's own deferral (§15), to a future AETS-014 test specification.
 
@@ -53,6 +56,8 @@ This document is subordinate to [AETS-009](../AETS-009-Financial-Reporting.md) a
 | RPT-009 | RPT-T024, RPT-T025, RPT-T026 (the three golden-dataset reconciliation tests share one underlying dataset, proving Trial Balance, Profit & Loss, and Balance Sheet agree with each other, not merely each internally consistent) |
 | RPT-010 | RPT-T031 |
 | RPT-011 | RPT-T032 |
+| RPT-012 | RPT-T035, RPT-T036, RPT-T040, RPT-T041 |
+| RPT-013 | RPT-T033, RPT-T034, RPT-T037, RPT-T038 |
 
 ## 6. Test cases
 
@@ -125,6 +130,25 @@ All tests in this subsection post one real Expense (M7: Debit Office Supplies, C
 | RPT-T031 | The General Ledger drill-down for the Cash Account lists exactly the Expense and Income entries, each resolving to its real Journal ID, correct Direction/amount, and correct linked-Evidence list, with a correctly-computed opening (zero) and closing (RM150.00 Debit) balance (`RPT-010`). | Integration |
 | RPT-T032 | The Evidence Index for the period lists both Journals: the Income (posted with an Evidence Reference) reports `hasEvidence() === true` with the correct reference; the Expense (posted with none) reports `hasEvidence() === false` and an empty list — never a fabricated reference (`RPT-011`). | Integration |
 
+### 6.8 Debtors and Aging Report (as of v1.1.0)
+
+Domain-level tests (`AgingBucket`, `AgingReport`) construct their inputs directly, with no persistence; integration-level tests (`AgingReportQuery`) post a real Invoice through `InvoiceIssuingService` and a real Payment/Allocation through `PaymentRecordingService`/`AllocationService`, never a hand-inserted row, mirroring §6.7's own established convention.
+
+| Test ID | Description | Level |
+| --- | --- | --- |
+| RPT-T033 | An Invoice not yet due, or due exactly on the as-of date (zero days overdue), buckets as `Current` (`RPT-013`). | Unit |
+| RPT-T034 | Each bucket boundary (1, 30, 31, 60, 61, 90, 91 days overdue) resolves to its correct, contiguous bucket, with no gap or overlap (`RPT-013`). | Unit |
+| RPT-T035 | A fully-paid Invoice (outstanding balance exactly zero as of the as-of date) does not appear in the report (`RPT-012`). | Integration |
+| RPT-T036 | An unpaid Invoice not yet due appears, bucketed `Current` (`RPT-012`, `RPT-013`). | Integration |
+| RPT-T037 | An Invoice overdue by 15 days appears in the `Overdue1To30` bucket (`RPT-013`). | Integration |
+| RPT-T038 | An Invoice overdue by 100 days appears in the `Overdue91Plus` bucket (`RPT-013`). | Integration |
+| RPT-T039 | A partially-allocated Invoice shows its remaining outstanding balance (`totalAmount` minus allocations from Payments made on or before the as-of date), not its full `totalAmount` and not zero. | Integration |
+| RPT-T040 | A Draft Invoice never appears, regardless of its due date (`RPT-012`). | Integration |
+| RPT-T041 | The report's grand total exactly sums every listed line's own outstanding balance, via `Money::add()` (`RPT-012`). | Integration |
+| RPT-T042 | `AgingReport::grandTotal()` sums every line correctly at the domain level, with no persistence involved. | Unit |
+| RPT-T043 | `AgingReport::totalForBucket()` sums only lines matching the requested bucket, excluding every other bucket's lines. | Unit |
+| RPT-T044 | An empty `AgingReport` (zero lines) reports zero for its grand total and every bucket total. | Unit |
+
 ## 7. RPT-003 — not independently tested by a runtime test
 
 `RPT-003` ("every report MUST be derivable, in full, from `journals`/`journal_lines`/`accounts` alone, with no independent stored source of truth") is a structural property of the schema and the Query layer's own source, not a behavior a runtime assertion can observe in isolation: there is no "cached balance" code path whose *absence* a test could exercise. It is proven by inspection, mirroring [ATS-010 §7](ATS-010-Audit-Trail-Test-Specification.md#7-aud-007--not-independently-testable)'s identical treatment of `AUD-007`:
@@ -134,11 +158,14 @@ All tests in this subsection post one real Expense (M7: Debit Office Supplies, C
 
 ## 8. Deferred Items
 
-- Cash Flow, Debtors/Aging, and Reconciliation Report tests — deferred alongside AETS-009's own deferral (§15), each blocked on a specific, named future module.
-- Export (PDF/XLSX/CSV) tests — a presentation-layer concern, deferred alongside AETS-009 §15.
+- Cash Flow and Reconciliation Report tests — deferred alongside AETS-009's own deferral (§15), each blocked on a specific, named future module.
+- Export (PDF/XLSX) tests — a presentation-layer concern, deferred alongside AETS-009 §15; CSV export is now resolved at the specification level (AETS-009 §18) but, per §2.2, introduces no new business logic this document tests separately.
 - Formal reproducibility/property-based tests over a *generated* range of Journal sets — AETS-009 §13 names this as "where practical"; the current suite proves reconciliation against one concrete, hand-verified golden dataset (RPT-T024–RPT-T032) rather than a generated property-based range. Upgrading to a generated range remains a future enhancement, not a gap in current invariant coverage, since every `RPT-NNN` invariant already has at least one concrete passing test.
 - Period Management's interaction with reporting — deferred alongside AETS-009 §15, to a future AETS-014 test specification.
+- **A dedicated cross-tenant isolation test for the Aging Report** — AETS-009 §15 names this as an open item as of v1.1.0. `RPT-T028` proves this for §6–§10's reports; no equivalent test exists yet for `AgingReportQuery`, even though its own queries already scope by `tenant_id`. Tracked here, not silently dropped.
+- **Aging Report historical reproducibility across time** — a design limitation named by AETS-009 §17, not a test gap: no test can prove a guarantee the specification itself does not make (a Payment Allocation's hard delete can change a historical as-of-date result if the report is re-run after the deallocation).
 
 ## Changelog
 
+- **1.1.0 (2026-09-08):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.1.0, which added §17 (Debtors and Aging Report) and `RPT-012`/`RPT-013`. Adds new §6.8 (twelve test cases, `RPT-T033`–`RPT-T044`), tracing every ID to an already-existing, already-passing test in `AgingBucketTest`, `AgingReportTest`, and `AgingReportQueryIntegrationTest` — no test was newly written for this version; this document catches up to test coverage the M22 implementation already had. Updates §5's traceability matrix and §2.1/§2.2. Explicitly records two coverage gaps this version does **not** close, both already named by AETS-009 §15: no dedicated cross-tenant isolation test for the Aging Report (unlike `RPT-T028` for §6–§10), and no test for CSV export (a presentation-layer reshaping with no new business logic to prove, per AETS-009 §18). No existing `RPT-NNN` invariant's test coverage, and no existing test ID, changed. Classified **MINOR**, mirroring AETS-009's own v1.1.0 classification.
 - **1.0.0 (2026-09-07):** Initial version, authored immediately after AETS-009's implementation (M10), fulfilling the exact coverage AETS-009 §13 names as required.

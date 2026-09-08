@@ -1,7 +1,7 @@
 # AETS-007: Accounting Commands & Posting Pipeline
 
 - Status: Active
-- Version: 2.0.0
+- Version: 2.1.0
 - Effective date: 2026-09-06
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative specification for hore.my's **Accounting Commands** ([AETS-001](AETS-001-Accounting-Terminology.md#accounting-command)) and the Posting Pipeline every one of them is ultimately validated through — the number and working title [AETS-000 §10](AETS-000.md#10-planned-document-structure) already anticipated ("AETS-007, Accounting Commands, ... including invoicing and payment allocation"). This document claims that scope in full, phased: it fully specifies exactly one Accounting Command now — the **Posting Command**, the concrete contract Accounting Core requires before it will consider transitioning a Journal from Draft to Posted, and the validation pipeline that contract must pass through before any ledger effect can occur. Every other business-specific Accounting Command [AETS-000 §10](AETS-000.md#10-planned-document-structure) anticipates (an invoice-posting command, a payment-allocation command, and so on) remains a deferred future subsection or extension of this same document, under this same number — not silently designed here, and not split into a competing AETS number (§2, §26).
+This document is the normative specification for hore.my's **Accounting Commands** ([AETS-001](AETS-001-Accounting-Terminology.md#accounting-command)) and the Posting Pipeline every one of them is ultimately validated through — the number and working title [AETS-000 §10](AETS-000.md#10-planned-document-structure) already anticipated ("AETS-007, Accounting Commands, ... including invoicing and payment allocation"). This document claims that scope in full, phased: it fully specifies exactly one Accounting Command now — the **Posting Command**, the concrete contract Accounting Core requires before it will consider transitioning a Journal from Draft to Posted, and the validation pipeline that contract must pass through before any ledger effect can occur. Every business-specific Accounting Command built to date (Expense, Income, Transfer, Owner Equity, Invoice Issuing, and Payment Recording) resolves down to this Posting Command contract with a fixed, already-implemented account mapping — recorded, as of v2.1.0, in §26. A business-specific Accounting Command not yet built (Bank Reconciliation, MyInvois, a Credit Note, and so on) remains a deferred future subsection or extension of this same document, under this same number — not silently designed here, and not split into a competing AETS number (§2, §27).
 
 [AETS-004 §2.2](AETS-004-Journal-Posting-Model.md#22-out-of-scope) and [AETS-004 §26](AETS-004-Journal-Posting-Model.md#26-deferred-items) explicitly deferred "the concrete Posting Command schema and API contract — the actual command shape, transport, and validation error format" to this document, by this number. [AETS-005 §2.2](AETS-005-Chart-of-Accounts.md#22-out-of-scope) makes the same deferral for "the concrete command shape and API contract." This document resolves that deferral for the Posting Command specifically — it does not reopen anything either document already settled.
 
@@ -21,7 +21,7 @@ This document uses **MUST**, **MUST NOT**, **SHOULD**, and **MAY** with their no
 
 ### 2.1 In scope
 
-- **This version's phased scope.** The Posting Command is fully specified by this version (§4–§19, §23) — every field, validation rule, and invariant it requires. Other business-specific Accounting Commands (§1) are named only to state that they remain deferred, future subsections or extensions of this same document; none of their fields, validation rules, or account mappings are designed in this version.
+- **This version's phased scope.** The Posting Command is fully specified by this version (§4–§19, §23) — every field, validation rule, and invariant it requires. Business-specific Accounting Commands not yet built (§1) are named only to state that they remain deferred, future subsections or extensions of this same document; none of their fields, validation rules, or account mappings are designed in this version.
 - The Posting Command's conceptual contract: what it carries, what identifies it, and what distinguishes it from both an Accounting Proposal and a Journal (§4–§11).
 - The Posting Validation Pipeline, reconciled to and extending [AETS-004 §11](AETS-004-Journal-Posting-Model.md#11-posting-validation-pipeline) and [AETS-005 §19](AETS-005-Chart-of-Accounts.md#19-journal-line-integration) rather than replacing either (§12–§15).
 - The atomic transaction boundary a successful Posting Command's execution requires (§16–§17).
@@ -30,6 +30,7 @@ This document uses **MUST**, **MUST NOT**, **SHOULD**, and **MAY** with their no
 - Security, tenant isolation, and auditability requirements specific to accepting a Posting Command (§21–§22).
 - Stable `POST-NNN` invariants for Posting Engine responsibilities (§23).
 - The required coverage of a future Posting Command Test Specification (§24).
+- **As of v2.1.0:** the fixed account mapping each already-implemented business-specific Accounting Command produces once it resolves down to the Posting Command contract above — Expense, Income, Transfer, Owner Equity, Invoice Issuing, and Payment Recording — plus the explicit clarification that Payment Allocation is not an Accounting Command at all (§26).
 
 ### 2.2 Out of scope
 
@@ -37,9 +38,9 @@ This document uses **MUST**, **MUST NOT**, **SHOULD**, and **MAY** with their no
 - **The Account entity, its taxonomy, or its own lifecycle rules** — fully specified by [AETS-005](AETS-005-Chart-of-Accounts.md) and not reopened here. This document only specifies which of those rules a Posting Command must satisfy before Accounting Core accepts it.
 - **The Money domain contract** — fully specified by [AETS-003](AETS-003-Money-Specification.md) and not reopened here.
 - **Detailed correction-workflow mechanics** — whether/how many times a Journal may be reversed, approval requirements for a Replacement, and period-close interaction with posting — deferred to AETS-006 (Posting Rules), per [AETS-004 §2.2](AETS-004-Journal-Posting-Model.md#22-out-of-scope). This document references Reversal/Replacement only where the Posting Command's own contract must accommodate them (§11), and designs no correction workflow of its own.
-- **Invoice domain, Expense domain, Bank Reconciliation, MyInvois, tax computation, reporting** — each its own future document ([AETS-000 §10](AETS-000.md#10-planned-document-structure)); this document defines the generic Posting Command contract those domains will each build on, not any of their specific mappings.
+- **Invoice domain, Expense domain, Bank Reconciliation, MyInvois, tax computation, reporting** — each its own future document ([AETS-000 §10](AETS-000.md#10-planned-document-structure)); this document defines the generic Posting Command contract those domains will each build on, not the domain logic (customer records, due dates, statement matching, and so on) around each one's own account mapping.
 - **A default Chart of Accounts or Account Code numbering scheme** — [AETS-005 §2.2](AETS-005-Chart-of-Accounts.md#22-out-of-scope) already excludes this; this document does not reopen it.
-- **Specific business transaction mappings, and every business-specific Accounting Command other than the Posting Command itself** — which Accounts a sale, purchase, or expense posts to; the concrete shape of an invoice-posting command, a payment-allocation command, or any other domain-specific command [AETS-000 §10](AETS-000.md#10-planned-document-structure) anticipates under this same number. This document claims the "Accounting Commands" scope in full (§1) but designs none of these yet — see §26.
+- **Specific business transaction mappings not yet built** — Bank Reconciliation, MyInvois, a Credit Note, or any other domain-specific command [AETS-000 §10](AETS-000.md#10-planned-document-structure) anticipates under this same number that does not yet exist in the codebase. This document claims the "Accounting Commands" scope in full (§1); §26 records the mapping for every business-specific command actually built as of v2.1.0, and §27 continues to track what remains undesigned.
 - **UI design and AI prompt design** — this document states what Accounting Core requires as input and produces as output; it does not design how either is presented or generated.
 - **Concrete Actor, Source, Evidence, or Audit Event object schemas** — [AETS-001](AETS-001-Accounting-Terminology.md) defines each as a concept; their detailed shapes are deferred to a future Audit Trail specification (AETS-010) and an Identity/Access specification, neither yet created. This document defines only the Posting Command's *relationship* to each (§8–§10, §22) — for Actor and Source specifically, it additionally names and defines the minimal opaque-reference contract each requires to be carried and tested at all (§8.1, §9.1); it does not define either's full domain schema, and Evidence's reference contract remains entirely deferred alongside its schema.
 - **The exact Idempotency Key derivation algorithm** — [AETS-004 §14](AETS-004-Journal-Posting-Model.md#14-idempotency) already states this is a later implementation decision; this document states the required contract and guarantees only (§6).
@@ -75,17 +76,17 @@ A Posting Command MUST carry the following, at minimum ([AETS-004 §10](AETS-004
 
 | Field | Required | Conceptual content | Governing contract |
 | --- | --- | --- | --- |
-| Command identity / Idempotency Key | Always | An identifier such that repeating or concurrently retrying this same logical command returns the original economic result rather than creating a second effect (§6). | [AETS-001](AETS-001-Accounting-Terminology.md#idempotency-key) Idempotency Key; concrete derivation deferred ([AETS-004 §14](AETS-004-Journal-Posting-Model.md#14-idempotency), §6, §26). |
-| Source Fingerprint | Where the command originates from, or is materially derived from, external/imported source data requiring duplicate-source detection (§6) | An identifier, derived from that source data's content or origin, used to detect that the same source data has already been processed. | [AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint) Source Fingerprint; [AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 3; concrete derivation deferred (§6, §26). |
+| Command identity / Idempotency Key | Always | An identifier such that repeating or concurrently retrying this same logical command returns the original economic result rather than creating a second effect (§6). | [AETS-001](AETS-001-Accounting-Terminology.md#idempotency-key) Idempotency Key; concrete derivation deferred ([AETS-004 §14](AETS-004-Journal-Posting-Model.md#14-idempotency), §6, §27). |
+| Source Fingerprint | Where the command originates from, or is materially derived from, external/imported source data requiring duplicate-source detection (§6) | An identifier, derived from that source data's content or origin, used to detect that the same source data has already been processed. | [AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint) Source Fingerprint; [AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 3; concrete derivation deferred (§6, §27). |
 | TenantId | Always | The single Tenant this command, and every fact it references, is scoped to. | [AETS-001](AETS-001-Accounting-Terminology.md#tenant) Tenant; existing `TenantId` domain Value Object. |
-| Actor | Always | The identified human user, operator, or authorized system process responsible for this command. | [AETS-001](AETS-001-Accounting-Terminology.md#actor) Actor; minimal opaque reference contract §8.1; full Actor object schema deferred (§8, §26). |
-| Source | Always | A traceable reference to the Accounting Command, accepted Accounting Proposal, or correction reference that gives rise to this command. | [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability); minimal opaque reference contract §9.1; full Source object schema deferred (§9, §26). |
-| Evidence references | Where the underlying Business Transaction is evidence-backed | Reference(s) to the Evidence supporting this command's Journal. | [AETS-001](AETS-001-Accounting-Terminology.md#evidence) Evidence; concrete Evidence object schema deferred (§10, §26). |
+| Actor | Always | The identified human user, operator, or authorized system process responsible for this command. | [AETS-001](AETS-001-Accounting-Terminology.md#actor) Actor; minimal opaque reference contract §8.1; full Actor object schema deferred (§8, §27). |
+| Source | Always | A traceable reference to the Accounting Command, accepted Accounting Proposal, or correction reference that gives rise to this command. | [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability); minimal opaque reference contract §9.1; full Source object schema deferred (§9, §27). |
+| Evidence references | Where the underlying Business Transaction is evidence-backed | Reference(s) to the Evidence supporting this command's Journal. | [AETS-001](AETS-001-Accounting-Terminology.md#evidence) Evidence; concrete Evidence object schema deferred (§10, §27). |
 | Proposed Journal identity | Always | Either (a) an identifier for a not-yet-persisted Journal, or (b) a reference to an existing Draft Journal's identifier. | [AETS-004 §6](AETS-004-Journal-Posting-Model.md#6-journal-aggregate), §9, §10; existing `JournalId` Value Object (§11). |
 | Proposed Journal Lines | Always | The ordered set of {Account identifier, Money, Direction} entries this command proposes to post. | [AETS-004 §7](AETS-004-Journal-Posting-Model.md#7-journal-line), §8; existing `JournalLine` Value Object (§11). |
 | Financial Date | Always | The ledger-authoritative accounting date the resulting Journal's effect belongs to — never derived from `created_at` or any other system timestamp. | [AETS-004 §9.1](AETS-004-Journal-Posting-Model.md#91-financial-date-and-posted-at), §11.1. |
 
-No field beyond this table is required by this document. A future business-specific Accounting Command (an invoice posting, an expense posting, and so on — §2.2, §26) MAY carry additional fields of its own before it resolves down to this Posting Command contract; designing any such field is out of scope here.
+No field beyond this table is required by this document. A future business-specific Accounting Command (an invoice posting, an expense posting, and so on — §2.2, §27) MAY carry additional fields of its own before it resolves down to this Posting Command contract; designing any such field is out of scope here.
 
 ## 6. Command identity and idempotency
 
@@ -111,7 +112,7 @@ Required guarantees, restated here as the Posting Command's own contract (mirror
 - Whether a given command "originates from, or is materially derived from" external source data (and therefore requires a Source Fingerprint) is determined by the calling module (for example, a future Bank Reconciliation or Document Processing module) supplying the command — this document does not enumerate every business context that would trigger the requirement, consistent with its own scope (§2.2); it states the rule, and the calling module applies it.
 - A Posting Command triggered from de-duplicated source data still carries its own Idempotency Key regardless — the two mechanisms operate together, never as alternatives.
 
-This document does not invent a Source Fingerprint derivation algorithm (hashing scheme, content-vs-origin basis, or storage schema) — deferred alongside Idempotency Key derivation (§26), exactly as [AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint) already states ("its derivation mechanism is defined elsewhere and is not defined here").
+This document does not invent a Source Fingerprint derivation algorithm (hashing scheme, content-vs-origin basis, or storage schema) — deferred alongside Idempotency Key derivation (§27), exactly as [AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint) already states ("its derivation mechanism is defined elsewhere and is not defined here").
 
 ## 7. Tenant ownership
 
@@ -130,11 +131,11 @@ Every Posting Command MUST record an identified Actor ([AETS-001](AETS-001-Accou
 
 AI, or any other proposal-producing process, MUST NOT itself be recorded as the Actor accepting a Posting Command ([AETS-000 §5](AETS-000.md#5-ai-philosophy); [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability)). It may only be recorded as the originator of the Accounting Proposal a human or a deterministic Accounting Core process subsequently confirmed (§20). Operator support access is read-restricted and is not an Actor capable of accepting a Posting Command directly ([ADR-0004](../../adr/0004-financial-integrity-principles.md); [AETS-001](AETS-001-Accounting-Terminology.md#actor)).
 
-This document does not define Actor's own concrete object schema (identity provider, session/authorization representation) — that belongs to a future Identity/Access specification, not yet created (§26). It defines only that a Posting Command must carry a reference sufficient to identify one, and that the reference must resolve to the command's own Tenant (§7).
+This document does not define Actor's own concrete object schema (identity provider, session/authorization representation) — that belongs to a future Identity/Access specification, not yet created (§27). It defines only that a Posting Command must carry a reference sufficient to identify one, and that the reference must resolve to the command's own Tenant (§7).
 
 ### 8.1 Actor reference (minimal contract)
 
-Pending the future Identity/Access specification's full Actor schema (§26), a Posting Command's Actor field is, at minimum, an **Actor reference**: an opaque, immutable reference sufficient to resolve to exactly one identified party and to the command's own Tenant (§7), once an Identity/Access system exists to resolve it further. This reference:
+Pending the future Identity/Access specification's full Actor schema (§27), a Posting Command's Actor field is, at minimum, an **Actor reference**: an opaque, immutable reference sufficient to resolve to exactly one identified party and to the command's own Tenant (§7), once an Identity/Access system exists to resolve it further. This reference:
 
 - MUST be opaque — Accounting Core does not interpret its internal structure. This specification does not constrain its physical representation: a bounded string, a composite value, or any other concrete form remains an implementation decision for whichever component actually constructs one (today) and for the future Identity/Access specification (eventually) to make or revise — this document requires only the reference's identity contract (opaque, immutable, exactly comparable), never a specific representation.
 - MUST carry no identity, session, or authorization semantics of its own — Accounting Core does not authenticate or authorize an Actor; it only records which already-authorized reference accepted a command. Actor/Tenant consistency remains a Posting Validation Pipeline responsibility (§7, §14) — the reference itself asserts nothing about Tenant match; the pipeline checks it.
@@ -148,11 +149,11 @@ Every Journal MUST retain a traceable Source reference — the Accounting Comman
 
 Source is distinct from Actor: Actor identifies *who* accepted the command; Source identifies *what* gave rise to it (a directly authored command, a confirmed AI proposal, or a Reversal/Replacement's reference to the Journal it corrects). The two are recorded together but answer different questions, exactly as [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability) already establishes.
 
-This document does not define Source's own concrete object schema — deferred alongside Actor and Evidence to a future Audit Trail specification (AETS-010, not yet created; §26). It defines only that a Posting Command must carry a reference sufficient to identify one.
+This document does not define Source's own concrete object schema — deferred alongside Actor and Evidence to a future Audit Trail specification (AETS-010, not yet created; §27). It defines only that a Posting Command must carry a reference sufficient to identify one.
 
 ### 9.1 Source reference (minimal contract)
 
-Pending AETS-010's full Source schema (§26), a Posting Command's Source field is, at minimum, a **Source reference**: an opaque, immutable reference sufficient to trace back to the Accounting Command, accepted Accounting Proposal, or correction reference that gave rise to it. This reference:
+Pending AETS-010's full Source schema (§27), a Posting Command's Source field is, at minimum, a **Source reference**: an opaque, immutable reference sufficient to trace back to the Accounting Command, accepted Accounting Proposal, or correction reference that gave rise to it. This reference:
 
 - MUST be opaque — this specification does not constrain its physical representation, and imposes no requirement that it resolve to any specific concrete form.
 - MUST NOT itself parse, interpret, or classify what it points to (a directly authored command, a confirmed AI proposal, or a correction reference) — that discrimination, where ever needed, belongs to whichever future component actually resolves the reference (AETS-010's own eventual design), never to the reference type itself.
@@ -168,7 +169,7 @@ Every Journal MUST retain Evidence linkage where applicable — where the underl
 
 Evidence MUST NEVER be invented by AI ([ADR-0005](../../adr/0005-ai-provider-abstraction.md); [AETS-000 §5](AETS-000.md#5-ai-philosophy); [AETS-001](AETS-001-Accounting-Terminology.md#evidence)) — a Posting Command's Evidence reference(s) must resolve to real, previously retained Evidence, never to a value an AI proposal-producing process generated to satisfy this requirement.
 
-This document does not define Evidence's own concrete object schema (retention, storage, hash verification) — deferred to a future Audit Trail specification (AETS-010, not yet created; §26), exactly as [AETS-001](AETS-001-Accounting-Terminology.md#evidence) already states. It defines only that a Posting Command must carry a reference sufficient to identify the Evidence it relies on, where any exists.
+This document does not define Evidence's own concrete object schema (retention, storage, hash verification) — deferred to a future Audit Trail specification (AETS-010, not yet created; §27), exactly as [AETS-001](AETS-001-Accounting-Terminology.md#evidence) already states. It defines only that a Posting Command must carry a reference sufficient to identify the Evidence it relies on, where any exists.
 
 ## 11. Journal payload
 
@@ -179,7 +180,7 @@ A Posting Command's Journal payload is exactly the proposed Journal identity plu
 1. **A fresh Journal.** The command carries an identifier for a Journal that does not yet exist, together with a complete proposed Journal Line set. Accounting Core assembles and validates a new Journal from this input.
 2. **An existing Draft Journal.** The command references an already-persisted Draft Journal's identifier. Accounting Core MUST confirm that Journal's currently recorded state is still Draft (§14 step 3; `POST-018`) before proceeding — this is the "Draft-only candidate input" requirement.
 
-Neither shape requires this document to invent a JournalId generation strategy. The existing `JournalId` Value Object deliberately exposes no self-generation method — an identifier is always supplied to it, never produced by it. This document does not change that design; how a caller or Accounting Core obtains a fresh, collision-free JournalId (a UUID, a ULID, a sequence, or otherwise) remains deferred, exactly like Idempotency Key derivation (§6, §26).
+Neither shape requires this document to invent a JournalId generation strategy. The existing `JournalId` Value Object deliberately exposes no self-generation method — an identifier is always supplied to it, never produced by it. This document does not change that design; how a caller or Accounting Core obtains a fresh, collision-free JournalId (a UUID, a ULID, a sequence, or otherwise) remains deferred, exactly like Idempotency Key derivation (§6, §27).
 
 **Proposed Journal Lines** are exactly the {Account identifier, Money, Direction} triples [AETS-004 §7](AETS-004-Journal-Posting-Model.md#7-journal-line) already defines for a Journal Line — no line identifier, memo, or additional metadata is added here (consistent with `JournalLine`'s own already-settled minimal shape). Line order, where the command supplies it, is preserved through validation and, on success, through persistence — consistent with the already-implemented `JournalRepository`'s own `line_position`-based ordering (M3-T10), which this document does not redesign.
 
@@ -193,7 +194,7 @@ Every Posting Command MUST also carry a **Financial Date**: the ledger-authorita
 - Accounting Core copies a Posting Command's Financial Date directly onto the Journal it assembles ([AETS-004 §9.1](AETS-004-Journal-Posting-Model.md#91-financial-date-and-posted-at)) — it is never recomputed, adjusted, or overridden during the Posting Validation Pipeline (§14).
 - **Financial Date is part of a Posting Command's logical-payload identity for idempotency purposes (§6.1).** The same (Tenant, Idempotency Key) reused with the same Journal Lines but a different Financial Date is a conflicting reuse, not a safe replay — because the Financial Date determines which accounting period the resulting Journal's effect belongs to, and a future Reporting/Period Management module MUST be able to trust that a replayed command never silently shifts an already-posted effect's period.
 - Financial Date is compared, for both logical-equivalence and persistence purposes, at calendar-day precision — it identifies an accounting *day*, not a moment.
-- **This document does not decide which Financial Date a correction Journal (Reversal or Replacement) should carry.** That selection is a Posting Rules/Period Management policy decision, deferred to AETS-006 (§26) — not "use the original Journal's date," not "use today's date," and not any other hard-coded rule. The calling layer that constructs a Reversal or Replacement request supplies the Financial Date explicitly, exactly as any other Posting Command caller does.
+- **This document does not decide which Financial Date a correction Journal (Reversal or Replacement) should carry.** That selection is a Posting Rules/Period Management policy decision, deferred to AETS-006 (§27) — not "use the original Journal's date," not "use today's date," and not any other hard-coded rule. The calling layer that constructs a Reversal or Replacement request supplies the Financial Date explicitly, exactly as any other Posting Command caller does.
 
 ## 12. Account validation
 
@@ -258,7 +259,7 @@ Duplicate prevention is not a single check — it is a guarantee spanning two po
 
 `JRN-015` ("duplicate-effect prevention") is a `JournalRepository`-adjacent concern already partially proven at the repository level (row-locking preventing two concurrent writers from silently applying conflicting changes to the same Journal — see `ATS-004`'s `JRN-T185`–`JRN-T186`). This section is the Posting-Command-level completion of that guarantee: it additionally requires the (Tenant, Idempotency Key) uniqueness constraint specifically, which a bare Journal repository has no reason to know about, since Idempotency Key is a Posting Command concern, not a Journal persistence concern (§6).
 
-This document does not mandate a specific uniqueness-constraint shape (a dedicated idempotency-record table, a unique index on the Journal table itself, or otherwise) — that is part of the concrete Idempotency Key storage schema §6.1 and §26 already defer.
+This document does not mandate a specific uniqueness-constraint shape (a dedicated idempotency-record table, a unique index on the Journal table itself, or otherwise) — that is part of the concrete Idempotency Key storage schema §6.1 and §27 already defer.
 
 **Distinct from Source Fingerprint duplicate prevention.** The guarantee above prevents a duplicate *command* from creating a second Journal. Where a Posting Command also carries a Source Fingerprint (§6.2), that fingerprint, combined with its own uniqueness constraint, additionally prevents the same *source data* from ever giving rise to two different commands in the first place ([AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint); [AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 8). The two mechanisms are complementary layers, not alternatives — neither substitutes for the other, and this document does not weaken either to accommodate the other.
 
@@ -284,7 +285,7 @@ A successful Posting Command's persistent effect MUST commit or roll back togeth
 - the required Audit Event (§22); and
 - any required Outbox event (§22; [ADR-0006](../../adr/0006-transactional-outbox-pattern.md)).
 
-**No network calls inside the transaction.** No network call, queue publication, or other external/asynchronous work MUST execute inside that transaction ([ADR-0006](../../adr/0006-transactional-outbox-pattern.md); `JRN-013`; `POST-022`). Any such work is handed off via the transactional outbox after commit. This document does not design the external delivery workers, dispatchers, or consumers that later process an Outbox event — that remains [ADR-0006](../../adr/0006-transactional-outbox-pattern.md)'s own deferred scope, unchanged here (§26).
+**No network calls inside the transaction.** No network call, queue publication, or other external/asynchronous work MUST execute inside that transaction ([ADR-0006](../../adr/0006-transactional-outbox-pattern.md); `JRN-013`; `POST-022`). Any such work is handed off via the transactional outbox after commit. This document does not design the external delivery workers, dispatchers, or consumers that later process an Outbox event — that remains [ADR-0006](../../adr/0006-transactional-outbox-pattern.md)'s own deferred scope, unchanged here (§27).
 
 **Failure inside the transaction.** If any required write within it fails, the entire transaction MUST roll back — there MUST be no partially posted Journal, no orphaned Line, and no orphaned Evidence-linkage, Audit, or Outbox record observable afterward (§18).
 
@@ -332,7 +333,7 @@ A Reversal or Replacement Posting Command MUST belong to the same Tenant as the 
 
 Every successful Posting Command MUST produce an Audit Event capturing at minimum Actor, Tenant, Source, and time, committed atomically with the Journal it posts ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 12; [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability); [AETS-001](AETS-001-Accounting-Terminology.md#audit-event)). This document does not design the Audit Event's detailed schema — deferred to a future Audit Trail specification (AETS-010, not yet created), exactly as [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability) already states.
 
-Where a successful Posting Command requires any asynchronous or external effect (for example, a future MyInvois submission, or a notification), the corresponding Outbox event MUST be recorded within the same atomic transaction as the Journal itself, never as a separate, later write ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariants 2 and 14; [ADR-0006](../../adr/0006-transactional-outbox-pattern.md)). This document does not design the Outbox event's schema, delivery mechanism, or dispatcher — [ADR-0006](../../adr/0006-transactional-outbox-pattern.md) already defers all of that, unchanged here (§26).
+Where a successful Posting Command requires any asynchronous or external effect (for example, a future MyInvois submission, or a notification), the corresponding Outbox event MUST be recorded within the same atomic transaction as the Journal itself, never as a separate, later write ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariants 2 and 14; [ADR-0006](../../adr/0006-transactional-outbox-pattern.md)). This document does not design the Outbox event's schema, delivery mechanism, or dispatcher — [ADR-0006](../../adr/0006-transactional-outbox-pattern.md) already defers all of that, unchanged here (§27).
 
 Evidence linkage, where applicable, retains its original file, hash, uploader, and timestamp ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants) invariant 12; [AETS-001](AETS-001-Accounting-Terminology.md#evidence)) — this document does not design that retention mechanism, only requires the linkage commit atomically with the Journal (§10, §17).
 
@@ -406,7 +407,117 @@ A Posting Command ATS MUST include:
 - **Rejected unbalanced command.** A Posting Command proposing: Debit `ACCOUNT-EXPENSE` RM45.50, Credit `ACCOUNT-CASH` RM45.00. Total Debit ≠ total Credit — step 8 of the pipeline (§14) rejects the command with a distinct "unbalanced" failure category; no Journal is posted.
 - **Duplicate retry.** The cash-sale command above is submitted, posts, and creates Journal `J1`. The same command — same Tenant, same Idempotency Key `K1`, same logical request — is submitted again (a client retry after a timeout). Step 2 of the pipeline (§14, §6) recognizes the existing (Tenant, `K1`) association and returns `J1`'s result, with the terminal result's replay indicator (§19) set accordingly; no second Journal is created.
 
-## 26. Deferred items
+## 26. Business-specific Accounting Command mappings (M6–M21)
+
+This section resolves, for every business-specific Accounting Command actually built as of v2.1.0, the deferral §1/§27 otherwise leaves open. None of these commands has fields, an identity, or a validation rule of its own beyond what §4–§19 already specify for the Posting Command — each is, in full, a caller that assembles a Posting Command with a fixed set of Journal Lines, and is validated through exactly the same Posting Validation Pipeline (§14) as any other. This section records only what §2.2 previously left undocumented: *which* Accounts each command's two Journal Lines target, in which Direction, and where each command's Financial Date and Source reference come from. A command not listed here (Bank Reconciliation, MyInvois, a Credit Note, and so on) remains fully deferred (§27).
+
+**Why this section exists.** [AETS-000 §7](AETS-000.md#7-design-principles) requires "explicit boundaries" and treats an AETS document as the specification implementers build from; each mapping below was already implemented, and already tested against ([`AllocationServiceIntegrationTest`](../../../apps/api/tests/Feature/Domain/Payments/AllocationServiceIntegrationTest.php), [`InvoiceIssuingServiceIntegrationTest`](../../../apps/api/tests/Feature/Domain/Invoicing/InvoiceIssuingServiceIntegrationTest.php), and each translator's own unit test), before this section was written. Recording it here closes that gap rather than leaving the account mapping for an already-shipped feature discoverable only by reading its translator class.
+
+**None of these mappings introduces a new `POST-NNN` invariant.** Each is fully governed by the invariants §23 already states — POST-012 (minimum two lines), POST-013 (single Currency), POST-016 (exact Debit == Credit, satisfied by construction since both lines below always carry the same `Money` amount), and POST-015 (explicit Direction, never inferred from an Account's Normal Balance) apply to every mapping below exactly as to any other Posting Command. This section states *which* Accounts and Directions each command's translator supplies to satisfy them — it does not relax or add to the pipeline itself.
+
+### 26.1 Expense Recording Command (M6/M7)
+
+| Line | Account | Direction |
+| --- | --- | --- |
+| 1 | Expense Account (the command's own `expenseAccountId`) | Debit |
+| 2 | Payment Account (the command's own `paymentAccountId`) | Credit |
+
+- **Financial Date:** the command's own `transactionDate` (M8) — never `created_at` or "today."
+- **Source reference:** `expense:{ExpenseId}` (self-referential — traces to the Expense record, per §9).
+- **Source Fingerprint:** never supplied (§6.2) — a manually-authored Expense command is not materially derived from external/imported source data, even where it carries an Evidence reference; no file-upload/import pipeline exists yet to define what a duplicate would mean.
+- **Evidence:** carried where the command's own `evidenceReference` is non-null; omitted otherwise (§10).
+- Implemented by [`ExpenseToPostingCommandTranslator`](../../../apps/api/app/Domain/Transactions/Expense/ExpenseToPostingCommandTranslator.php).
+
+### 26.2 Income Recording Command (M9)
+
+| Line | Account | Direction |
+| --- | --- | --- |
+| 1 | Deposit Account (the command's own `depositAccountId`) | Debit |
+| 2 | Income Account (the command's own `incomeAccountId`) | Credit |
+
+- **Financial Date:** the command's own `transactionDate` (M8).
+- **Source reference:** `income:{IncomeId}`.
+- **Source Fingerprint:** never supplied, for the identical reason as §26.1.
+- **Evidence:** carried where the command's own `evidenceReference` is non-null; omitted otherwise.
+- Implemented by [`IncomeToPostingCommandTranslator`](../../../apps/api/app/Domain/Transactions/Income/IncomeToPostingCommandTranslator.php).
+
+### 26.3 Transfer Command (M14)
+
+| Line | Account | Direction |
+| --- | --- | --- |
+| 1 | Destination Account (the command's own `destinationAccountId`) | Debit |
+| 2 | Source Account (the command's own `sourceAccountId`) | Credit |
+
+- **Financial Date:** the command's own `transactionDate` (M8).
+- **Source reference:** `transfer:{TransferId}`.
+- **Source Fingerprint:** never supplied, for the identical reason as §26.1.
+- **Evidence:** carried where the command's own `evidenceReference` is non-null; omitted otherwise.
+- Implemented by [`TransferToPostingCommandTranslator`](../../../apps/api/app/Domain/Transactions/Transfer/TransferToPostingCommandTranslator.php).
+
+### 26.4 Owner Equity Transaction Command (M15)
+
+The only mapping in this section where a business-level enum (`OwnerEquityMovementType`) selects between two fixed, mutually-reversed Line sets — never derived from a `Money` sign or any other implicit signal:
+
+| Movement | Line 1 | Line 2 |
+| --- | --- | --- |
+| Contribution | Debit the Cash Account | Credit the Equity Account |
+| Drawing | Debit the Equity Account | Credit the Cash Account |
+
+- **Financial Date:** the command's own `transactionDate` (M8).
+- **Source reference:** `owner-equity:{OwnerEquityTransactionId}`, regardless of movement type — the movement type is human-readable on the Owner Equity Transaction record itself, not on the Journal.
+- **Source Fingerprint:** never supplied, for the identical reason as §26.1.
+- **Evidence:** carried where the command's own `evidenceReference` is non-null; omitted otherwise.
+- Implemented by [`OwnerEquityTransactionToPostingCommandTranslator`](../../../apps/api/app/Domain/Transactions/OwnerEquity/OwnerEquityTransactionToPostingCommandTranslator.php).
+
+### 26.5 Invoice Issuing Command (M20)
+
+| Line | Account | Direction |
+| --- | --- | --- |
+| 1 | Receivable Account (the Invoice's own `receivableAccountId`) | Debit |
+| 2 | Revenue Account (the Invoice's own `revenueAccountId`) | Credit |
+
+Both lines carry the Invoice's own `totalAmount` — standard accrual-basis revenue recognition at issuance. This is the *only* Invoicing event this document maps; a future Credit Note or Invoice Payment-application event (distinct from Payment Recording, §26.6) is not designed here and remains deferred (§27) alongside every other not-yet-built command.
+
+- **Financial Date:** the `issueDate` explicitly supplied to [`InvoiceIssuingService::issue()`](../../../apps/api/app/Domain/Invoicing/InvoiceIssuingService.php) — never `created_at` or a silently-substituted "today" (§11.1).
+- **Source reference:** `invoice:{InvoiceId}`.
+- **Source Fingerprint:** never supplied (§6.2) — issuing an Invoice is an Actor confirming an already-composed Draft the Actor authored directly, not source data derived from an external import.
+- **Evidence:** none — an Invoice Issuing Command carries no Evidence reference; the Invoice itself, not an external document, is the Business Transaction's own record.
+- **Idempotency:** the resulting `JournalId` is deterministically derived from the command's own Idempotency Key (mirroring Income's `DeterministicIdempotentId` convention, §6.1), so a retry is recognized as a replay by the same (Tenant, Idempotency Key) mechanism every other Posting Command uses — no Invoice-specific idempotency mechanism exists.
+- Implemented by [`InvoiceToPostingCommandTranslator`](../../../apps/api/app/Domain/Invoicing/InvoiceToPostingCommandTranslator.php), called from [`InvoiceIssuingService`](../../../apps/api/app/Domain/Invoicing/InvoiceIssuingService.php), which also takes the row lock on the Invoice required to keep a concurrent double-issue from posting two Journals for one Invoice (§17; a fault this codebase's own `InvoiceIssuingServiceIntegrationTest` reproduces and closes with a `SELECT ... FOR UPDATE` taken before any Draft/Issued check, mirroring §6.1's concurrency requirement).
+
+### 26.6 Payment Recording Command (M21)
+
+| Line | Account | Direction |
+| --- | --- | --- |
+| 1 | Deposit Account (the command's own `depositAccountId`) | Debit |
+| 2 | Receivable Account (the command's own `receivableAccountId`) | Credit |
+
+Both lines carry the Payment's own `amount` — cash received from a Customer reduces what that Customer owes. This command does not itself know, or need to know, which Invoice(s) that Payment will later be allocated to (§26.7); the two are deliberately independent.
+
+- **Financial Date:** the command's own `paymentDate`.
+- **Source reference:** `payment:{PaymentId}`.
+- **Source Fingerprint:** never supplied, for the identical reason as §26.1.
+- **Evidence:** none — a Payment Recording Command carries no Evidence reference in the current implementation.
+- Implemented by [`PaymentToPostingCommandTranslator`](../../../apps/api/app/Domain/Payments/PaymentToPostingCommandTranslator.php), called from [`PaymentRecordingService`](../../../apps/api/app/Domain/Payments/PaymentRecordingService.php).
+
+### 26.7 Payment Allocation — not an Accounting Command (M21)
+
+**Payment Allocation, as actually built, is not an Accounting Command and does not resolve down to the Posting Command contract at all.** [AETS-000 §10](AETS-000.md#10-planned-document-structure) and §1 of this document (prior to v2.1.0) both anticipated "a payment-allocation command" as a future business-specific Accounting Command; this subsection resolves that anticipation for good — no such command exists, and none is needed, because allocating a Payment against an Invoice produces no ledger effect of its own:
+
+- The Payment's own cash-received effect is already fully posted at Payment-recording time (§26.6: Debit deposit / Credit Receivable).
+- The Invoice's own revenue-recognition effect is already fully posted at Issuing time (§26.5: Debit Receivable / Credit Revenue).
+- Allocation only records *which portion of which Payment is matched against which Invoice* — pure sub-ledger bookkeeping for reporting purposes (an Invoice's outstanding balance, a Payment's unallocated amount, the Aging Report), never a debit or a credit to any Account.
+
+Concretely, `AllocationService::allocate()` persists a `PaymentAllocation` record directly through `PaymentAllocationRepository` — it never constructs a `PostingCommand`, never calls `PostingCommandTransactionalExecutor`, and is never validated through the Posting Validation Pipeline (§14). It is therefore not subject to any `POST-NNN` invariant, produces no Audit Event under §22's Posting-Command-specific rule, and Accounting Core's exclusive posting authority (§16) is not implicated by it at all, because there is no posting for that authority to guard.
+
+Allocation instead enforces its own two named invariants, at the Payments-domain layer, not as `POST-NNN`/`JRN-NNN`/`COA-NNN` invariants this document adopts:
+
+- an Invoice's own allocations must never exceed its `total_amount`; and
+- a Payment's own allocations must never exceed its own `amount`.
+
+Both are protected against the same concurrent-read-then-write race every Posting Command's own idempotency guarantee (§6.1, §15) exists to close, using the identical technique: `AllocationService::allocate()` takes `SELECT ... FOR UPDATE` locks on the specific Payment and Invoice rows before computing either invariant's sum, so two concurrent allocations against the same Payment or Invoice cannot each read a stale sum and together exceed the limit neither alone would have. This document does not adopt these two invariants as its own — they are recorded here only so a reader of this section is not left wondering whether Payment Allocation's own correctness is unproven; it is proven, by [`AllocationServiceIntegrationTest`](../../../apps/api/tests/Feature/Domain/Payments/AllocationServiceIntegrationTest.php), under the Payments domain's own test coverage, not under a future `ATS-007` extension.
+
+## 27. Deferred items
 
 - **The Idempotency Key's and Source Fingerprint's exact derivation, hashing, or generation strategy** — this document states the required contract and guarantees only (§6); [AETS-004 §14](AETS-004-Journal-Posting-Model.md#14-idempotency)'s deferral, and [AETS-001](AETS-001-Accounting-Terminology.md#source-fingerprint)'s own equivalent deferral for Source Fingerprint, are not resolved here.
 - **Which business contexts require a Source Fingerprint** — §6.2 states the rule (external/imported source data requiring duplicate-source detection); the calling module (a future Bank Reconciliation, Document Processing, or similar module) determines, in its own domain, whether a given command falls under that rule.
@@ -415,13 +526,14 @@ A Posting Command ATS MUST include:
 - **The Audit Event's detailed schema** — deferred to AETS-010 (§22), exactly as [AETS-004 §19](AETS-004-Journal-Posting-Model.md#19-actor--source--evidence-traceability) already states.
 - **The Outbox event's schema, delivery mechanism, dispatcher, and external delivery workers** — [ADR-0006](../../adr/0006-transactional-outbox-pattern.md)'s own deferred scope, unchanged here (§17, §22).
 - **The concrete Posting Command terminal-result schema/API shape** — §19 states what it must convey; its transport, serialization, and error-response format are not designed here.
-- **Business-specific Accounting Commands** — invoicing, payment allocation, and other domain-specific commands [AETS-000 §10](AETS-000.md#10-planned-document-structure) anticipated for "AETS-007, Accounting Commands." This document now claims that working title in full (§1) and covers the foundational Posting Command every such future command would resolve down to; those specific commands, and their own account mappings, remain deferred as **future subsections or extensions of this same document, under this same AETS-007 number** — not a new AETS number, and not silently designed here (§1, §2.2).
+- **Business-specific Accounting Commands not yet built** — Bank Reconciliation, MyInvois, a Credit Note, and any other domain-specific command [AETS-000 §10](AETS-000.md#10-planned-document-structure) anticipated for "AETS-007, Accounting Commands," that does not yet exist in the codebase. §26 resolved this deferral for every business-specific command actually built as of v2.1.0 (Expense, Income, Transfer, Owner Equity, Invoice Issuing, Payment Recording) and clarified that Payment Allocation is not such a command at all (§26.7); a future command not on that list remains deferred as a **future subsection or extension of this same document, under this same AETS-007 number** — not a new AETS number, and not silently designed here (§1, §2.2).
 - **Detailed correction-workflow mechanics** — reversal frequency limits, Replacement approval requirements, period-close interaction with posting, and which Financial Date a Reversal or Replacement Posting Command should be constructed with — deferred to AETS-006, Posting Rules (§2.2, §11.1), exactly as [AETS-004 §26](AETS-004-Journal-Posting-Model.md#26-deferred-items) already states.
-- **Invoice domain, Expense domain, Bank Reconciliation, MyInvois, tax computation, reporting, default Chart of Accounts, Account Code numbering, UI, and AI prompt design** — each explicitly out of scope (§2.2), deferred to its own future document.
+- **Invoice domain detail beyond Issuing, Expense domain, Bank Reconciliation, MyInvois, tax computation, reporting, default Chart of Accounts, Account Code numbering, UI, and AI prompt design** — each explicitly out of scope (§2.2), deferred to its own future document.
 - **This document's own future ATS-007** — §24 states its required coverage; the test specification document is not written here.
 
-## 27. Changelog
+## 28. Changelog
 
+- **2.1.0 (2026-09-08):** Resolved a governance gap an external audit surfaced: every business-specific Accounting Command built since v2.0.0 (Expense/Income at M6–M9, Transfer at M14, Owner Equity at M15, Invoice Issuing at M20, Payment Recording at M21) had its account mapping decided and implemented in its own translator class's docblock, but never recorded in this document — §1, §2.2, and §26 (now §27) had, since v1.1.0, explicitly named "invoicing" and "payment allocation" as commands this document would eventually claim, without ever being updated once those commands actually shipped. Adds new **§26, Business-specific Accounting Command mappings**, recording — as a stable normative reference, not a new field or validation rule — the fixed two-line mapping, Financial Date source, and Source reference convention each already-implemented command's translator produces (§26.1–§26.6), and clarifying that **Payment Allocation is not an Accounting Command at all** (§26.7): it posts no Journal, is never validated through the Posting Validation Pipeline, and its own two named invariants (never exceed an Invoice's `total_amount`; never exceed a Payment's own `amount`) are Payments-domain invariants, not `POST-NNN` ones. Renumbers the former §26 (Deferred items) to §27 and the former §27 (Changelog) to §28 to make room, updating every live internal cross-reference to the old §26 accordingly (§1, §2.2, §5, §6.1–§6.2, §8, §9, §11, §11.1, §15, §17, §22); historical changelog entries below, and other documents' own historical changelog entries citing "AETS-007 §26" as it was named at the time they were written, are left as an accurate record of the past rather than rewritten. Also updates the two live (non-changelog) code references to this document's own §26 — [`PostingCommand`](../../../apps/api/app/Domain/Accounting/Posting/PostingCommand.php) and [`ActorReference`](../../../apps/api/app/Domain/Accounting/Posting/ActorReference.php) — to cite §27, the section they actually meant (Evidence's and Actor's own future schema deferral). No `POST-NNN` invariant, pipeline step, field, or previously specified behavior changed. Classified **MINOR** per [AETS-000 §9.1](AETS-000.md#91-per-document-version): a new subsection recording already-implemented, already-tested behavior, not a change to any existing accounting outcome, invariant, or contract.
 - **2.0.0 (2026-09-06):** Resolved a cross-cutting gap M7 (first Accounting Core consumer, Expense Recording) exposed: [SRS §5.1](../../product/reference/hore.my_Spesifikasi_Keperluan_Sistem_v1.0_BM.pdf) requires financial date, posting time, and source time stored separately, but neither `Journal` nor `PostingCommand` carried a financial date at all before this version — a calling module (Expense, and any future Income/Invoice/Bank consumer) had no way to make the ledger's accounting date authoritative without each reinventing its own convention, and Reporting/Period Management would have had to join every calling module's own table to determine period membership. Adds **Financial Date** as a new, always-required Posting Command field (§5, §11.1), the same field [AETS-004](AETS-004-Journal-Posting-Model.md) v2.0.0 (companion amendment, same task) adds to the Journal aggregate itself — this document does not invent a second, independent field. Financial Date is now also part of a Posting Command's logical-payload identity for idempotency purposes (§6.1): the same (Tenant, Idempotency Key) reused with a different Financial Date is a conflicting reuse, not a safe replay. Adds `POST-028` (§23, appended — no existing `POST-NNN` ID renumbered, altered, or removed), a new ATS requirement (§24), and a §26 clarification that which Financial Date a Reversal or Replacement Posting Command should carry remains a Posting Rules/Period Management policy decision deferred to AETS-006, never hard-coded to "the original's date" or "today" by this document, `Journal::reverse()`, or `Journal::createReplacement()`. Classified **MAJOR** per [AETS-000 §9.1](AETS-000.md#91-per-document-version): every existing caller that constructs a `PostingCommand` now requires an additional constructor argument with no default — a breaking change to an already-Active public contract, not an additive clarification.
 - **1.3.0 (2026-09-05):** Resolved a genuine internal conflict discovered while implementing `PostingCommandAccountValidator` (M4-T8): §18's "Distinguishable failure categories" list stated an Account that "does not exist, does not belong to the Tenant, is Inactive, or is not posting-eligible" must be "each its own category, not merged," but the existing, already-committed Account repository contract (`AccountRepository::findById(TenantId, AccountId)`) deliberately returns the same "not found" result for both "does not exist" and "belongs to a different Tenant," by design, to prevent leaking cross-tenant Account existence (`COA-001`; AETS-002 invariant 11). Distinguishing the two would require either a new, tenant-unscoped lookup or weakening that guarantee — both rejected. **Tenant isolation takes precedence over category granularity for this one pair.** §12 gains a new paragraph, and §18's list is reworded, so that: an Account reference unresolvable within the command's own Tenant (whichever of the two physical causes applies) is one distinguishable rejection category; Posting validation MUST NOT perform a tenant-unscoped lookup merely to split it into two; Inactive and non-posting-eligible each remain their own, fully separate categories, unchanged. Both underlying failure modes (`POST-008`, `POST-009`) still independently cause rejection — only the externally observable category is shared, preserving `POST-T047` and `POST-T048` (ATS-007) exactly as already specified; neither test required the two to be distinguishable from each other, so `ATS-007` required no change. No `POST-NNN` invariant, and no other MUST-level requirement, changed — this corrects a self-contradiction in §18's own wording to match an already-settled, security-motivated architectural fact, classified **MINOR** per [AETS-000 §9.1](AETS-000.md#91-per-document-version).
 - **1.2.0 (2026-09-05):** Resolved a specification gap discovered while determining the next Posting-domain implementation step after `IdempotencyKey`/`SourceFingerprint` (M4-T4): §5, §8, and §9 already required a Posting Command to carry an Actor and a Source, and §8/§9 already said each needed only "a reference sufficient to identify one," but no minimum contract for that reference was ever named — leaving `POST-T001`/`POST-T004`/`POST-T005` (ATS-007) unimplementable without prematurely inventing an Actor/Source schema. Adds `§8.1` (Actor reference, minimal contract) and `§9.1` (Source reference, minimal contract): each an opaque, immutable reference — deliberately not constrained to any physical representation (a string, a composite value, or otherwise), so neither this document nor the future Identity/Access specification (Actor) or AETS-010 (Source) is locked to today's implementation choice. Explicitly preserves every existing boundary: Accounting Core does not authenticate or authorize an Actor; Actor/Tenant consistency remains a Posting Validation Pipeline responsibility (§7, §14), never something the reference computes; a Source reference does not parse or classify what it points to; Source Fingerprint's own derivation remains entirely undefined (§6.2, unchanged); and Evidence's reference contract remains entirely deferred (§10) — no minimal contract is defined for it here, since no ATS-007 test in the reviewed range (`POST-T001`–`POST-T010`) required one. Updates §5's Actor/Source table rows and §2.2/§26 to cross-reference the new subsections. Mapped to no new `POST-NNN` invariant — this is an additive clarification of already-existing `POST-002`/`POST-005` requirements, not a new obligation. `ATS-007` requires no change: `POST-T001`/`T004`/`T005`/`T010` already describe the required behavior generically, with no reference to a specific type. No existing section renumbered, and no previously specified behavior altered — classified **MINOR** per [AETS-000 §9.1](AETS-000.md#91-per-document-version).

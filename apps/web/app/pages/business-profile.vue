@@ -100,7 +100,8 @@ async function onSubmit() {
     isComplete.value = data.data.is_complete
     savedMessage.value = 'Business profile saved. A starter Chart of Accounts is ready.'
   } catch {
-    error.value = 'Failed to save the business profile — check every required field is filled in correctly.'
+    error.value =
+      'Failed to save the business profile — check every required field is filled in correctly.'
   } finally {
     submitting.value = false
   }
@@ -118,7 +119,11 @@ onMounted(loadProfile)
     </p>
 
     <div v-if="loading" class="text-sm text-gray-500">Loading…</div>
-    <form v-else class="space-y-3 rounded border border-gray-200 bg-white p-4" @submit.prevent="onSubmit">
+    <form
+      v-else
+      class="space-y-3 rounded border border-gray-200 bg-white p-4"
+      @submit.prevent="onSubmit"
+    >
       <p v-if="error" class="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</p>
       <p v-if="savedMessage" class="rounded bg-green-50 px-3 py-2 text-sm text-green-700">
         {{ savedMessage }}
@@ -129,44 +134,77 @@ onMounted(loadProfile)
 
       <div>
         <label class="block text-sm font-medium text-gray-700">Legal / business name</label>
-        <input v-model="legalName" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+        <input
+          v-model="legalName"
+          required
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Registration number (SSM)</label>
-        <input v-model="registrationNumber" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+        <input
+          v-model="registrationNumber"
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700">Tax Identification Number (TIN)</label>
+        <label class="block text-sm font-medium text-gray-700"
+          >Tax Identification Number (TIN)</label
+        >
         <input v-model="tin" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Address line 1</label>
-        <input v-model="addressLine1" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+        <input
+          v-model="addressLine1"
+          required
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Address line 2</label>
-        <input v-model="addressLine2" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+        <input
+          v-model="addressLine2"
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        />
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700">City</label>
-          <input v-model="city" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+          <input
+            v-model="city"
+            required
+            class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Postcode</label>
-          <input v-model="postcode" required maxlength="5" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+          <input
+            v-model="postcode"
+            required
+            maxlength="5"
+            class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          />
         </div>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">State</label>
-        <select v-model="state" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+        <select
+          v-model="state"
+          required
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        >
           <option value="" disabled>Select a state</option>
           <option v-for="s in STATES" :key="s" :value="s">{{ s }}</option>
         </select>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Business type</label>
-        <select v-model="businessType" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+        <select
+          v-model="businessType"
+          required
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        >
           <option value="" disabled>Select a business type</option>
           <option v-for="t in BUSINESS_TYPES" :key="t" :value="t">{{ t }}</option>
         </select>

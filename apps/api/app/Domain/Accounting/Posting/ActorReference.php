@@ -11,7 +11,7 @@ use App\Domain\Accounting\Posting\Exception\InvalidActorReferenceException;
  * §8.1): the minimal contract standing in for the human user,
  * operator, or authorized system process responsible for a Posting
  * Command, pending the future Identity/Access specification's full
- * Actor schema (AETS-007 §26).
+ * Actor schema (AETS-007 §27).
  *
  * **What this is, and what it is not.** This is a pure identity
  * wrapper — an opaque reference sufficient to identify one Actor and,

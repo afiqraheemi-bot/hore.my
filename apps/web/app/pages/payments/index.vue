@@ -186,36 +186,66 @@ onMounted(async () => {
     >
       <div>
         <label class="block text-xs font-medium text-gray-500">Customer</label>
-        <select v-model="customerId" required class="mt-1 w-48 rounded border border-gray-300 px-2 py-1">
+        <select
+          v-model="customerId"
+          required
+          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
+        >
           <option value="" disabled>Select</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </div>
       <div>
         <label class="block text-xs font-medium text-gray-500">Amount</label>
-        <input v-model="amount" placeholder="300.00" required class="mt-1 w-28 rounded border border-gray-300 px-2 py-1" />
+        <input
+          v-model="amount"
+          placeholder="300.00"
+          required
+          class="mt-1 w-28 rounded border border-gray-300 px-2 py-1"
+        />
       </div>
       <div>
         <label class="block text-xs font-medium text-gray-500">Payment date</label>
-        <input v-model="paymentDate" type="date" required class="mt-1 rounded border border-gray-300 px-2 py-1" />
+        <input
+          v-model="paymentDate"
+          type="date"
+          required
+          class="mt-1 rounded border border-gray-300 px-2 py-1"
+        />
       </div>
       <div>
         <label class="block text-xs font-medium text-gray-500">Deposit account</label>
-        <select v-model="depositAccountId" required class="mt-1 w-48 rounded border border-gray-300 px-2 py-1">
+        <select
+          v-model="depositAccountId"
+          required
+          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
+        >
           <option value="" disabled>Select an Asset account</option>
-          <option v-for="a in depositAccounts" :key="a.id" :value="a.id">{{ a.account_code }} — {{ a.account_name }}</option>
+          <option v-for="a in depositAccounts" :key="a.id" :value="a.id">
+            {{ a.account_code }} — {{ a.account_name }}
+          </option>
         </select>
       </div>
       <div>
         <label class="block text-xs font-medium text-gray-500">Receivable account</label>
-        <select v-model="receivableAccountId" required class="mt-1 w-48 rounded border border-gray-300 px-2 py-1">
+        <select
+          v-model="receivableAccountId"
+          required
+          class="mt-1 w-48 rounded border border-gray-300 px-2 py-1"
+        >
           <option value="" disabled>Select an Asset account</option>
-          <option v-for="a in receivableAccounts" :key="a.id" :value="a.id">{{ a.account_code }} — {{ a.account_name }}</option>
+          <option v-for="a in receivableAccounts" :key="a.id" :value="a.id">
+            {{ a.account_code }} — {{ a.account_name }}
+          </option>
         </select>
       </div>
       <div>
         <label class="block text-xs font-medium text-gray-500">Reference</label>
-        <input v-model="reference" placeholder="optional" class="mt-1 w-32 rounded border border-gray-300 px-2 py-1" />
+        <input
+          v-model="reference"
+          placeholder="optional"
+          class="mt-1 w-32 rounded border border-gray-300 px-2 py-1"
+        />
       </div>
       <button
         type="submit"
@@ -242,7 +272,9 @@ onMounted(async () => {
             <span class="font-medium">RM{{ payment.amount }}</span>
             <span class="ml-2 text-gray-600">{{ customerName(payment.customer_id) }}</span>
             <span class="ml-2 text-gray-500">{{ payment.payment_date }}</span>
-            <span v-if="payment.reference" class="ml-2 text-gray-400">({{ payment.reference }})</span>
+            <span v-if="payment.reference" class="ml-2 text-gray-400"
+              >({{ payment.reference }})</span
+            >
             <span class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">
               Unallocated: RM{{ payment.unallocated_amount }}
             </span>
@@ -257,29 +289,62 @@ onMounted(async () => {
           </button>
         </div>
 
-        <ul v-if="(allocationsByPayment[payment.id] ?? []).length > 0" class="mt-2 space-y-1 text-xs text-gray-600">
-          <li v-for="allocation in allocationsByPayment[payment.id]" :key="allocation.id" class="flex items-center gap-2">
+        <ul
+          v-if="(allocationsByPayment[payment.id] ?? []).length > 0"
+          class="mt-2 space-y-1 text-xs text-gray-600"
+        >
+          <li
+            v-for="allocation in allocationsByPayment[payment.id]"
+            :key="allocation.id"
+            class="flex items-center gap-2"
+          >
             <span>Invoice {{ allocation.invoice_id.slice(0, 8) }} — RM{{ allocation.amount }}</span>
-            <button type="button" class="text-red-600 underline" @click="onDeallocate(allocation.id)">Remove</button>
+            <button
+              type="button"
+              class="text-red-600 underline"
+              @click="onDeallocate(allocation.id)"
+            >
+              Remove
+            </button>
           </li>
         </ul>
 
-        <div v-if="allocatingPaymentId === payment.id" class="mt-3 flex items-end gap-2 rounded border border-gray-200 bg-gray-50 p-2">
+        <div
+          v-if="allocatingPaymentId === payment.id"
+          class="mt-3 flex items-end gap-2 rounded border border-gray-200 bg-gray-50 p-2"
+        >
           <div>
             <label class="block text-xs font-medium text-gray-500">Invoice</label>
-            <select v-model="allocateInvoiceId" class="mt-1 w-56 rounded border border-gray-300 px-2 py-1 text-xs">
+            <select
+              v-model="allocateInvoiceId"
+              class="mt-1 w-56 rounded border border-gray-300 px-2 py-1 text-xs"
+            >
               <option value="" disabled>Select an outstanding invoice</option>
-              <option v-for="inv in outstandingInvoices" :key="inv.id" :value="inv.id">{{ invoiceLabel(inv) }}</option>
+              <option v-for="inv in outstandingInvoices" :key="inv.id" :value="inv.id">
+                {{ invoiceLabel(inv) }}
+              </option>
             </select>
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500">Amount</label>
-            <input v-model="allocateAmount" placeholder="100.00" class="mt-1 w-24 rounded border border-gray-300 px-2 py-1 text-xs" />
+            <input
+              v-model="allocateAmount"
+              placeholder="100.00"
+              class="mt-1 w-24 rounded border border-gray-300 px-2 py-1 text-xs"
+            />
           </div>
-          <button type="button" class="rounded bg-gray-900 px-2 py-1 text-xs text-white" @click="onAllocate(payment.id)">
+          <button
+            type="button"
+            class="rounded bg-gray-900 px-2 py-1 text-xs text-white"
+            @click="onAllocate(payment.id)"
+          >
             Confirm
           </button>
-          <button type="button" class="rounded border border-gray-300 px-2 py-1 text-xs" @click="allocatingPaymentId = null">
+          <button
+            type="button"
+            class="rounded border border-gray-300 px-2 py-1 text-xs"
+            @click="allocatingPaymentId = null"
+          >
             Cancel
           </button>
         </div>

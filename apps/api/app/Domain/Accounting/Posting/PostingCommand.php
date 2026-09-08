@@ -103,7 +103,7 @@ final class PostingCommand
      *                                            command carries none (AETS-007 §10). Every member MUST be a
      *                                            string; no further grammar, format, or identifier semantics is
      *                                            validated here — Evidence's own reference contract remains
-     *                                            entirely deferred (AETS-007 §26), unlike Actor/Source's minimal
+     *                                            entirely deferred (AETS-007 §27), unlike Actor/Source's minimal
      *                                            contract (§8.1, §9.1).
      *
      * @throws InvalidPostingCommandException if `$lines` contains a

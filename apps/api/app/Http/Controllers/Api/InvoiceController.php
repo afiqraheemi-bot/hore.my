@@ -30,6 +30,7 @@ use App\Domain\Invoicing\InvoiceIssuingService;
 use App\Domain\Invoicing\InvoiceLine;
 use App\Domain\Invoicing\InvoiceStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Invoicing\IssueInvoiceRequest;
 use App\Http\Requests\Invoicing\StoreInvoiceRequest;
 use App\Http\Requests\Invoicing\UpdateInvoiceRequest;
 use App\Http\Support\CurrentTenant;
@@ -38,7 +39,6 @@ use App\Infrastructure\Customers\CustomerRepository;
 use App\Infrastructure\Invoicing\InvoiceRepository;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 /**
@@ -169,7 +169,7 @@ final class InvoiceController extends Controller
         return response()->json(null, 204);
     }
 
-    public function issue(Request $request, CurrentTenant $currentTenant, string $invoiceId): JsonResponse
+    public function issue(IssueInvoiceRequest $request, CurrentTenant $currentTenant, string $invoiceId): JsonResponse
     {
         $idempotencyKeyHeader = $request->header('Idempotency-Key');
 
@@ -189,7 +189,7 @@ final class InvoiceController extends Controller
                 $journalId,
                 $idempotencyKey,
                 ActorReference::of($user->id),
-                new \DateTimeImmutable('today'),
+                new \DateTimeImmutable($request->string('issue_date')->toString()),
             );
         } catch (InvoiceNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);
