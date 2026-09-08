@@ -34,6 +34,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
+use Tests\Concerns\CleansSharedAccountingTables;
 use Tests\TestCase;
 
 /**
@@ -58,6 +59,8 @@ use Tests\TestCase;
  */
 final class PostingCommandCandidateJournalResolverTest extends TestCase
 {
+    use CleansSharedAccountingTables;
+
     private const JOURNAL_TABLE = 'journals';
 
     private const LINE_TABLE = 'journal_lines';
@@ -96,14 +99,15 @@ final class PostingCommandCandidateJournalResolverTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
-        DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
-        DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
-        foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
-            if (Schema::connection('pgsql')->hasTable($bankingTable)) {
-                DB::connection('pgsql')->table($bankingTable)->delete();
-            }
-        }
-        DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
+        // Was a hand-rolled, class-local list of tables to clean
+        // before deleting `journals` — went stale when M20/M21 added
+        // `invoices`/`invoice_lines`/`payments`/`payment_allocations`,
+        // each holding a foreign key onto `journals`, without ever
+        // being added here (confirmed as a real, intermittent
+        // `QueryException` during a 2026-09-11 audit remediation pass —
+        // see `CleansSharedAccountingTables`'s own docblock). Replaced
+        // with the shared, canonical cleanup this trait exists for.
+        self::cleanSharedAccountingTables();
 
         $this->journalRepository = new JournalRepository(DB::connection('pgsql'));
         $this->resolver = new PostingCommandCandidateJournalResolver(

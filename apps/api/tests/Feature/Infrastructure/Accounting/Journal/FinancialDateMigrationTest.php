@@ -265,13 +265,22 @@ final class FinancialDateMigrationTest extends TestCase
             self::forceCleanMigration(self::CORRECTION_MIGRATION_PATH, []);
         }
 
-        // `matches` (M18) carries a composite foreign key on
-        // (tenant_id, journal_id) referencing this table — a leftover
-        // row from another test class sharing this same persistent
-        // database would otherwise block the blanket `journals` delete
-        // below. Not this test's concern; not recreated here.
-        if (Schema::connection('pgsql')->hasTable('matches')) {
-            DB::connection('pgsql')->table('matches')->delete();
+        // `matches` (M18), and, added 2026-09-11 after an audit
+        // surfaced this exact class of bug already fixed once in
+        // `JournalCorrectionTransactionalExecutorTest`,
+        // `payment_allocations`/`payments`/`invoices` (M20/M21) — each
+        // carries a foreign key (composite, for `matches`; via
+        // `journal_id`, for `payments`/`invoices`) referencing this
+        // table; `invoice_lines` is deleted first only because it
+        // itself references `invoices`, not because it references
+        // `journals` directly. A leftover row from another test class
+        // sharing this same persistent database would otherwise block
+        // the blanket `journals` delete below. Not this test's
+        // concern; not recreated here.
+        foreach (['payment_allocations', 'payments', 'invoice_lines', 'invoices', 'matches'] as $table) {
+            if (Schema::connection('pgsql')->hasTable($table)) {
+                DB::connection('pgsql')->table($table)->delete();
+            }
         }
 
         if (Schema::connection('pgsql')->hasTable(self::LINE_TABLE)) {

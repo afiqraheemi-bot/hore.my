@@ -40,6 +40,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\CleansSharedAccountingTables;
 use Tests\TestCase;
 
 /**
@@ -66,6 +67,8 @@ use Tests\TestCase;
  */
 final class JournalCorrectionTransactionalExecutorTest extends TestCase
 {
+    use CleansSharedAccountingTables;
+
     private const IDEMPOTENCY_TABLE = 'posting_idempotency_keys';
 
     private const JOURNAL_TABLE = 'journals';
@@ -112,16 +115,19 @@ final class JournalCorrectionTransactionalExecutorTest extends TestCase
             $this->markTestSkipped(self::$skipReason);
         }
 
-        DB::connection('pgsql')->table(self::IDEMPOTENCY_TABLE)->delete();
-        DB::connection('pgsql')->table(self::AUDIT_EVENT_TABLE)->delete();
-        DB::connection('pgsql')->table(self::LINE_TABLE)->delete();
-        DB::connection('pgsql')->table(self::JOURNAL_TABLE)->delete();
-        foreach (['reconciliation_reopenings', 'matches', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches', 'bank_accounts'] as $bankingTable) {
-            if (Schema::connection('pgsql')->hasTable($bankingTable)) {
-                DB::connection('pgsql')->table($bankingTable)->delete();
-            }
-        }
-        DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->delete();
+        // Was a hand-rolled, class-local list of tables to clean before
+        // deleting `journals` — exactly the anti-pattern
+        // CleansSharedAccountingTables's own docblock warns against.
+        // It went stale silently: M20/M21 added `invoices`/
+        // `invoice_lines`/`payments`/`payment_allocations`, each
+        // holding a foreign key onto `journals`, and this list was
+        // never updated — confirmed as the real cause of an
+        // intermittent `QueryException` (FK violation deleting
+        // `journals`) surfaced during a 2026-09-11 audit remediation
+        // pass, whenever a preceding test class in the same run left
+        // Invoice/Payment fixture rows behind. Replaced with the
+        // shared, canonical cleanup this trait exists for.
+        self::cleanSharedAccountingTables();
 
         $connection = DB::connection('pgsql');
         $this->journalRepository = new JournalRepository($connection);

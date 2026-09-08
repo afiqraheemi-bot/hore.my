@@ -68,6 +68,21 @@ use Tests\TestCase;
  */
 final class PeriodClosingServiceIntegrationTest extends TestCase
 {
+    /**
+     * Was missing `payment_allocations`/`payments`/`invoice_lines`/
+     * `invoices` until 2026-09-11 (M20/M21 added them, each holding a
+     * foreign key directly or transitively onto `journals`, without
+     * this class-local list ever being updated) — confirmed as the
+     * real cause of an intermittent `QueryException` (FK violation
+     * deleting `journals`) surfaced during a 2026-09-11 audit
+     * remediation pass, whenever a preceding test class in the same
+     * run left Invoice/Payment fixture rows behind. See
+     * `Tests\Concerns\CleansSharedAccountingTables`'s own docblock for
+     * the general form of this bug across this suite; this class keeps
+     * its own list rather than that trait only because it additionally
+     * cleans `tenants`/`users`, which that trait deliberately does not
+     * own.
+     */
     private const TABLES_TO_CLEAN = [
         'period_closures',
         'posting_idempotency_keys',
@@ -84,6 +99,10 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
         'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'payment_allocations',
+        'payments',
+        'invoice_lines',
+        'invoices',
         'journal_lines',
         'journals',
         'accounts',
