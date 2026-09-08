@@ -528,6 +528,229 @@ final class TaskServiceIntegrationTest extends TestCase
         $this->assertNotNull($row, 'The repository must persist the exact id the domain TaskTransition was constructed with, not a freshly generated one.');
     }
 
+    /**
+     * Crash recovery, extended: a Task stranded in `Approved` (a crash
+     * between the `NeedsReview -> Approved` and `Approved -> Executing`
+     * transitions, simulated exactly as `test_resume_completes_a_task_stranded_in_executing()`
+     * simulates `Executing` — writing the state directly) is recovered
+     * by calling `approve()` again, not a separate method.
+     */
+    public function test_approve_recovers_a_task_stranded_in_approved(): void
+    {
+        $task = $this->submitExpense();
+        DB::connection('pgsql')->table('tasks')
+            ->where('tenant_id', $this->tenantA->toString())->where('task_id', $task->id()->toString())
+            ->update(['state' => 'Approved']);
+
+        $recovered = $this->taskService->approve($this->tenantA, $task->id(), ActorReference::of('user-recovery'));
+
+        $this->assertSame(TaskState::Completed, $recovered->state());
+        $this->assertNotNull($recovered->resultJournalId());
+    }
+
+    /**
+     * The TSK-004 concurrency guard extended to a stranded `Approved`
+     * recovery: two concurrent `approve()` calls against the same Task
+     * stuck in `Approved` must never both succeed. Mirrors
+     * {@see test_two_concurrent_resume_attempts_never_both_succeed()}
+     * exactly, using the `approve` worker script since recovering from
+     * `Approved` goes through `approve()`, not `resume()`.
+     */
+    public function test_two_concurrent_approve_attempts_on_a_stranded_approved_task_never_both_succeed(): void
+    {
+        $task = $this->submitExpense();
+        DB::connection('pgsql')->table('tasks')
+            ->where('tenant_id', $this->tenantA->toString())->where('task_id', $task->id()->toString())
+            ->update(['state' => 'Approved']);
+
+        [$resultAData, $resultBData] = $this->raceTwoWorkers(
+            base_path('tests/bin/concurrent_task_approve_worker.php'),
+            [$this->tenantA->toString(), $task->id()->toString()],
+        );
+
+        $outcomes = ['A' => $resultAData, 'B' => $resultBData];
+        $succeeded = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['state'] ?? null) === 'Completed'));
+        $rejected = array_keys(array_filter($outcomes, static fn (array $r): bool => in_array(
+            $r['exception'] ?? null,
+            [TaskAlreadyTransitionedException::class, InvalidTaskStateTransitionException::class],
+            true,
+        )));
+
+        $this->assertCount(1, $succeeded, 'Exactly one of the two concurrent approve-recovery attempts must complete. Got: '.json_encode($outcomes));
+        $this->assertCount(1, $rejected, 'The other concurrent attempt must be safely rejected. Got: '.json_encode($outcomes));
+    }
+
+    /**
+     * 2026-09-09 reliability closure (second post-implementation QA
+     * pass): proves the *first-submission* race `submit()`'s
+     * `findById() === null` pre-check cannot protect against — two
+     * concurrent requests under the same, never-before-used
+     * Idempotency Key, identical payload, both observing "no Task yet"
+     * before either commits. Both must resolve to the exact same Task
+     * (one via the ordinary insert path, the other via the lost-race
+     * `tasks_pkey` catch), never a raw, unhandled constraint-violation
+     * error and never two Tasks.
+     */
+    public function test_two_concurrent_first_submissions_with_matching_payload_both_resolve_to_the_same_task(): void
+    {
+        $key = 'idem-concurrent-submit-match-'.uniqid('', true);
+
+        [$resultAData, $resultBData] = $this->raceTwoWorkers(
+            base_path('tests/bin/concurrent_task_submit_worker.php'),
+            [$this->tenantA->toString(), $key, '50.00', 'account-office-supplies', 'account-cash'],
+        );
+
+        $this->assertArrayHasKey('task_id', $resultAData, 'Worker A unexpectedly failed: '.json_encode($resultAData));
+        $this->assertArrayHasKey('task_id', $resultBData, 'Worker B unexpectedly failed: '.json_encode($resultBData));
+        $this->assertSame($resultAData['task_id'], $resultBData['task_id'], 'Both concurrent first-submissions must resolve to the identical Task.');
+        $this->assertSame(1, DB::connection('pgsql')->table('tasks')->where('tenant_id', $this->tenantA->toString())->count());
+    }
+
+    /**
+     * The conflict-detection counterpart of the test above: two
+     * concurrent first-submissions under the same never-before-used
+     * Idempotency Key but a *materially different* payload (amount)
+     * — exactly one must win with a real Task, and the other must
+     * observe {@see TaskSubmissionConflictException}, never a raw
+     * constraint-violation error and never a silently-accepted
+     * mismatched replay.
+     */
+    public function test_two_concurrent_first_submissions_with_conflicting_payload_reject_the_loser(): void
+    {
+        $key = 'idem-concurrent-submit-conflict-'.uniqid('', true);
+
+        $tmp = sys_get_temp_dir();
+        $readyA = tempnam($tmp, 'ready_a_');
+        $readyB = tempnam($tmp, 'ready_b_');
+        $goFile = tempnam($tmp, 'go_');
+        $resultA = tempnam($tmp, 'result_a_');
+        $resultB = tempnam($tmp, 'result_b_');
+        unlink($readyA);
+        unlink($readyB);
+        unlink($goFile);
+
+        $workerScript = base_path('tests/bin/concurrent_task_submit_worker.php');
+
+        $processA = proc_open(
+            ['php', $workerScript, $this->tenantA->toString(), $key, '50.00', 'account-office-supplies', 'account-cash', 'user-concurrent-a', $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, $this->tenantA->toString(), $key, '999.00', 'account-office-supplies', 'account-cash', 'user-concurrent-b', $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($readyA) && file_exists($readyB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker processes to signal ready.');
+            }
+            usleep(2000);
+        }
+
+        touch($goFile);
+
+        foreach ([$processA, $processB] as $process) {
+            proc_close($process);
+        }
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($resultA) && file_exists($resultB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker results.');
+            }
+            usleep(2000);
+        }
+
+        $resultAData = json_decode((string) file_get_contents($resultA), true);
+        $resultBData = json_decode((string) file_get_contents($resultB), true);
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            @unlink($file);
+        }
+
+        $outcomes = ['A' => $resultAData, 'B' => $resultBData];
+        $succeeded = array_keys(array_filter($outcomes, static fn (array $r): bool => array_key_exists('task_id', $r)));
+        $rejected = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['exception'] ?? null) === TaskSubmissionConflictException::class));
+
+        $this->assertCount(1, $succeeded, 'Exactly one of the two conflicting concurrent first-submissions must succeed. Got: '.json_encode($outcomes));
+        $this->assertCount(1, $rejected, 'The other must observe TaskSubmissionConflictException, not a raw constraint-violation error. Got: '.json_encode($outcomes));
+        $this->assertSame(1, DB::connection('pgsql')->table('tasks')->where('tenant_id', $this->tenantA->toString())->count());
+    }
+
+    /**
+     * Shared two-process race harness for the concurrency tests above:
+     * starts `$workerScript` twice with `[...$args, <actor>, <readyFile>,
+     * <goFile>, <resultFile>]`, releases both simultaneously, and
+     * returns each worker's decoded JSON result. Actors are fixed as
+     * `user-concurrent-a`/`-b`.
+     *
+     * @param  list<string>  $args
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function raceTwoWorkers(string $workerScript, array $args): array
+    {
+        $tmp = sys_get_temp_dir();
+        $readyA = tempnam($tmp, 'ready_a_');
+        $readyB = tempnam($tmp, 'ready_b_');
+        $goFile = tempnam($tmp, 'go_');
+        $resultA = tempnam($tmp, 'result_a_');
+        $resultB = tempnam($tmp, 'result_b_');
+        unlink($readyA);
+        unlink($readyB);
+        unlink($goFile);
+
+        $processA = proc_open(
+            ['php', $workerScript, ...$args, 'user-concurrent-a', $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, ...$args, 'user-concurrent-b', $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($readyA) && file_exists($readyB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker processes to signal ready.');
+            }
+            usleep(2000);
+        }
+
+        touch($goFile);
+
+        foreach ([$processA, $processB] as $process) {
+            proc_close($process);
+        }
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($resultA) && file_exists($resultB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker results.');
+            }
+            usleep(2000);
+        }
+
+        $resultAData = json_decode((string) file_get_contents($resultA), true);
+        $resultBData = json_decode((string) file_get_contents($resultB), true);
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            @unlink($file);
+        }
+
+        return [$resultAData, $resultBData];
+    }
+
     private function submitExpense(): Task
     {
         return $this->taskService->submit(

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { registerNewUser } from './support/fixtures'
+import { login, registerNewUser } from './support/fixtures'
 
 /**
  * Real-browser proof of Sanctum SPA cookie authentication (ADR-0008)
@@ -21,16 +21,23 @@ test.describe('authentication', () => {
   })
 
   test('logging out then back in with the same credentials succeeds', async ({ page }) => {
-    await registerNewUser(page)
+    const { email, password } = await registerNewUser(page)
     await page.goto('/')
 
     await page.getByRole('button', { name: /log out/i }).click()
     await expect(page).toHaveURL(/login/)
 
-    // A fresh page load after logout must not silently keep the old
-    // session — this is the concrete browser behavior a fixed,
-    // wrong-host API base broke: login would 419 here specifically.
-    await expect(page.getByRole('button', { name: /log in/i })).toBeVisible()
+    // The bug this session actually found and fixed (a fixed
+    // cross-host API base breaking Sanctum's SameSite=Lax CSRF cookie)
+    // only surfaces on this exact second step — a real login POST
+    // after a real logout, not merely landing on /login. An earlier
+    // version of this spec stopped at the assertion above and never
+    // actually re-authenticated, so it could not have caught that
+    // regression despite its own name claiming otherwise.
+    await login(page, email, password)
+
+    await expect(page).toHaveURL('/')
+    await expect(page.getByText(email)).toBeVisible()
   })
 
   test('an incorrect password shows a clear error, not a crash', async ({ page }) => {

@@ -89,4 +89,36 @@ test.describe('Work Queue and Human Confirmation', () => {
     await expect(page.getByText('No Tasks yet')).toBeVisible()
     await expect(page.getByText('E2E: tenant A only')).not.toBeVisible()
   })
+
+  /**
+   * IDOR (insecure direct object reference) proof: knowing a Task's
+   * id (visible in tenant A's own URL bar, trivially guessable from
+   * one's own Tasks, or leaked via a shared link) must not let a
+   * *different, authenticated* Tenant load it by navigating straight
+   * to its URL — the Work-Queue-listing test above only proves it is
+   * not *listed* for another Tenant, which is a weaker property than
+   * this: a listing omission alone would not stop a direct URL visit
+   * from working if the `/tasks/{id}` route itself were not
+   * independently tenant-checked.
+   */
+  test('a Task is not directly loadable by URL from a different, authenticated tenant', async ({
+    page,
+  }) => {
+    await submitExpenseTask(page, 'E2E: tenant A direct object')
+    await page.locator('a[href^="/tasks/"]').first().click()
+    // NuxtLink navigation is client-side (Vue Router) — page.url() read
+    // immediately after click() can race the URL actually updating.
+    await page.waitForURL(/\/tasks\/[^/]+$/)
+    const tenantATaskUrl = page.url()
+
+    await page.getByRole('button', { name: /log out/i }).click()
+    await page.waitForURL('**/login')
+    await registerNewUser(page)
+
+    await page.goto(tenantATaskUrl)
+
+    await expect(page.getByText('Failed to load this Task.')).toBeVisible()
+    await expect(page.getByText('E2E: tenant A direct object')).not.toBeVisible()
+    await expect(page.getByText('RM88.50')).not.toBeVisible()
+  })
 })

@@ -46,6 +46,7 @@ use App\Http\Support\DeterministicIdempotentId;
 use App\Infrastructure\Workspace\ProposalRepository;
 use App\Infrastructure\Workspace\TaskRepository;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 
 /**
@@ -113,6 +114,19 @@ final class TaskService
      * original (TSK-003's own parity requirement applied to the
      * request itself).
      *
+     * **Concurrent first-submission is a real race, not just a
+     * concurrent retry.** Two requests under the same, never-before-
+     * used Idempotency Key can both observe {@see findById()} return
+     * `null` before either has committed, then both attempt to
+     * `INSERT` the same deterministic `TaskId`. Mirrors
+     * {@see PostingCommandTransactionalExecutor}'s own established
+     * technique exactly: the loser's `INSERT` fails on the real
+     * `tasks_pkey` constraint (never an application-level pre-check),
+     * and is resolved identically to an ordinary retry — a matching
+     * payload replays the winner's Task, a conflicting one is
+     * rejected — rather than surfacing a raw, unhandled database
+     * constraint-violation error.
+     *
      * @throws TaskSubmissionConflictException if `$idempotencyKey` was
      *                                         already used for a materially different Proposal.
      */
@@ -133,48 +147,88 @@ final class TaskService
         $existing = $this->taskRepository->findById($tenantId, $taskId);
 
         if ($existing !== null) {
-            $existingProposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
-
-            if (! $this->proposalMatchesRequest($existingProposal, $commandType, $amount, $transactionDate, $primaryAccountId, $secondaryAccountId, $description)) {
-                throw TaskSubmissionConflictException::forKey($tenantId, $idempotencyKey);
-            }
-
-            return $existing;
+            return $this->replayOrConflict($tenantId, $taskId, $idempotencyKey, $commandType, $amount, $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $existing);
         }
 
-        return $this->connection->transaction(function () use (
-            $taskId, $tenantId, $actor, $idempotencyKey, $commandType, $amount,
-            $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $evidenceReference,
-        ): Task {
-            $now = new \DateTimeImmutable;
-            $task = Task::receive($taskId, $tenantId, $now);
-            $this->taskRepository->record($task);
-            $this->taskRepository->recordTransition(new TaskTransition(
-                (string) Str::uuid(), $tenantId, $task->id(), $actor, null, $task->state(), null, $evidenceReference, $now,
-            ));
+        try {
+            return $this->connection->transaction(function () use (
+                $taskId, $tenantId, $actor, $idempotencyKey, $commandType, $amount,
+                $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $evidenceReference,
+            ): Task {
+                $now = new \DateTimeImmutable;
+                $task = Task::receive($taskId, $tenantId, $now);
+                $this->taskRepository->record($task);
+                $this->taskRepository->recordTransition(new TaskTransition(
+                    (string) Str::uuid(), $tenantId, $task->id(), $actor, null, $task->state(), null, $evidenceReference, $now,
+                ));
 
-            $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startProcessing(), $actor, null, $evidenceReference);
+                $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startProcessing(), $actor, null, $evidenceReference);
 
-            $proposal = new Proposal(
-                ProposalId::of(DeterministicIdempotentId::derive($tenantId, $idempotencyKey, 'proposal')),
-                $tenantId,
-                $task->id(),
-                $commandType,
-                $amount,
-                $transactionDate,
-                $primaryAccountId,
-                $secondaryAccountId,
-                $description,
-                $evidenceReference,
-                null,
-                $actor,
-                ProposalProducerType::Human,
-                new \DateTimeImmutable,
-            );
-            $this->proposalRepository->record($proposal);
+                $proposal = new Proposal(
+                    ProposalId::of(DeterministicIdempotentId::derive($tenantId, $idempotencyKey, 'proposal')),
+                    $tenantId,
+                    $task->id(),
+                    $commandType,
+                    $amount,
+                    $transactionDate,
+                    $primaryAccountId,
+                    $secondaryAccountId,
+                    $description,
+                    $evidenceReference,
+                    null,
+                    $actor,
+                    ProposalProducerType::Human,
+                    new \DateTimeImmutable,
+                );
+                $this->proposalRepository->record($proposal);
 
-            return $this->applyTransition($task, static fn (Task $t): Task => $t->moveToReview(), $actor, null, $evidenceReference);
-        });
+                return $this->applyTransition($task, static fn (Task $t): Task => $t->moveToReview(), $actor, null, $evidenceReference);
+            });
+        } catch (QueryException $e) {
+            if (! $this->isTaskPrimaryKeyViolation($e)) {
+                throw $e;
+            }
+
+            // Lost the race: another request already committed this
+            // exact TaskId between our findById() check and our own
+            // INSERT. Resolve it exactly as an ordinary retry would.
+            $winner = $this->taskRepository->getById($tenantId, $taskId);
+
+            return $this->replayOrConflict($tenantId, $taskId, $idempotencyKey, $commandType, $amount, $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $winner);
+        }
+    }
+
+    /**
+     * TSK-003 applied to the *request*: a `Task` already recorded
+     * under `$idempotencyKey` is a safe replay only if its Proposal
+     * payload is unchanged from the incoming request.
+     *
+     * @throws TaskSubmissionConflictException if the payloads differ.
+     */
+    private function replayOrConflict(
+        TenantId $tenantId,
+        TaskId $taskId,
+        IdempotencyKey $idempotencyKey,
+        CommandType $commandType,
+        Money $amount,
+        \DateTimeImmutable $transactionDate,
+        AccountId $primaryAccountId,
+        AccountId $secondaryAccountId,
+        string $description,
+        Task $existing,
+    ): Task {
+        $existingProposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
+
+        if (! $this->proposalMatchesRequest($existingProposal, $commandType, $amount, $transactionDate, $primaryAccountId, $secondaryAccountId, $description)) {
+            throw TaskSubmissionConflictException::forKey($tenantId, $idempotencyKey);
+        }
+
+        return $existing;
+    }
+
+    private function isTaskPrimaryKeyViolation(QueryException $e): bool
+    {
+        return $e->getCode() === '23505' && str_contains($e->getMessage(), 'tasks_pkey');
     }
 
     /**
@@ -182,18 +236,45 @@ final class TaskService
      * the same call, submits the resulting Accounting Command and
      * records the outcome (`Completed` or `Failed`).
      *
-     * @throws TaskAlreadyTransitionedException if a concurrent request
-     *                                          already transitioned this Task first (TSK-004).
+     * **One transaction boundary for the whole approval act, not two
+     * separate ones.** An earlier version of this method persisted
+     * `NeedsReview -> Approved` and `Approved -> Executing` as two
+     * independent {@see applyTransition()} calls — a crash between
+     * them left a Task durably stranded in `Approved` with no recovery
+     * path at all ({@see resume()} only ever handled `Executing`).
+     * Taking the same `SELECT ... FOR UPDATE` row lock
+     * {@see resume()} uses, for the *entire* call, closes that gap
+     * two ways at once: a crash before the lock's transaction commits
+     * rolls everything back to `NeedsReview` (the stuck-`Approved`
+     * state becomes unreachable going forward), and if this method is
+     * ever invoked against a Task already sitting in `Approved` — a
+     * row written before this fix existed, or any other reason — it
+     * resumes from exactly that point rather than requiring a second,
+     * separate recovery action.
+     *
+     * @throws InvalidTaskStateTransitionException if the Task is in
+     *                                             neither `NeedsReview` nor `Approved`.
      */
     public function approve(TenantId $tenantId, TaskId $taskId, ActorReference $actor): Task
     {
-        $task = $this->taskRepository->getById($tenantId, $taskId);
-        $proposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
+        return $this->connection->transaction(function () use ($tenantId, $taskId, $actor): Task {
+            $task = $this->taskRepository->getByIdForUpdate($tenantId, $taskId);
+            $proposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
 
-        $task = $this->applyTransition($task, static fn (Task $t): Task => $t->approve(), $actor);
-        $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startExecuting(), $actor);
+            if ($task->state() === TaskState::NeedsReview) {
+                $task = $this->applyTransition($task, static fn (Task $t): Task => $t->approve(), $actor);
+            }
 
-        return $this->executeAndFinalize($task, $tenantId, $actor, $proposal);
+            if ($task->state() === TaskState::Approved) {
+                $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startExecuting(), $actor);
+            }
+
+            if ($task->state() !== TaskState::Executing) {
+                throw InvalidTaskStateTransitionException::forTransition($taskId, $task->state(), 'approve');
+            }
+
+            return $this->executeAndFinalize($task, $tenantId, $actor, $proposal);
+        });
     }
 
     /**

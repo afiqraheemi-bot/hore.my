@@ -237,6 +237,18 @@ onMounted(load)
         </dl>
       </AppCard>
 
+      <AppCard v-if="task.state === 'Approved'">
+        <p class="mb-1 text-sm font-medium text-ink">This Task did not finish confirming.</p>
+        <p class="mb-3 text-sm text-ink-tertiary">
+          It was confirmed but never started posting — likely an interrupted request. Resuming is
+          safe: it will never post twice.
+        </p>
+        <p v-if="actionError" class="mb-3 text-sm text-danger">{{ actionError }}</p>
+        <AppButton variant="primary" :disabled="acting" @click="approve">
+          {{ acting ? 'Resuming…' : 'Resume' }}
+        </AppButton>
+      </AppCard>
+
       <AppCard v-if="task.state === 'Executing'">
         <p class="mb-1 text-sm font-medium text-ink">This Task did not finish confirming.</p>
         <p class="mb-3 text-sm text-ink-tertiary">

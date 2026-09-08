@@ -7,14 +7,16 @@ import type { Page } from '@playwright/test'
  * in this suite depends on pre-seeded demo/admin accounts (avoids
  * shared-state coupling between specs and parallel runs).
  */
-export async function registerNewUser(page: Page): Promise<{ email: string }> {
+export const E2E_PASSWORD = 'password123'
+
+export async function registerNewUser(page: Page): Promise<{ email: string; password: string }> {
   const email = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.my`
 
   await page.goto('/register')
   await page.locator('input[type="text"]').first().fill('E2E Test User')
   await page.locator('input[type="email"]').first().fill(email)
-  await page.locator('input[type="password"]').nth(0).fill('password123')
-  await page.locator('input[type="password"]').nth(1).fill('password123')
+  await page.locator('input[type="password"]').nth(0).fill(E2E_PASSWORD)
+  await page.locator('input[type="password"]').nth(1).fill(E2E_PASSWORD)
   await page.locator('input[type="checkbox"]').first().check()
 
   await Promise.all([
@@ -25,7 +27,26 @@ export async function registerNewUser(page: Page): Promise<{ email: string }> {
   ])
   await page.waitForURL('**/business-profile')
 
-  return { email }
+  return { email, password: E2E_PASSWORD }
+}
+
+/**
+ * Logs in with an already-registered email/password from the login
+ * page and waits for the real POST /api/v1/login round trip to
+ * resolve — used by specs that need to prove a *second* session
+ * actually authenticates, not just that the login form is reachable.
+ */
+export async function login(page: Page, email: string, password: string): Promise<void> {
+  await page.goto('/login')
+  await page.locator('input[type="email"]').fill(email)
+  await page.locator('input[type="password"]').fill(password)
+
+  await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().includes('/api/v1/login') && res.request().method() === 'POST',
+    ),
+    page.locator('button[type="submit"]').click(),
+  ])
 }
 
 /**
