@@ -24,9 +24,34 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
-        <env name="DB_URL" value=""/>
+        <!--
+            This suite runs its integration tests against real PostgreSQL
+            (fault injection, row-locking, and concurrency proofs cannot be
+            demonstrated against SQLite — established convention across
+            this codebase's own AETS/ATS series), never the sqlite/:memory:
+            connection this file previously declared here, which was never
+            actually in effect: docker-compose.yml's own DB_CONNECTION=pgsql
+            (a real container environment variable) already took precedence
+            over it. DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD are left
+            unset here deliberately — they come from docker-compose.yml
+            (the same Postgres server the application itself uses).
+            DB_DATABASE below is the one variable docker-compose.yml
+            deliberately does NOT set, specifically so this line can take
+            effect (P1-6, 2026-09-08): several integration tests call
+            migrate:fresh/truncate directly against the pgsql connection,
+            and hore_my_test exists (named to match the database CI's own
+            backend-ci.yml has addressed via DB_URL all along) so that
+            never touches the real application database.
+            Tests\TestCase::setUp() additionally refuses to run at all if
+            this ever resolves to a database name not ending in "_test" —
+            a second, defense-in-depth guard, not a substitute for
+            getting this value right. In CI, this DB_DATABASE is
+            overridden by DB_URL's own embedded database name — Laravel
+            gives a connection's "url" key precedence — so it still
+            correctly resolves to "hore_my_test" there too.
+        -->
+        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_DATABASE" value="hore_my_test"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

@@ -10,15 +10,24 @@ services:
     ports:
       - "8000:8000"
     environment:
-      APP_ENV: local
+      # APP_ENV is deliberately NOT set here, for the identical reason
+      # DB_DATABASE isn't (see below): it must come from .env ("local")
+      # for a normal run, or from phpunit.xml ("testing") for a test
+      # run. A real container-level env var here would silently win
+      # over phpunit.xml's own <env> declaration, exactly as it
+      # previously did for DB_CONNECTION/DB_DATABASE (P1-6).
       APP_DEBUG: "true"
       APP_URL: http://localhost:8000
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: "5432"
-      DB_DATABASE: hore_my
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      # DB_DATABASE is deliberately NOT set here — it must come from
+      # .env (the application default, "hore_my") for a normal run, or
+      # from phpunit.xml ("hore_my_test") for a test run, never a
+      # single value shared by both. See infrastructure/postgres/
+      # init-test-database.sql for the full P1-6 reasoning.
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       MAIL_MAILER: smtp
@@ -75,6 +84,7 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-test-database.sql:/docker-entrypoint-initdb.d/init-test-database.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hore_my"]
       interval: 5s

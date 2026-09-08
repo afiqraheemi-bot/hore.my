@@ -1,0 +1,31 @@
+-- Creates a dedicated database for the test suite, separate from the
+-- application database (`hore_my`, created automatically by the
+-- postgres image's own POSTGRES_DB variable).
+--
+-- Named `hore_my_test` to match the database name already established
+-- by .github/workflows/backend-ci.yml's own `DB_URL` (CI has run
+-- integration tests against a real, separately-named Postgres database
+-- since before this file existed) — not a new, second convention.
+--
+-- Why this exists (P1-6, 2026-09-08 audit remediation): several
+-- integration tests call `Artisan::call('migrate:fresh', ...)` and
+-- `DB::connection('pgsql')->table(...)->truncate()` directly against
+-- the `pgsql` connection. Before this fix, that connection pointed at
+-- `hore_my` in every *local* environment (CI was already correctly
+-- isolated via DB_URL, see above) — meaning a normal `php artisan
+-- test` run inside this repo's own docker-compose setup silently
+-- dropped and rebuilt the same database real admin/demo accounts and
+-- application data lived in. Confirmed destructive in practice, not
+-- merely theoretical: two ordinary regression runs during this
+-- remediation wiped the admin@hore.my/demo@hore.my accounts created in
+-- the prior session.
+--
+-- The fix has two parts: this script provisions `hore_my_test` as a
+-- genuinely separate database on first container init, and
+-- `phpunit.xml` points DB_DATABASE at it only for a testing-context
+-- run (see that file's own comment). `Tests\TestCase::setUp()` adds a
+-- third, defense-in-depth layer: it refuses to run any test at all if
+-- the resolved `pgsql` connection's database name does not end in
+-- `_test`, so a future misconfiguration fails loudly instead of
+-- silently wiping real data again.
+CREATE DATABASE hore_my_test;

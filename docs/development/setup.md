@@ -44,3 +44,17 @@ Add `-d` to run in the background, and `docker compose down` to stop and remove 
 - The `api` container copies `.env.example` to `.env` and runs `php artisan key:generate` on first start if no key is present (see [`apps/api/docker-entrypoint.sh`](../../apps/api/docker-entrypoint.sh)). No migrations are run automatically.
 - Application source is bind-mounted for both `api` and `web` so local edits are reflected without rebuilding the image. `vendor/` and `node_modules/` are kept in named volumes so the container's own Linux-built dependencies are not overwritten by the host's.
 - Credentials in `docker-compose.yml` (database and mail settings) are fixed, non-secret, local-only defaults and must never be reused outside this development environment.
+
+## Two databases: `hore_my` and `hore_my_test`
+
+The `postgres` service provisions **two** databases on first init (see [`infrastructure/postgres/init-test-database.sql`](../../infrastructure/postgres/init-test-database.sql)): `hore_my`, the application database, and `hore_my_test`, a dedicated database the test suite runs against — named to match the database [`backend-ci.yml`](../../.github/workflows/backend-ci.yml) has addressed via its own `DB_URL` all along; CI was already correctly isolated from the application database, only this local Docker Compose environment was not.
+
+**This separation is load-bearing, not a convenience.** Several integration tests call `Artisan::call('migrate:fresh', ...)` or `truncate()` directly against the `pgsql` connection. Before this existed (P1-6, 2026-09-08 audit remediation), that connection resolved to `hore_my` during a normal `php artisan test` run too — an ordinary regression run destroyed real application data (confirmed in practice, not theoretical). `docker-compose.yml` deliberately does not set `APP_ENV` or `DB_DATABASE` as container-level environment variables for exactly this reason: doing so would silently override `phpunit.xml`'s own `<env>` declarations (`APP_ENV=testing`, `DB_DATABASE=hore_my_test`), the same way it previously did. `Tests\TestCase::setUp()` additionally refuses to run any test at all if the resolved database name doesn't end in `_test`, as a second, defense-in-depth check.
+
+**Migrations for `hore_my_test` are not run automatically** (mirroring `hore_my`'s own no-auto-migration convention above) and must be applied once after the containers first start, or after `docker compose down -v`:
+
+```bash
+docker compose exec -e APP_ENV=testing -e DB_DATABASE=hore_my_test api php artisan migrate --force
+```
+
+`php artisan test` (or `vendor/bin/phpunit`) then runs entirely against `hore_my_test`, leaving `hore_my` untouched.
