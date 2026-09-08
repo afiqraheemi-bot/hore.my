@@ -9,15 +9,20 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\IdempotencyKey;
+use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Workspace\CommandType;
 use App\Domain\Workspace\Exception\InvalidTaskStateTransitionException;
 use App\Domain\Workspace\Exception\TaskAlreadyTransitionedException;
 use App\Domain\Workspace\Exception\TaskNotFoundException;
+use App\Domain\Workspace\Exception\TaskSubmissionConflictException;
 use App\Domain\Workspace\Task;
 use App\Domain\Workspace\TaskService;
 use App\Domain\Workspace\TaskState;
+use App\Domain\Workspace\TaskTransition;
+use App\Infrastructure\Workspace\ProposalRepository;
 use App\Infrastructure\Workspace\TaskRepository;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -60,6 +65,8 @@ final class TaskServiceIntegrationTest extends TestCase
 
     private TaskRepository $taskRepository;
 
+    private ProposalRepository $proposalRepository;
+
     private TenantId $tenantA;
 
     private TenantId $tenantB;
@@ -80,6 +87,7 @@ final class TaskServiceIntegrationTest extends TestCase
 
         $this->taskService = $this->app->make(TaskService::class);
         $this->taskRepository = $this->app->make(TaskRepository::class);
+        $this->proposalRepository = $this->app->make(ProposalRepository::class);
 
         $this->tenantA = TenantId::of('tenant-0001');
         $this->tenantB = TenantId::of('tenant-0002');
@@ -286,6 +294,238 @@ final class TaskServiceIntegrationTest extends TestCase
 
         $final = $this->taskRepository->getById($this->tenantA, $task->id());
         $this->assertSame(TaskState::Completed, $final->state());
+    }
+
+    /**
+     * 2026-09-08 reliability closure (post-implementation QA): proves
+     * `submit()`'s whole Task+Proposal creation sequence is one atomic
+     * transaction — a forced, non-duplicate constraint failure on the
+     * `proposals` insert (the last write in the sequence) must roll
+     * back the `tasks` row and its `task_transitions` rows too, not
+     * leave a stranded Task with no Proposal. Mirrors
+     * {@see PostingCommandTransactionalExecutor}'s
+     * own established fault-injection technique exactly.
+     */
+    public function test_a_forced_proposal_insert_failure_rolls_back_the_entire_submit_transaction(): void
+    {
+        DB::connection('pgsql')->statement('ALTER TABLE proposals ADD CONSTRAINT force_test_proposal_failure CHECK (1 = 0)');
+
+        try {
+            try {
+                $this->submitExpense();
+                $this->fail('Expected the forced CHECK constraint to reject the Proposal insert.');
+            } catch (QueryException) {
+                // Expected: a non-duplicate constraint violation, propagated unmodified.
+            }
+        } finally {
+            DB::connection('pgsql')->statement('ALTER TABLE proposals DROP CONSTRAINT force_test_proposal_failure');
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table('tasks')->where('tenant_id', $this->tenantA->toString())->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('task_transitions')->where('tenant_id', $this->tenantA->toString())->count());
+    }
+
+    /**
+     * Proves {@see TaskService}'s
+     * `applyTransition()` state-update-plus-audit-record atomicity: a
+     * forced, non-duplicate constraint failure on the
+     * `task_transitions` insert must roll back the compare-and-swap
+     * `UPDATE` on `tasks.state` too — TSK-001 requires that `state`
+     * can never disagree with the Task's own transition history.
+     */
+    public function test_a_forced_transition_insert_failure_rolls_back_the_state_update_too(): void
+    {
+        $task = $this->submitExpense();
+
+        // NOT VALID: task_transitions already holds the 3 rows submitExpense()
+        // just wrote — a validating ADD CONSTRAINT would immediately fail
+        // against that pre-existing data before this test ever reaches its
+        // own forced-failure attempt. NOT VALID skips that historical check
+        // and enforces the constraint only against rows written from here on.
+        DB::connection('pgsql')->statement('ALTER TABLE task_transitions ADD CONSTRAINT force_test_transition_failure CHECK (1 = 0) NOT VALID');
+
+        try {
+            try {
+                $this->taskService->reject($this->tenantA, $task->id(), ActorReference::of('user-0001'), 'Wrong account.');
+                $this->fail('Expected the forced CHECK constraint to reject the transition insert.');
+            } catch (QueryException) {
+                // Expected.
+            }
+        } finally {
+            DB::connection('pgsql')->statement('ALTER TABLE task_transitions DROP CONSTRAINT force_test_transition_failure');
+        }
+
+        $reloaded = $this->taskRepository->getById($this->tenantA, $task->id());
+        $this->assertSame(TaskState::NeedsReview, $reloaded->state(), 'The state UPDATE must have rolled back alongside the failed audit insert.');
+    }
+
+    public function test_submit_with_a_conflicting_payload_under_the_same_idempotency_key_is_rejected(): void
+    {
+        $key = IdempotencyKey::of('idem-conflict-0001');
+        $actor = ActorReference::of('user-0001');
+
+        $this->taskService->submit(
+            $this->tenantA, $actor, $key, CommandType::Expense,
+            Money::fromDecimalString('50.00', $this->myr), new \DateTimeImmutable('2026-09-08'),
+            AccountId::of('account-office-supplies'), AccountId::of('account-cash'), 'Office supplies', null,
+        );
+
+        $this->expectException(TaskSubmissionConflictException::class);
+
+        $this->taskService->submit(
+            $this->tenantA, $actor, $key, CommandType::Expense,
+            Money::fromDecimalString('999.00', $this->myr), new \DateTimeImmutable('2026-09-08'),
+            AccountId::of('account-office-supplies'), AccountId::of('account-cash'), 'Office supplies', null,
+        );
+    }
+
+    public function test_submit_with_an_unchanged_payload_under_the_same_idempotency_key_replays(): void
+    {
+        $key = IdempotencyKey::of('idem-replay-0001');
+        $actor = ActorReference::of('user-0001');
+        $args = [
+            $this->tenantA, $actor, $key, CommandType::Expense,
+            Money::fromDecimalString('50.00', $this->myr), new \DateTimeImmutable('2026-09-08'),
+            AccountId::of('account-office-supplies'), AccountId::of('account-cash'), 'Office supplies', null,
+        ];
+
+        $first = $this->taskService->submit(...$args);
+        $second = $this->taskService->submit(...$args);
+
+        $this->assertTrue($first->id()->equals($second->id()));
+        $this->assertSame(1, DB::connection('pgsql')->table('tasks')->count());
+    }
+
+    /**
+     * Crash recovery: a Task stranded in `Executing` (simulated by
+     * writing that state directly, exactly as a real crash between the
+     * `Executing` transition and Command submission would leave it —
+     * `resume()` has no way to distinguish the two) can still reach
+     * `Completed` via {@see TaskService::resume()}.
+     */
+    public function test_resume_completes_a_task_stranded_in_executing(): void
+    {
+        $task = $this->submitExpense();
+        DB::connection('pgsql')->table('tasks')
+            ->where('tenant_id', $this->tenantA->toString())->where('task_id', $task->id()->toString())
+            ->update(['state' => 'Executing']);
+
+        $resumed = $this->taskService->resume($this->tenantA, $task->id(), ActorReference::of('user-recovery'));
+
+        $this->assertSame(TaskState::Completed, $resumed->state());
+        $this->assertNotNull($resumed->resultJournalId());
+    }
+
+    public function test_resume_is_rejected_from_a_non_executing_state(): void
+    {
+        $task = $this->submitExpense();
+
+        $this->expectException(InvalidTaskStateTransitionException::class);
+        $this->taskService->resume($this->tenantA, $task->id(), ActorReference::of('user-recovery'));
+    }
+
+    /**
+     * The TSK-004 concurrency guard extended to {@see resume()}: two
+     * concurrent recovery attempts against the same stranded
+     * `Executing` Task must never both succeed. Mirrors
+     * {@see test_two_concurrent_approve_attempts_never_both_succeed()}
+     * exactly.
+     */
+    public function test_two_concurrent_resume_attempts_never_both_succeed(): void
+    {
+        $task = $this->submitExpense();
+        DB::connection('pgsql')->table('tasks')
+            ->where('tenant_id', $this->tenantA->toString())->where('task_id', $task->id()->toString())
+            ->update(['state' => 'Executing']);
+
+        $tmp = sys_get_temp_dir();
+        $readyA = tempnam($tmp, 'ready_a_');
+        $readyB = tempnam($tmp, 'ready_b_');
+        $goFile = tempnam($tmp, 'go_');
+        $resultA = tempnam($tmp, 'result_a_');
+        $resultB = tempnam($tmp, 'result_b_');
+        unlink($readyA);
+        unlink($readyB);
+        unlink($goFile);
+
+        $workerScript = base_path('tests/bin/concurrent_task_resume_worker.php');
+
+        $processA = proc_open(
+            ['php', $workerScript, $this->tenantA->toString(), $task->id()->toString(), 'user-concurrent-a', $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, $this->tenantA->toString(), $task->id()->toString(), 'user-concurrent-b', $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($readyA) && file_exists($readyB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker processes to signal ready.');
+            }
+            usleep(2000);
+        }
+
+        touch($goFile);
+
+        foreach ([$processA, $processB] as $process) {
+            proc_close($process);
+        }
+
+        $deadline = microtime(true) + 5.0;
+        while (! (file_exists($resultA) && file_exists($resultB))) {
+            if (microtime(true) > $deadline) {
+                $this->fail('Timed out waiting for both worker results.');
+            }
+            usleep(2000);
+        }
+
+        $resultAData = json_decode((string) file_get_contents($resultA), true);
+        $resultBData = json_decode((string) file_get_contents($resultB), true);
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            @unlink($file);
+        }
+
+        $outcomes = ['A' => $resultAData, 'B' => $resultBData];
+        $succeeded = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['state'] ?? null) === 'Completed'));
+        $rejected = array_keys(array_filter($outcomes, static fn (array $r): bool => in_array(
+            $r['exception'] ?? null,
+            [TaskAlreadyTransitionedException::class, InvalidTaskStateTransitionException::class],
+            true,
+        )));
+
+        $this->assertCount(1, $succeeded, 'Exactly one of the two concurrent resume attempts must complete. Got: '.json_encode($outcomes));
+        $this->assertCount(1, $rejected, 'The other concurrent attempt must be safely rejected. Got: '.json_encode($outcomes));
+    }
+
+    /**
+     * Proves the repository persists the domain-supplied
+     * {@see TaskTransition} id verbatim rather
+     * than substituting a freshly generated one — a real bug this
+     * session's own reliability closure found and fixed. Constructs
+     * the record directly (bypassing {@see TaskService}, which always
+     * generates its own id) so the assertion cannot trivially pass by
+     * reading back whatever id happened to be written.
+     */
+    public function test_the_domain_supplied_transition_id_is_persisted_verbatim(): void
+    {
+        $task = $this->submitExpense();
+        $knownId = 'known-transition-id-0001';
+
+        $this->taskRepository->recordTransition(new TaskTransition(
+            $knownId, $this->tenantA, $task->id(), ActorReference::of('user-0001'),
+            TaskState::NeedsReview, TaskState::NeedsReview, 'test marker', null, new \DateTimeImmutable,
+        ));
+
+        $row = DB::connection('pgsql')->table('task_transitions')->where('transition_id', $knownId)->first();
+        $this->assertNotNull($row, 'The repository must persist the exact id the domain TaskTransition was constructed with, not a freshly generated one.');
     }
 
     private function submitExpense(): Task

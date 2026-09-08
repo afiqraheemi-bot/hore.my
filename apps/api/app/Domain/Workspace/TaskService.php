@@ -6,30 +6,46 @@ namespace App\Domain\Workspace;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Journal\JournalId;
+use App\Domain\Accounting\Money\Exception\InvalidMoneyAmountException;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\EvidenceReference;
+use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
+use App\Domain\Accounting\Posting\Exception\RejectedClosedPeriodPostingException;
+use App\Domain\Accounting\Posting\Exception\RejectedConflictingIdempotencyReuseException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
+use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Banking\ReconciliationService;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Domain\Transactions\Expense\Exception\InvalidExpenseAccountTypeException;
+use App\Domain\Transactions\Expense\Exception\InvalidPaymentAccountTypeException;
 use App\Domain\Transactions\Expense\ExpenseId;
 use App\Domain\Transactions\Expense\ExpenseRecordingService;
 use App\Domain\Transactions\Expense\RecordExpenseCommand;
+use App\Domain\Transactions\Income\Exception\InvalidDepositAccountTypeException;
+use App\Domain\Transactions\Income\Exception\InvalidIncomeAccountTypeException;
 use App\Domain\Transactions\Income\IncomeId;
 use App\Domain\Transactions\Income\IncomeRecordingService;
 use App\Domain\Transactions\Income\RecordIncomeCommand;
+use App\Domain\Transactions\OwnerEquity\Exception\InvalidCashAccountTypeException;
+use App\Domain\Transactions\OwnerEquity\Exception\InvalidEquityAccountTypeException;
 use App\Domain\Transactions\OwnerEquity\OwnerEquityMovementType;
 use App\Domain\Transactions\OwnerEquity\OwnerEquityTransactionId;
 use App\Domain\Transactions\OwnerEquity\OwnerEquityTransactionRecordingService;
 use App\Domain\Transactions\OwnerEquity\RecordOwnerEquityTransactionCommand;
+use App\Domain\Transactions\Transfer\Exception\InvalidTransferAccountTypeException;
+use App\Domain\Transactions\Transfer\Exception\SameAccountTransferException;
 use App\Domain\Transactions\Transfer\RecordTransferCommand;
 use App\Domain\Transactions\Transfer\TransferId;
 use App\Domain\Transactions\Transfer\TransferRecordingService;
+use App\Domain\Workspace\Exception\InvalidTaskStateTransitionException;
 use App\Domain\Workspace\Exception\TaskAlreadyTransitionedException;
+use App\Domain\Workspace\Exception\TaskSubmissionConflictException;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Support\DeterministicIdempotentId;
 use App\Infrastructure\Workspace\ProposalRepository;
 use App\Infrastructure\Workspace\TaskRepository;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 
 /**
@@ -55,10 +71,23 @@ use Illuminate\Support\Str;
  * `*RecordingService::record()` entry point manual entry's HTTP
  * controllers already call (ADR-0009 §Decision) — see
  * {@see executeCommand()}.
+ *
+ * **2026-09-08 reliability closure (post-implementation QA):** every
+ * multi-write sequence in this class now runs inside one
+ * `Connection::transaction()` — {@see applyTransition()}'s state
+ * update and its `TSK-001` audit record are one atomic unit, and
+ * {@see submit()}'s whole Task+Proposal creation sequence is one
+ * atomic unit — proven by forced-constraint-failure fault-injection
+ * tests mirroring {@see PostingCommandTransactionalExecutor}'s
+ * own established pattern. {@see submit()} also now detects a
+ * conflicting idempotency-key reuse ({@see TaskSubmissionConflictException}),
+ * and {@see resume()} recovers a Task stranded in `Executing` by a
+ * prior crash — both were real gaps this class shipped without.
  */
 final class TaskService
 {
     public function __construct(
+        private readonly ConnectionInterface $connection,
         private readonly TaskRepository $taskRepository,
         private readonly ProposalRepository $proposalRepository,
         private readonly ExpenseRecordingService $expenseService,
@@ -69,16 +98,23 @@ final class TaskService
 
     /**
      * Creates a Task and its initial, human-authored Proposal in one
-     * call, landing the Task in `NeedsReview` ready for Human
-     * Confirmation ({@see approve()}).
+     * atomic database transaction, landing the Task in `NeedsReview`
+     * ready for Human Confirmation ({@see approve()}).
      *
      * `$idempotencyKey` makes Task creation itself safely retryable,
      * mirroring every existing Command-producing HTTP endpoint
      * ({@see ExpenseController}'s own
      * docblock explains why): `TaskId` is derived deterministically
-     * from `(Tenant, Idempotency-Key)`, never freshly random, and a
-     * retry that finds a Task already recorded under that identifier
-     * returns it unchanged rather than creating a second one.
+     * from `(Tenant, Idempotency-Key)`, never freshly random. A retry
+     * that finds a Task already recorded under that identifier, with
+     * an unchanged Proposal payload, returns it unchanged rather than
+     * creating a second one; a retry whose payload has materially
+     * changed is rejected instead of silently returning the stale
+     * original (TSK-003's own parity requirement applied to the
+     * request itself).
+     *
+     * @throws TaskSubmissionConflictException if `$idempotencyKey` was
+     *                                         already used for a materially different Proposal.
      */
     public function submit(
         TenantId $tenantId,
@@ -97,44 +133,54 @@ final class TaskService
         $existing = $this->taskRepository->findById($tenantId, $taskId);
 
         if ($existing !== null) {
+            $existingProposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
+
+            if (! $this->proposalMatchesRequest($existingProposal, $commandType, $amount, $transactionDate, $primaryAccountId, $secondaryAccountId, $description)) {
+                throw TaskSubmissionConflictException::forKey($tenantId, $idempotencyKey);
+            }
+
             return $existing;
         }
 
-        $now = new \DateTimeImmutable;
-        $task = Task::receive($taskId, $tenantId, $now);
-        $this->taskRepository->record($task);
-        $this->taskRepository->recordTransition(new TaskTransition(
-            (string) Str::uuid(), $tenantId, $task->id(), $actor, null, $task->state(), null, $evidenceReference, $now,
-        ));
+        return $this->connection->transaction(function () use (
+            $taskId, $tenantId, $actor, $idempotencyKey, $commandType, $amount,
+            $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $evidenceReference,
+        ): Task {
+            $now = new \DateTimeImmutable;
+            $task = Task::receive($taskId, $tenantId, $now);
+            $this->taskRepository->record($task);
+            $this->taskRepository->recordTransition(new TaskTransition(
+                (string) Str::uuid(), $tenantId, $task->id(), $actor, null, $task->state(), null, $evidenceReference, $now,
+            ));
 
-        $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startProcessing(), $actor, null, $evidenceReference);
+            $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startProcessing(), $actor, null, $evidenceReference);
 
-        $proposal = new Proposal(
-            ProposalId::of(DeterministicIdempotentId::derive($tenantId, $idempotencyKey, 'proposal')),
-            $tenantId,
-            $task->id(),
-            $commandType,
-            $amount,
-            $transactionDate,
-            $primaryAccountId,
-            $secondaryAccountId,
-            $description,
-            $evidenceReference,
-            null,
-            $actor,
-            ProposalProducerType::Human,
-            new \DateTimeImmutable,
-        );
-        $this->proposalRepository->record($proposal);
+            $proposal = new Proposal(
+                ProposalId::of(DeterministicIdempotentId::derive($tenantId, $idempotencyKey, 'proposal')),
+                $tenantId,
+                $task->id(),
+                $commandType,
+                $amount,
+                $transactionDate,
+                $primaryAccountId,
+                $secondaryAccountId,
+                $description,
+                $evidenceReference,
+                null,
+                $actor,
+                ProposalProducerType::Human,
+                new \DateTimeImmutable,
+            );
+            $this->proposalRepository->record($proposal);
 
-        return $this->applyTransition($task, static fn (Task $t): Task => $t->moveToReview(), $actor, null, $evidenceReference);
+            return $this->applyTransition($task, static fn (Task $t): Task => $t->moveToReview(), $actor, null, $evidenceReference);
+        });
     }
 
     /**
      * Human Confirmation: approves the Task's current Proposal and, in
      * the same call, submits the resulting Accounting Command and
-     * records the outcome (`Completed` or `Failed`) — see WTS-001 §3
-     * on why `Executing` should normally be observed only transiently.
+     * records the outcome (`Completed` or `Failed`).
      *
      * @throws TaskAlreadyTransitionedException if a concurrent request
      *                                          already transitioned this Task first (TSK-004).
@@ -147,15 +193,50 @@ final class TaskService
         $task = $this->applyTransition($task, static fn (Task $t): Task => $t->approve(), $actor);
         $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startExecuting(), $actor);
 
-        try {
-            $journalId = $this->executeCommand($tenantId, $actor, $proposal);
-        } catch (\RuntimeException|\InvalidArgumentException $e) {
-            return $this->applyTransition($task, static fn (Task $t): Task => $t->fail($e->getMessage()), $actor, $e->getMessage());
-        }
+        return $this->executeAndFinalize($task, $tenantId, $actor, $proposal);
+    }
 
-        $completedAt = new \DateTimeImmutable;
+    /**
+     * Crash recovery for a Task stranded in `Executing` (WTS-001 §3:
+     * "a Task should not normally be observed resting in this state —
+     * it exists to make a crash mid-flight detectable and
+     * recoverable"). Re-attempts the Accounting Command submission
+     * `executeCommand()` already derives deterministically from the
+     * Proposal's own id, so a resume after the Command actually did
+     * post is a safe, idempotent replay (AETS-007) rather than a
+     * duplicate — this call never risks double-posting regardless of
+     * how far the interrupted attempt actually got.
+     *
+     * **Pessimistic locking, not the optimistic CAS every other
+     * transition uses.** {@see applyTransition()}'s compare-and-swap
+     * only protects a transition that starts from a state only one
+     * concurrent caller can be first to leave (e.g. `NeedsReview`).
+     * Two concurrent `resume()` calls both already observe `Executing`
+     * — there is no earlier "first to leave" step to race on. This
+     * method instead takes a `SELECT ... FOR UPDATE` row lock
+     * ({@see TaskRepository::getByIdForUpdate()})
+     * for the whole transaction, so a second concurrent caller blocks
+     * until the first one's transaction (including its own nested
+     * `Executing -> Completed`/`Failed` transition) has committed, then
+     * re-reads the Task's *post-resume* state rather than racing on
+     * the stale pre-resume one.
+     *
+     * @throws InvalidTaskStateTransitionException if the Task is not
+     *                                             currently `Executing`.
+     */
+    public function resume(TenantId $tenantId, TaskId $taskId, ActorReference $actor): Task
+    {
+        return $this->connection->transaction(function () use ($tenantId, $taskId, $actor): Task {
+            $task = $this->taskRepository->getByIdForUpdate($tenantId, $taskId);
 
-        return $this->applyTransition($task, static fn (Task $t): Task => $t->complete($journalId, $completedAt), $actor);
+            if ($task->state() !== TaskState::Executing) {
+                throw InvalidTaskStateTransitionException::forTransition($taskId, $task->state(), 'resume');
+            }
+
+            $proposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
+
+            return $this->executeAndFinalize($task, $tenantId, $actor, $proposal);
+        });
     }
 
     /**
@@ -181,6 +262,47 @@ final class TaskService
     }
 
     /**
+     * Shared tail for {@see approve()} and {@see resume()}: submits
+     * the Accounting Command and records `Completed` or `Failed`.
+     * `$task` must already be `Executing`.
+     *
+     * The catch list is the exact union of every exception the five
+     * `*RecordingService`s' own HTTP controllers already catch and
+     * surface verbatim as a 422 response body — this is deliberately
+     * narrow, not `\RuntimeException`/`\InvalidArgumentException`
+     * broadly: only these specific, already-designed-to-be-user-safe
+     * business rejections are ever stored as `Task::failureReason()`
+     * and shown to a user. Anything else (a genuine bug, an
+     * infrastructure error) propagates uncaught rather than being
+     * silently absorbed and mis-displayed as an ordinary rejection.
+     */
+    private function executeAndFinalize(Task $task, TenantId $tenantId, ActorReference $actor, Proposal $proposal): Task
+    {
+        try {
+            $journalId = $this->executeCommand($tenantId, $actor, $proposal);
+        } catch (
+            RejectedAccountReferenceException|
+            RejectedClosedPeriodPostingException|
+            RejectedConflictingIdempotencyReuseException|
+            InvalidMoneyAmountException|
+            InvalidExpenseAccountTypeException|
+            InvalidPaymentAccountTypeException|
+            InvalidIncomeAccountTypeException|
+            InvalidDepositAccountTypeException|
+            InvalidTransferAccountTypeException|
+            SameAccountTransferException|
+            InvalidEquityAccountTypeException|
+            InvalidCashAccountTypeException $e
+        ) {
+            return $this->applyTransition($task, static fn (Task $t): Task => $t->fail($e->getMessage()), $actor, $e->getMessage());
+        }
+
+        $completedAt = new \DateTimeImmutable;
+
+        return $this->applyTransition($task, static fn (Task $t): Task => $t->complete($journalId, $completedAt), $actor);
+    }
+
+    /**
      * The single choke point every state transition in this service
      * passes through: computes the transition in memory (which may
      * itself reject an invalid transition per TSK-002), then persists
@@ -188,6 +310,11 @@ final class TaskService
      * the exact state this call observed it in (TSK-004). A concurrent
      * winner's write is never silently overwritten or lost — the
      * loser observes {@see TaskAlreadyTransitionedException} instead.
+     *
+     * The compare-and-swap `UPDATE` and its `TSK-001` audit record are
+     * one atomic database transaction: either both persist, or
+     * neither does — a Task's `state` column can never disagree with
+     * its own transition history.
      *
      * @param  callable(Task): Task  $transition
      *
@@ -199,23 +326,48 @@ final class TaskService
         $fromState = $current->state();
         $next = $transition($current);
 
-        if (! $this->taskRepository->transitionIfInState($next, $fromState)) {
-            throw TaskAlreadyTransitionedException::forId($current->id());
-        }
+        return $this->connection->transaction(function () use ($current, $next, $fromState, $actor, $reason, $evidenceReference): Task {
+            if (! $this->taskRepository->transitionIfInState($next, $fromState)) {
+                throw TaskAlreadyTransitionedException::forId($current->id());
+            }
 
-        $this->taskRepository->recordTransition(new TaskTransition(
-            (string) Str::uuid(),
-            $next->tenantId(),
-            $next->id(),
-            $actor,
-            $fromState,
-            $next->state(),
-            $reason,
-            $evidenceReference,
-            new \DateTimeImmutable,
-        ));
+            $this->taskRepository->recordTransition(new TaskTransition(
+                (string) Str::uuid(),
+                $next->tenantId(),
+                $next->id(),
+                $actor,
+                $fromState,
+                $next->state(),
+                $reason,
+                $evidenceReference,
+                new \DateTimeImmutable,
+            ));
 
-        return $next;
+            return $next;
+        });
+    }
+
+    /**
+     * TSK-003 applied to the *request*, not just the resulting
+     * Command: a retried `submit()` call under an already-used
+     * Idempotency Key is only a safe replay if every field of the
+     * proposed Proposal is unchanged from the original.
+     */
+    private function proposalMatchesRequest(
+        Proposal $existing,
+        CommandType $commandType,
+        Money $amount,
+        \DateTimeImmutable $transactionDate,
+        AccountId $primaryAccountId,
+        AccountId $secondaryAccountId,
+        string $description,
+    ): bool {
+        return $existing->commandType() === $commandType
+            && $existing->amount()->equals($amount)
+            && $existing->transactionDate()->format('Y-m-d') === $transactionDate->format('Y-m-d')
+            && $existing->primaryAccountId()->equals($primaryAccountId)
+            && $existing->secondaryAccountId()->equals($secondaryAccountId)
+            && $existing->description() === $description;
     }
 
     /**
@@ -225,7 +377,8 @@ final class TaskService
      * §Decision). The Proposal's own `id()` is reused as the resulting
      * Command's Idempotency Key (see {@see ProposalId}'s own
      * docblock), so Accounting Core's own idempotency protection
-     * (AETS-007) covers a re-executed `Executing` step for free.
+     * (AETS-007) covers a re-executed `Executing` step for free —
+     * including a {@see resume()} call after a crash.
      *
      * Account-field mapping mirrors `AppComposer.vue`'s own, already
      * audited primary/secondary convention (2026-09-11 remediation)

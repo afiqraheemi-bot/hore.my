@@ -16,6 +16,7 @@ use App\Domain\Workspace\Exception\InvalidTaskStateTransitionException;
 use App\Domain\Workspace\Exception\ProposalNotFoundException;
 use App\Domain\Workspace\Exception\TaskAlreadyTransitionedException;
 use App\Domain\Workspace\Exception\TaskNotFoundException;
+use App\Domain\Workspace\Exception\TaskSubmissionConflictException;
 use App\Domain\Workspace\Proposal;
 use App\Domain\Workspace\Task;
 use App\Domain\Workspace\TaskId;
@@ -36,9 +37,10 @@ use Illuminate\Http\Request;
  * The Workspace/Task lifecycle over HTTP (ADR-0009, WTS-001): the Work
  * Queue ({@see index()}), submitting evidence/instruction as a Task
  * with its Proposal ({@see store()}), Task Detail
- * ({@see show()}), and Human Confirmation
- * ({@see approve()}, {@see reject()}, {@see cancel()}). Mirrors
- * {@see ReconciliationController}'s shape.
+ * ({@see show()}), Human Confirmation
+ * ({@see approve()}, {@see reject()}, {@see cancel()}), and crash
+ * recovery for a Task stranded in `Executing` ({@see resume()}).
+ * Mirrors {@see ReconciliationController}'s shape.
  */
 final class TaskController extends Controller
 {
@@ -80,7 +82,7 @@ final class TaskController extends Controller
                 $request->string('description')->toString(),
                 $evidenceReference === '' ? null : EvidenceReference::of($evidenceReference),
             );
-        } catch (InvalidMoneyAmountException $e) {
+        } catch (InvalidMoneyAmountException|TaskSubmissionConflictException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
@@ -104,6 +106,18 @@ final class TaskController extends Controller
         $user = $request->user();
 
         return $this->transition(fn (): Task => $this->taskService->approve($currentTenant->id(), TaskId::of($taskId), ActorReference::of($user->id)), $currentTenant);
+    }
+
+    /**
+     * Crash recovery for a Task stranded in `Executing` — see
+     * {@see TaskService::resume()}'s own docblock.
+     */
+    public function resume(Request $request, CurrentTenant $currentTenant, string $taskId): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        return $this->transition(fn (): Task => $this->taskService->resume($currentTenant->id(), TaskId::of($taskId), ActorReference::of($user->id)), $currentTenant);
     }
 
     public function reject(RejectTaskRequest $request, CurrentTenant $currentTenant, string $taskId): JsonResponse

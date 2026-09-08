@@ -1,7 +1,7 @@
 # WTS-001: Task & Proposal State Model
 
 - Status: Active
-- Version: 1.0.0
+- Version: 2.0.0
 - Effective date: 2026-09-08
 - Owner: Workspace and Task (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner
@@ -87,6 +87,9 @@ A Proposal carries, at minimum:
 - **TSK-007:** A Task's Tenant ID is immutable from creation and is validated against the acting user's Tenant on every transition; a cross-tenant transition attempt is rejected, never silently no-op'd.
 - **TSK-008:** A `Completed` Task is never re-opened. A correction to a completed Task's outcome creates a new Task referencing the original, rather than mutating history — mirroring the ledger's own reversal/replacement discipline ([ADR-0004](../../adr/0004-financial-integrity-principles.md)) at the workflow level.
 - **TSK-009:** `Cancelled`, `Rejected`, `Failed`, and `Superseded` are terminal — no transition leaves any of these states.
+- **TSK-010 (added v2.0.0):** Every write sequence that spans more than one row across `tasks`, `proposals`, and `task_transitions` is one atomic database transaction — in particular, a Task's whole creation sequence (`Received` through `NeedsReview`, plus its Proposal), and any single transition's compare-and-swap `UPDATE` together with its TSK-001 audit record. A partial write (a Task with no initial transition, a state that disagrees with its own history, a Task with no Proposal) must never be observable, including under a forced mid-sequence failure — proven by fault-injection tests forcing a non-duplicate constraint violation at each such boundary, mirroring [AETS-007](../accounting/AETS-007-Posting-Command.md)'s own established technique.
+- **TSK-011 (added v2.0.0):** A Task-creation request reusing an already-used `(Tenant, Idempotency-Key)` pair is a safe replay only if its Proposal payload (Command type, amount, transaction date, both Account references, description) is unchanged from the original; a materially different payload under the same key is rejected, never silently accepted as the stale original. Mirrors [AETS-007](../accounting/AETS-007-Posting-Command.md) §6.1's conflicting-idempotency-reuse rule, applied to Task submission itself rather than only to the resulting Command.
+- **TSK-012 (added v2.0.0):** A Task stranded in `Executing` by a crash or lost connection between the `Approved`→`Executing` transition and Command finalization can be recovered: an explicit resume re-attempts Command submission (safe by construction, since TSK-004's idempotency key covers a resume identically to the original attempt) and completes the `Executing`→`Completed`/`Failed` transition. Two concurrent resume attempts against the same stranded Task must never both succeed — proven by a genuine two-process concurrency test. Fulfils this document's own §3 requirement that `Executing` exist so a crash is "detectable and recoverable," not detectable alone.
 
 ## 7. Relationship to Accounting Core
 
@@ -98,4 +101,5 @@ A future Workspace & Task test specification must trace every `TSK-NNN` invarian
 
 ## Changelog
 
+- **2.0.0 (2026-09-08):** Independent post-implementation QA of the Phase D "Non-AI Workflow Shell" build found four production blockers this document had not made explicit as invariants: `submit()`'s multi-row creation sequence was not atomic; a transition's state update and its TSK-001 audit record were two separate writes, not one; a Task crashing mid-`Executing` had no recovery path despite §3's own claim that state exists to be "recoverable"; and a Task-creation retry under a reused Idempotency Key did not check whether the retried payload actually matched the original. All four are now closed in implementation (transactional writes, `resume()`, payload-conflict detection) and recorded here as TSK-010–TSK-012, per this document's own MAJOR-version rule (a change that alters a contract this document describes). TSK-001–TSK-009 are unchanged.
 - **1.0.0 (2026-09-08):** Initial creation, per [ADR-0009](../../adr/0009-workspace-task-module-boundary.md) / [WTS-000](WTS-000.md).

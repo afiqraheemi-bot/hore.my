@@ -11,10 +11,10 @@ use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Workspace\Exception\TaskNotFoundException;
 use App\Domain\Workspace\Task;
 use App\Domain\Workspace\TaskId;
+use App\Domain\Workspace\TaskService;
 use App\Domain\Workspace\TaskState;
 use App\Domain\Workspace\TaskTransition;
 use Illuminate\Database\ConnectionInterface;
-use Illuminate\Support\Str;
 
 /**
  * The persistence boundary for the Task aggregate and its
@@ -103,7 +103,7 @@ final class TaskRepository
     public function recordTransition(TaskTransition $transition): void
     {
         $this->connection->table(self::TRANSITION_TABLE)->insert([
-            'transition_id' => (string) Str::uuid(),
+            'transition_id' => $transition->id(),
             'tenant_id' => $transition->tenantId()->toString(),
             'task_id' => $transition->taskId()->toString(),
             'actor' => $transition->actor()->toString(),
@@ -137,6 +137,35 @@ final class TaskRepository
     public function getById(TenantId $tenantId, TaskId $id): Task
     {
         return $this->findById($tenantId, $id) ?? throw TaskNotFoundException::forId($id);
+    }
+
+    /**
+     * The pessimistic-locking counterpart to {@see getById()} — issues
+     * `SELECT ... FOR UPDATE`, so the row stays locked for the
+     * duration of the caller's own transaction. {@see getById()}'s
+     * optimistic compare-and-swap ({@see transitionIfInState()})
+     * cannot protect a resume from `Executing`, because there is no
+     * earlier state-changing transition only one concurrent caller can
+     * win — both callers already observe the same `Executing` state.
+     * Taking the row lock up front instead makes a second concurrent
+     * caller block until the first caller's whole transaction commits,
+     * so it re-reads the Task's *post-resume* state rather than racing
+     * on the pre-resume one. Used only by
+     * {@see TaskService::resume()}.
+     *
+     * @throws TaskNotFoundException if no such Task exists for this
+     *                               Tenant.
+     */
+    public function getByIdForUpdate(TenantId $tenantId, TaskId $id): Task
+    {
+        /** @var object{tenant_id: string, task_id: string, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}|null $row */
+        $row = $this->connection->table(self::TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->where('task_id', $id->toString())
+            ->lockForUpdate()
+            ->first();
+
+        return $row === null ? throw TaskNotFoundException::forId($id) : self::fromPersisted($row);
     }
 
     /**

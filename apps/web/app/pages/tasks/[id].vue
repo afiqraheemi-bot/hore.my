@@ -123,6 +123,19 @@ async function approve() {
   }
 }
 
+async function resume() {
+  actionError.value = null
+  acting.value = true
+  try {
+    task.value = await request<TaskDetail>(`/api/v1/tasks/${taskId}/resume`, { method: 'POST' })
+  } catch {
+    actionError.value = 'Could not resume this Task.'
+    await load()
+  } finally {
+    acting.value = false
+  }
+}
+
 async function reject() {
   actionError.value = null
   acting.value = true
@@ -222,6 +235,18 @@ onMounted(load)
             <dd class="text-ink">{{ task.proposal.description }}</dd>
           </div>
         </dl>
+      </AppCard>
+
+      <AppCard v-if="task.state === 'Executing'">
+        <p class="mb-1 text-sm font-medium text-ink">This Task did not finish confirming.</p>
+        <p class="mb-3 text-sm text-ink-tertiary">
+          It was approved but never reached a final result — likely an interrupted request. Resuming
+          is safe: it will never post twice.
+        </p>
+        <p v-if="actionError" class="mb-3 text-sm text-danger">{{ actionError }}</p>
+        <AppButton variant="primary" :disabled="acting" @click="resume">
+          {{ acting ? 'Resuming…' : 'Resume' }}
+        </AppButton>
       </AppCard>
 
       <AppCard v-if="task.state === 'Completed'">

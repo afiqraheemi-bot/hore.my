@@ -90,6 +90,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/tasks', [TaskController::class, 'store']);
             Route::get('/tasks/{taskId}', [TaskController::class, 'show']);
             Route::post('/tasks/{taskId}/approve', [TaskController::class, 'approve']);
+            Route::post('/tasks/{taskId}/resume', [TaskController::class, 'resume']);
             Route::post('/tasks/{taskId}/reject', [TaskController::class, 'reject']);
             Route::post('/tasks/{taskId}/cancel', [TaskController::class, 'cancel']);
 
