@@ -872,6 +872,66 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->assertSame(1, DB::connection('pgsql')->table('tasks')->count());
     }
 
+    /**
+     * TSK-005: a Task's Proposal is re-validated against the current
+     * closed-Period watermark at `Executing`, not only at submission.
+     * Mirrors `test_a_transfer_backdated_into_a_closed_period_is_rejected`'s
+     * own established pattern (search this file) exactly, applied to
+     * the Task/Proposal flow: the Task is *submitted* while its
+     * transaction date is still open, the Period closes afterward
+     * (never touching the Task itself), and only then is it approved
+     * — proving the check happens at Command-execution time, not
+     * merely inherited from validation Accounting Core already ran
+     * once, earlier, against a different state of the world.
+     */
+    public function test_a_task_approved_after_its_period_closed_fails_without_posting(): void
+    {
+        $this->registerAndReturnCredentials('workspace-period-lock@example.my');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $retainedEarningsId = $this->createAccount('3900', 'Retained Earnings', 'Equity');
+
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '25.00',
+            'transaction_date' => '2026-07-10',
+            'primary_account_id' => $officeSuppliesId,
+            'secondary_account_id' => $cashId,
+            'description' => 'Backdated into a period that closes after submission',
+        ], ['Idempotency-Key' => 'task-key-period-lock-0001']);
+        $submitResponse->assertStatus(201);
+        $taskId = $submitResponse->json('id');
+
+        // PeriodClosingService rejects closing a period with zero
+        // Revenue/Expense activity (nothing to close) — post a real,
+        // separate Expense directly so the period has something to
+        // close. This must never be the Task under test itself: this
+        // Task is still only submitted (NeedsReview), not posted, per
+        // the whole point of TSK-005.
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '5.00',
+            'transaction_date' => '2026-07-05',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Unrelated activity so the period has something to close',
+        ], ['Idempotency-Key' => 'task-key-period-lock-seed-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/periods/close', [
+            'closed_through_date' => '2026-07-31',
+            'retained_earnings_account_id' => $retainedEarningsId,
+        ], ['Idempotency-Key' => 'task-key-period-lock-close-0001'])->assertStatus(201);
+
+        $approveResponse = $this->postJson('/api/v1/tasks/'.$taskId.'/approve');
+
+        $approveResponse->assertStatus(200);
+        $approveResponse->assertJsonPath('state', 'Failed');
+        $this->assertNotNull($approveResponse->json('failure_reason'));
+        $this->assertNull($approveResponse->json('result_journal_id'));
+        // Exactly the one seed Expense posted above to give the period
+        // something to close — never the Task under test's own.
+        $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
+    }
+
     // --- Expense / Income / Reporting end-to-end ----------------------------
 
     public function test_an_expense_and_income_posted_via_the_api_reconcile_through_the_reporting_endpoints(): void

@@ -27,7 +27,11 @@ Planned, not-yet-created documents — WTS-002 (Proposal-to-Command Translation)
 
 ## Test Specifications
 
-A future `tests/` directory will hold Workspace & Task Test Specifications, numbered to match the WTS document they prove (for example, a document proving `WTS-001` would trace every `TSK-NNN` invariant to at least one test ID), following the pattern already established by this repository's `ATS-NNN` documents under [`docs/specifications/accounting/tests/`](../accounting/tests/).
+`tests/` contains Workspace & Task Test Specifications, numbered to match the WTS document they prove and following the pattern established by this repository's `ATS-NNN` documents under [`docs/specifications/accounting/tests/`](../accounting/tests/).
+
+| Document | Status | Version | Proves | Summary |
+| --- | --- | --- | --- | --- |
+| [WT-001 — Task & Proposal State Model Test Specification](tests/WT-001-Task-Proposal-State-Model-Test-Specification.md) | Active | 1.0.0 | [WTS-001](WTS-001-Task-Proposal-State-Model.md) | 47 test IDs (`TSK-T001`–`TSK-T047`) tracing `TSK-001`–`TSK-012` across unit, real-PostgreSQL integration, HTTP, concurrency, fault-injection and real-browser E2E tests, with partially deferred coverage recorded explicitly for `TSK-006` and `TSK-008` |
 
 ## Creating a WTS document
 
@@ -36,3 +40,11 @@ A future `tests/` directory will hold Workspace & Task Test Specifications, numb
 - Cite the ADR(s) and WTS-000/WTS-001 section(s) the document implements.
 - Do not redefine, weaken, or duplicate any AETS invariant — see [WTS-000](WTS-000.md) §3.
 - Add the document to the index table above once it exists.
+
+## Creating a WT document
+
+- Name it `WT-NNN-Title.md` under `tests/`, matching the WTS document number it proves.
+- Copy an existing WT document's header shape (`Status`, `Version`, `Effective date`, `Owner`, `Reviewers`, `Related`).
+- Use stable `TSK-TNNN` test IDs and trace every invariant in the corresponding WTS document.
+- Record genuinely deferred or structurally untestable requirements explicitly; never claim coverage from a test that cannot exercise the behavior.
+- Add the document to the Test Specifications index above once it exists.

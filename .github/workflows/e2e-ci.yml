@@ -65,12 +65,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        # Not SHA-pinned like this repo's other actions (checkout,
-        # setup-node) — unlike those two, this repo has no prior use of
-        # actions/upload-artifact to copy a verified commit SHA from,
-        # and a fabricated SHA would silently break this step. Pin it
-        # to a verified commit the next time this workflow is touched.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2, verified via `gh api repos/actions/upload-artifact/git/refs/tags/v4.6.2`
         with:
           name: playwright-report
           path: apps/web/playwright-report/
