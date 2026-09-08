@@ -24,6 +24,7 @@ use App\Http\Requests\Payments\StoreAllocationRequest;
 use App\Http\Support\CurrentTenant;
 use App\Infrastructure\Invoicing\InvoiceRepository;
 use App\Infrastructure\Payments\PaymentAllocationRepository;
+use App\Infrastructure\Payments\PaymentRepository;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -40,11 +41,32 @@ final class AllocationController extends Controller
         private readonly AllocationService $allocationService,
         private readonly PaymentAllocationRepository $allocationRepository,
         private readonly InvoiceRepository $invoiceRepository,
+        private readonly PaymentRepository $paymentRepository,
     ) {}
 
+    /**
+     * Lists a Payment's own allocations.
+     *
+     * Checks the Payment exists for this Tenant before returning, even
+     * though an empty result would otherwise look identical to "zero
+     * allocations" — a nonexistent or malformed `$paymentId` (P1-5,
+     * 2026-09-08 audit remediation: found while investigating that
+     * finding, though the specific "malformed ID causes a 500" pattern
+     * the finding named does not reproduce anywhere in this codebase,
+     * since every ID Value Object here is an opaque string, never a
+     * native-UUID-typed column that could throw a DB-level cast error)
+     * previously returned `200 {"data": []}` indistinguishable from a
+     * real Payment with no allocations yet.
+     */
     public function index(CurrentTenant $currentTenant, string $paymentId): JsonResponse
     {
-        $allocations = $this->allocationRepository->findByPayment($currentTenant->id(), PaymentId::of($paymentId));
+        $paymentIdValue = PaymentId::of($paymentId);
+
+        if ($this->paymentRepository->findById($currentTenant->id(), $paymentIdValue) === null) {
+            return response()->json(['message' => 'Payment not found.'], 404);
+        }
+
+        $allocations = $this->allocationRepository->findByPayment($currentTenant->id(), $paymentIdValue);
 
         return response()->json(['data' => array_map(fn (PaymentAllocation $a): array => $this->toArray($a), $allocations)]);
     }

@@ -529,6 +529,16 @@ final class IdentityAndAccountingApiTest extends TestCase
         $outstanding->assertJsonCount(0, 'data');
     }
 
+    public function test_listing_allocations_for_a_nonexistent_payment_returns_404(): void
+    {
+        $this->registerAndReturnCredentials('payment-allocations-404@example.my');
+
+        $response = $this->getJson('/api/v1/payments/00000000-0000-0000-0000-000000000000/allocations');
+
+        $response->assertStatus(404);
+        $response->assertJsonPath('message', 'Payment not found.');
+    }
+
     public function test_a_payment_can_be_split_across_two_invoices(): void
     {
         $this->registerAndReturnCredentials('payment-split@example.my');
