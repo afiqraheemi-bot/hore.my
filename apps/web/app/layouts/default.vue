@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { init: initSidebar } = useSidebar()
+const { init: initSidebar, openMobile } = useSidebar()
 const { init: initTheme } = useTheme()
 
 onMounted(() => {
@@ -11,10 +11,27 @@ onMounted(() => {
 <template>
   <div class="flex h-screen overflow-hidden bg-surface">
     <AppSidebar />
-    <main class="flex-1 overflow-y-auto">
-      <div class="mx-auto max-w-5xl px-6 py-8">
-        <slot />
-      </div>
-    </main>
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="flex h-14 shrink-0 items-center border-b border-border px-4 md:hidden">
+        <button
+          type="button"
+          class="flex h-9 w-9 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover hover:text-ink"
+          aria-label="Open menu"
+          @click="openMobile"
+        >
+          <AppIcon name="menu" :size="20" />
+        </button>
+        <span
+          class="ml-2 flex h-6 w-6 items-center justify-center rounded-md bg-accent text-xs font-bold text-accent-contrast"
+          >H</span
+        >
+        <span class="ml-1.5 text-sm font-semibold text-ink">hore.my</span>
+      </header>
+      <main class="flex-1 overflow-y-auto">
+        <div class="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+          <slot />
+        </div>
+      </main>
+    </div>
   </div>
 </template>

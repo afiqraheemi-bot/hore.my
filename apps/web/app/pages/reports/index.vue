@@ -167,7 +167,7 @@ async function selectTab(tab: (typeof tabs)[number]) {
             </AppField>
           </div>
         </template>
-        <div v-if="activeTab === 'General Ledger'" class="w-64">
+        <div v-if="activeTab === 'General Ledger'" class="w-full sm:w-64">
           <AppField label="Account">
             <AppSelect
               v-model="selectedAccountId"

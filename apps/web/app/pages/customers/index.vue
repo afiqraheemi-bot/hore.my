@@ -120,17 +120,17 @@ onMounted(loadCustomers)
 
     <AppCard v-if="showForm" class="mb-6">
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="onCreate">
-        <div class="w-56">
+        <div class="w-full sm:w-56">
           <AppField label="Name">
             <AppInput v-model="name" required placeholder="Kedai Runcit Aminah" />
           </AppField>
         </div>
-        <div class="w-56">
+        <div class="w-full sm:w-56">
           <AppField label="Email">
             <AppInput v-model="email" type="email" placeholder="optional" />
           </AppField>
         </div>
-        <div class="w-40">
+        <div class="w-full sm:w-40">
           <AppField label="Phone">
             <AppInput v-model="phone" placeholder="optional" />
           </AppField>

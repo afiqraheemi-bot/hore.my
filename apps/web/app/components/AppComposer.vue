@@ -182,7 +182,9 @@ onMounted(loadAccounts)
 
 <template>
   <AppCard :padded="false" class="overflow-hidden">
-    <div class="flex items-center gap-2 border-b border-border bg-surface-secondary/60 px-3 py-2">
+    <div
+      class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/60 px-3 py-2"
+    >
       <button
         v-for="type in types"
         :key="type.key"

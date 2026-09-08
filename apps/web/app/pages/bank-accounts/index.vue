@@ -304,7 +304,7 @@ onMounted(loadAll)
 
     <AppCard v-if="showRegisterForm" class="mb-6">
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="onRegister">
-        <div class="w-64">
+        <div class="w-full sm:w-64">
           <AppField label="Linked account (Asset)">
             <AppSelect
               v-model="linkedAccountId"
@@ -314,12 +314,12 @@ onMounted(loadAll)
             />
           </AppField>
         </div>
-        <div class="w-40">
+        <div class="w-full sm:w-40">
           <AppField label="Bank name">
             <AppInput v-model="bankName" required placeholder="Maybank" />
           </AppField>
         </div>
-        <div class="w-24">
+        <div class="w-full sm:w-24">
           <AppField label="Last 4 digits">
             <AppInput v-model="accountNumberLast4" maxlength="4" placeholder="1234" />
           </AppField>
@@ -470,12 +470,12 @@ onMounted(loadAll)
                   <AppInput v-model="periodEnd" type="date" required />
                 </AppField>
               </div>
-              <div class="w-28">
+              <div class="w-full sm:w-28">
                 <AppField label="Opening balance">
                   <AppInput v-model="openingBalance" placeholder="1000.00" required />
                 </AppField>
               </div>
-              <div class="w-28">
+              <div class="w-full sm:w-28">
                 <AppField label="Closing balance">
                   <AppInput v-model="closingBalance" placeholder="1500.00" required />
                 </AppField>
@@ -540,7 +540,7 @@ onMounted(loadAll)
                 </div>
               </div>
               <div v-if="reconciliation.state === 'Completed'" class="mt-2 flex items-center gap-2">
-                <div class="w-64">
+                <div class="w-full sm:w-64">
                   <AppInput
                     v-model="reopenReason[reconciliation.id]"
                     placeholder="Reason for reopening"

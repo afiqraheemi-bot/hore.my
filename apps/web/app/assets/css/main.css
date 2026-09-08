@@ -4,10 +4,13 @@
 
 /*
  * Design tokens (HORE_MY_MASTER_CONTEXT.md §5): a minimal, ChatGPT-like
- * interaction pattern without copying its visual identity — a neutral
- * grayscale surface system (the structural pattern) paired with a
- * distinct warm-amber accent (the identity), never ChatGPT's own teal.
- * Light and dark are both first-class; every color lives here, never
+ * interaction pattern without copying its visual identity. Monochrome
+ * by explicit Founder instruction (2026-09-08) — black in light mode,
+ * white in dark mode, no colored brand accent. Semantic status colors
+ * (success/danger/warning) are kept: they are functional signals (an
+ * overdue Invoice, a failed action), not decorative branding, and
+ * removing them would cost real scannability in a financial app. Light
+ * and dark are both first-class; every color lives here, never
  * hard-coded in a component, so the theme toggle only ever flips one
  * class on <html>.
  */
@@ -22,10 +25,10 @@
   --color-text-secondary: 107 107 115;
   --color-text-tertiary: 150 150 158;
 
-  --color-accent: 217 96 41;
-  --color-accent-hover: 191 82 33;
+  --color-accent: 23 23 26;
+  --color-accent-hover: 55 55 60;
   --color-accent-contrast: 255 255 255;
-  --color-accent-soft: 253 234 222;
+  --color-accent-soft: 236 236 238;
 
   --color-success: 22 163 74;
   --color-success-soft: 220 245 227;
@@ -48,10 +51,10 @@
   --color-text-secondary: 172 172 179;
   --color-text-tertiary: 128 128 136;
 
-  --color-accent: 232 138 78;
-  --color-accent-hover: 240 155 100;
+  --color-accent: 237 237 240;
+  --color-accent-hover: 200 200 205;
   --color-accent-contrast: 23 23 26;
-  --color-accent-soft: 63 42 26;
+  --color-accent-soft: 39 39 42;
 
   --color-success: 74 222 128;
   --color-success-soft: 20 45 30;

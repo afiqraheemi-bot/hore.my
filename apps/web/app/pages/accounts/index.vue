@@ -87,17 +87,17 @@ onMounted(loadAccounts)
 
     <AppCard v-if="showForm" class="mb-6">
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="onCreate">
-        <div class="w-28">
+        <div class="w-full sm:w-28">
           <AppField label="Code">
             <AppInput v-model="accountCode" required />
           </AppField>
         </div>
-        <div class="w-56">
+        <div class="w-full sm:w-56">
           <AppField label="Name">
             <AppInput v-model="accountName" required />
           </AppField>
         </div>
-        <div class="w-40">
+        <div class="w-full sm:w-40">
           <AppField label="Type">
             <AppSelect v-model="accountType" :options="accountTypeOptions" />
           </AppField>

@@ -213,8 +213,8 @@ onMounted(async () => {
 
         <div class="space-y-2">
           <p class="text-xs font-medium text-ink-secondary">Lines</p>
-          <div v-for="(line, i) in lineDrafts" :key="i" class="flex items-end gap-2">
-            <div class="flex-1">
+          <div v-for="(line, i) in lineDrafts" :key="i" class="flex flex-wrap items-end gap-2">
+            <div class="min-w-[10rem] flex-1">
               <AppInput v-model="line.description" placeholder="Description" />
             </div>
             <div class="w-20">

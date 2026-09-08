@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AppIcon as AppIconType } from '#components'
 
-const { collapsed, toggle } = useSidebar()
+const { collapsed, toggle, mobileOpen, closeMobile } = useSidebar()
 const { user, tenant, logout } = useAuth()
 const router = useRouter()
 const route = useRoute()
@@ -34,18 +34,52 @@ async function handleLogout() {
   await logout()
   router.push('/login')
 }
+
+// On mobile the sidebar is a drawer — always full width, never
+// icon-only — so `collapsed` (a desktop-only preference) is ignored
+// below `md:`. Navigating closes the drawer automatically, matching
+// every native mobile nav pattern.
+function onNavigate() {
+  closeMobile()
+}
+
+// The desktop collapse toggle also closes the mobile drawer first, so
+// a resize while the drawer is open never leaves both states active
+// at once.
+function toggleDesktopSidebar() {
+  closeMobile()
+  toggle()
+}
 </script>
 
 <template>
+  <Teleport to="body">
+    <div
+      v-if="mobileOpen"
+      class="fixed inset-0 z-40 bg-black/40 md:hidden"
+      aria-hidden="true"
+      @click="closeMobile"
+    />
+  </Teleport>
+
   <aside
-    class="flex h-full flex-col border-r border-border bg-surface-secondary transition-[width] duration-150"
-    :class="collapsed ? 'w-[68px]' : 'w-64'"
+    class="fixed inset-y-0 left-0 z-50 flex h-full flex-col border-r border-border bg-surface-secondary transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-[width]"
+    :class="[
+      mobileOpen ? 'translate-x-0' : '-translate-x-full',
+      collapsed ? 'w-64 md:w-[68px]' : 'w-64',
+    ]"
   >
     <div
       class="flex h-14 items-center px-3"
-      :class="collapsed ? 'justify-center' : 'justify-between'"
+      :class="collapsed ? 'justify-between md:justify-center' : 'justify-between'"
     >
-      <NuxtLink v-if="!collapsed" to="/" class="flex items-center gap-2 px-1">
+      <NuxtLink
+        v-if="!collapsed || mobileOpen"
+        to="/"
+        class="flex items-center gap-2 px-1"
+        :class="collapsed && 'md:hidden'"
+        @click="onNavigate"
+      >
         <span
           class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-contrast"
           >H</span
@@ -56,9 +90,15 @@ async function handleLogout() {
         type="button"
         class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-hover hover:text-ink"
         :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-        @click="toggle"
+        @click="toggleDesktopSidebar"
       >
-        <AppIcon :name="collapsed ? 'menu' : 'chevron-left'" :size="18" />
+        <AppIcon
+          name="chevron-left"
+          :size="18"
+          class="hidden md:block"
+          :class="collapsed && 'md:rotate-180'"
+        />
+        <AppIcon name="x" :size="18" class="md:hidden" />
       </button>
     </div>
 
@@ -75,9 +115,15 @@ async function handleLogout() {
               : 'text-ink-secondary hover:bg-surface-hover hover:text-ink'
           "
           :title="collapsed ? item.label : undefined"
+          @click="onNavigate"
         >
           <AppIcon :name="item.icon" :size="18" class="shrink-0" />
-          <span v-if="!collapsed" class="truncate">{{ item.label }}</span>
+          <span
+            v-if="!collapsed || mobileOpen"
+            class="truncate"
+            :class="collapsed && 'md:hidden'"
+            >{{ item.label }}</span
+          >
         </NuxtLink>
       </div>
 
@@ -93,15 +139,25 @@ async function handleLogout() {
               : 'text-ink-secondary hover:bg-surface-hover hover:text-ink'
           "
           :title="collapsed ? item.label : undefined"
+          @click="onNavigate"
         >
           <AppIcon :name="item.icon" :size="18" class="shrink-0" />
-          <span v-if="!collapsed" class="truncate">{{ item.label }}</span>
+          <span
+            v-if="!collapsed || mobileOpen"
+            class="truncate"
+            :class="collapsed && 'md:hidden'"
+            >{{ item.label }}</span
+          >
         </NuxtLink>
       </div>
     </nav>
 
     <div class="border-t border-border p-2">
-      <div v-if="!collapsed && user" class="mb-2 flex items-center justify-between gap-2 px-1">
+      <div
+        v-if="(!collapsed || mobileOpen) && user"
+        class="mb-2 flex items-center justify-between gap-2 px-1"
+        :class="collapsed && 'md:hidden'"
+      >
         <div class="min-w-0">
           <p class="truncate text-xs font-medium text-ink">{{ user.email }}</p>
           <p v-if="tenant" class="truncate text-[11px] text-ink-tertiary">
@@ -117,7 +173,7 @@ async function handleLogout() {
         @click="handleLogout"
       >
         <AppIcon name="logout" :size="18" class="shrink-0" />
-        <span v-if="!collapsed">Log out</span>
+        <span v-if="!collapsed || mobileOpen" :class="collapsed && 'md:hidden'">Log out</span>
       </button>
     </div>
   </aside>

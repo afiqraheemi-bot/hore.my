@@ -198,7 +198,7 @@ onMounted(async () => {
 
     <AppCard v-if="showForm" class="mb-6">
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="onCreate">
-        <div class="w-48">
+        <div class="w-full sm:w-48">
           <AppField label="Customer">
             <AppSelect
               v-model="customerId"
@@ -208,7 +208,7 @@ onMounted(async () => {
             />
           </AppField>
         </div>
-        <div class="w-28">
+        <div class="w-full sm:w-28">
           <AppField label="Amount">
             <AppInput v-model="amount" placeholder="300.00" required />
           </AppField>
@@ -218,7 +218,7 @@ onMounted(async () => {
             <AppInput v-model="paymentDate" type="date" required />
           </AppField>
         </div>
-        <div class="w-48">
+        <div class="w-full sm:w-48">
           <AppField label="Deposit account">
             <AppSelect
               v-model="depositAccountId"
@@ -228,7 +228,7 @@ onMounted(async () => {
             />
           </AppField>
         </div>
-        <div class="w-48">
+        <div class="w-full sm:w-48">
           <AppField label="Receivable account">
             <AppSelect
               v-model="receivableAccountId"
@@ -238,7 +238,7 @@ onMounted(async () => {
             />
           </AppField>
         </div>
-        <div class="w-32">
+        <div class="w-full sm:w-32">
           <AppField label="Reference">
             <AppInput v-model="reference" placeholder="optional" />
           </AppField>
@@ -302,7 +302,7 @@ onMounted(async () => {
           v-if="allocatingPaymentId === payment.id"
           class="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-surface-secondary p-3"
         >
-          <div class="w-64">
+          <div class="w-full sm:w-64">
             <AppField label="Invoice">
               <AppSelect
                 v-model="allocateInvoiceId"
@@ -311,7 +311,7 @@ onMounted(async () => {
               />
             </AppField>
           </div>
-          <div class="w-28">
+          <div class="w-full sm:w-28">
             <AppField label="Amount">
               <AppInput v-model="allocateAmount" placeholder="100.00" />
             </AppField>
