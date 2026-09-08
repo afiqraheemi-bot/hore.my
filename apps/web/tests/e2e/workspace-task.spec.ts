@@ -1,0 +1,92 @@
+import { expect, test } from '@playwright/test'
+import { createAccount, registerNewUser } from './support/fixtures'
+
+/**
+ * Real-browser proof of the Work Queue / Task Detail / Human
+ * Confirmation flow (ADR-0009, WTS-001) — the committed counterpart
+ * to the manual Playwright verification this module's own commit
+ * history previously described but never checked in (a real,
+ * previously-flagged gap: see `tests/e2e/README.md`).
+ */
+test.describe('Work Queue and Human Confirmation', () => {
+  async function submitExpenseTask(page: import('@playwright/test').Page, description: string) {
+    await page.goto('/tasks')
+    await page.locator('input[inputmode="decimal"]').fill('88.50')
+    await page.locator('form select').nth(0).selectOption({ label: '5000 — Office Supplies' })
+    await page.locator('form select').nth(1).selectOption({ label: '1000 — Cash' })
+    await page.getByPlaceholder('What was this for?').fill(description)
+
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /submit for review/i }).click(),
+    ])
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await registerNewUser(page)
+    await createAccount(page, '5000', 'Office Supplies', 'Expense')
+    await createAccount(page, '1000', 'Cash', 'Asset')
+  })
+
+  test('submitting a Task lands it in NeedsReview with its Proposal detail', async ({ page }) => {
+    await submitExpenseTask(page, 'E2E: office supplies')
+
+    await expect(page.getByText('NeedsReview')).toBeVisible()
+
+    await page.locator('a[href^="/tasks/"]').first().click()
+    await expect(page.getByText('NeedsReview')).toBeVisible()
+    await expect(page.getByText('RM88.50')).toBeVisible()
+    await expect(page.getByText('E2E: office supplies')).toBeVisible()
+    await expect(page.getByRole('button', { name: /confirm and post/i })).toBeVisible()
+  })
+
+  test('confirming a Task posts a Journal and shows the full transition history', async ({
+    page,
+  }) => {
+    await submitExpenseTask(page, 'E2E: confirm flow')
+    await page.locator('a[href^="/tasks/"]').first().click()
+
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/approve')),
+      page.getByRole('button', { name: /confirm and post/i }).click(),
+    ])
+
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible()
+    await expect(page.getByText('Posted a balanced Journal.')).toBeVisible()
+    await expect(page.getByText('Received → Processing')).toBeVisible()
+    await expect(page.getByText('NeedsReview → Approved')).toBeVisible()
+    await expect(page.getByText('Executing → Completed')).toBeVisible()
+  })
+
+  test('rejecting a Task requires a reason and moves it to Rejected', async ({ page }) => {
+    await submitExpenseTask(page, 'E2E: reject flow')
+    await page.locator('a[href^="/tasks/"]').first().click()
+
+    await page.getByRole('button', { name: /^reject$/i }).click()
+    await page.getByPlaceholder('Wrong account, duplicate, etc.').fill('Wrong account chosen.')
+
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/reject')),
+      page.getByRole('button', { name: /^reject$/i }).click(),
+    ])
+
+    await expect(page.getByText('Rejected', { exact: true })).toBeVisible()
+  })
+
+  test("a Task submitted under one tenant never appears in another tenant's Work Queue", async ({
+    page,
+  }) => {
+    await submitExpenseTask(page, 'E2E: tenant A only')
+    await expect(page.getByText('NeedsReview')).toBeVisible()
+
+    await page.getByRole('button', { name: /log out/i }).click()
+    await page.waitForURL('**/login')
+    await registerNewUser(page)
+
+    await page.goto('/tasks')
+    await expect(page.getByText('No Tasks yet')).toBeVisible()
+    await expect(page.getByText('E2E: tenant A only')).not.toBeVisible()
+  })
+})
