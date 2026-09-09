@@ -1,7 +1,7 @@
 # WT-001: Task & Proposal State Model Test Specification
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-09
 - Owner: Workspace and Task (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative Workspace & Task test specification proving compliance with [WTS-001: Task & Proposal State Model](../WTS-001-Task-Proposal-State-Model.md) — the counterpart WTS-001 §8 itself calls for, mirroring the `ATS-NNN` pattern already established for the AETS series. Every test defined here is identified by a stable ID (`TSK-T001`–`TSK-T047`) and traced to the `TSK-NNN` invariant(s) it proves (§5).
+This document is the normative Workspace & Task test specification proving compliance with [WTS-001: Task & Proposal State Model](../WTS-001-Task-Proposal-State-Model.md) — the counterpart WTS-001 §8 itself calls for, mirroring the `ATS-NNN` pattern already established for the AETS series. Every test defined here is identified by a stable ID (`TSK-T001`–`TSK-T057`) and traced to the `TSK-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md), this document was authored *after* WTS-001's implementation, not before it — every test ID below traces to a concrete, already-passing test (Unit, Integration, HTTP, or E2E), not a future target. The traceability matrix in §5 can be verified directly against the current test suite.
 
@@ -18,7 +18,7 @@ Like [ATS-010](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md)
 ### 2.1 In scope
 
 - A complete traceability matrix from `TSK-001`–`TSK-012` to test IDs.
-- Concrete test cases across four levels: pure state-machine unit tests (`Tests\Unit\Domain\Workspace\TaskTest`), real-PostgreSQL service-level integration tests including genuine two-process concurrency and fault-injection (`Tests\Feature\Domain\Workspace\TaskServiceIntegrationTest`), real-HTTP tests (`Tests\Feature\Http\Api\IdentityAndAccountingApiTest`), and real-browser end-to-end tests (`apps/web/tests/e2e/*.spec.ts`).
+- Concrete test cases across five levels: pure state-machine unit tests (`Tests\Unit\Domain\Workspace\TaskTest`), real-PostgreSQL service-level integration tests including genuine two-process concurrency and fault-injection (`Tests\Feature\Domain\Workspace\TaskServiceIntegrationTest`), isolated real-PostgreSQL migration tests (`Tests\Feature\Infrastructure\Workspace\WorkspaceTablesMigrationTest`), real-HTTP tests (`Tests\Feature\Http\Api\IdentityAndAccountingApiTest`), and real-browser end-to-end tests (`apps/web/tests/e2e/*.spec.ts`).
 
 ### 2.2 Out of scope
 
@@ -34,19 +34,19 @@ This document is subordinate to [WTS-001](../WTS-001-Task-Proposal-State-Model.m
 - **Prove the invariant, not the implementation.** Every test traces to a `TSK-NNN` invariant.
 - **Real PostgreSQL for atomicity, concurrency, and constraints.** Every fault-injection, concurrency, and tenant-isolation test runs against a real PostgreSQL instance — never SQLite — mirroring the AETS series' own established rule (e.g. [ATS-004 §4](../../accounting/tests/ATS-004-Journal-Posting-Test-Specification.md#4-test-strategy)), since these properties are exactly the ones a mocked or in-memory substitute cannot prove.
 - **Genuine multi-process concurrency, not single-process simulation.** Every `TSK-004`/`TSK-012` concurrency test spawns two real OS processes via `proc_open` (`tests/bin/concurrent_task_*_worker.php`), mirroring the established pattern from Accounting Core's own concurrency tests (e.g. the P0/P1 `concurrent_issue_worker`/`concurrent_deallocate_worker` precedent) — a single PHPUnit process cannot reproduce the actual race window between reading state and writing it.
-- **Four levels, not one.** A pure state-machine transition rule is proven once at the Unit level (fast, no I/O); the same behavior is not re-proven at Integration/HTTP/E2E level unless the level itself is what is being proven (e.g. HTTP status codes, tenant isolation over a real session, or what actually renders in a browser).
+- **Five levels, not one.** A pure state-machine transition rule is proven once at the Unit level (fast, no I/O); the same behavior is not re-proven at Integration/Migration/HTTP/E2E level unless the level itself is what is being proven (e.g. database constraints, HTTP status codes, tenant isolation over a real session, or what actually renders in a browser).
 
 ## 5. Traceability matrix
 
 | Invariant | Test IDs |
 | --- | --- |
-| TSK-001 | TSK-T022, TSK-T028, TSK-T034 |
-| TSK-002 | TSK-T001–TSK-T017, TSK-T021, TSK-T023, TSK-T024, TSK-T032 |
-| TSK-003 | TSK-T018, TSK-T020, TSK-T039 |
+| TSK-001 | TSK-T022, TSK-T028, TSK-T034, TSK-T052, TSK-T053, TSK-T057 |
+| TSK-002 | TSK-T001–TSK-T017, TSK-T021, TSK-T023, TSK-T024, TSK-T032, TSK-T049 |
+| TSK-003 | TSK-T018, TSK-T020, TSK-T039, TSK-T050, TSK-T054–TSK-T056 |
 | TSK-004 | TSK-T026, TSK-T033, TSK-T036 |
 | TSK-005 | TSK-T042 |
 | TSK-006 | *(Partially deferred — see §7.)* |
-| TSK-007 | TSK-T025, TSK-T041, TSK-T046, TSK-T047 |
+| TSK-007 | TSK-T025, TSK-T041, TSK-T046, TSK-T047, TSK-T054–TSK-T056 |
 | TSK-008 | TSK-T013 *(partially proven — see §7)* |
 | TSK-009 | TSK-T008, TSK-T017 |
 | TSK-010 | TSK-T027, TSK-T028, TSK-T037, TSK-T038 |
@@ -130,6 +130,23 @@ Real Chromium browser (Playwright) against the live Docker Compose stack — the
 | TSK-T046 | `workspace-task.spec.ts` : *a Task submitted under one tenant never appears in another tenant's Work Queue* | A second, freshly registered Tenant's Work Queue is empty. |
 | TSK-T047 | `workspace-task.spec.ts` : *a Task is not directly loadable by URL from a different, authenticated tenant* | Direct-object proof: navigating straight to Tenant A's Task URL while authenticated as Tenant B shows "Failed to load this Task," never the Proposal detail — a materially stronger proof than TSK-T046 alone, since a listing omission would not by itself catch a route that forgot its own tenant check. |
 
+### 6.5 Migration — `Tests\Feature\Infrastructure\Workspace\WorkspaceTablesMigrationTest`
+
+Each case executes the real production migrations inside a dedicated PostgreSQL schema. The schema is discarded after every test, so reversibility and rejected writes cannot alter shared application or development data.
+
+| Test ID | Test method | Description |
+| --- | --- | --- |
+| TSK-T048 | `test_workspace_migrations_apply_and_reverse_cleanly` | All four Workspace migrations apply in production order, expose their required columns, and reverse in dependency-safe order with no Workspace table left behind. |
+| TSK-T049 | `test_task_rejects_a_noncanonical_state` | PostgreSQL rejects a Task state outside the complete `TaskState` enum. |
+| TSK-T050 | `test_proposal_rejects_a_noncanonical_command_type` | PostgreSQL rejects a Proposal command outside the closed `CommandType` set. |
+| TSK-T051 | `test_proposal_rejects_a_noncanonical_producer_type` | PostgreSQL rejects a Proposal producer outside the canonical Human/AI set; this proves storage vocabulary only, not the deferred AI authorization path. |
+| TSK-T052 | `test_transition_rejects_a_noncanonical_to_state` | PostgreSQL rejects a noncanonical transition destination. |
+| TSK-T053 | `test_transition_rejects_a_noncanonical_from_state` | PostgreSQL rejects a noncanonical non-null transition origin. |
+| TSK-T054 | `test_proposal_cannot_reference_another_tenants_task` | The composite foreign key rejects cross-Tenant Task correlation. |
+| TSK-T055 | `test_proposal_cannot_reference_another_tenants_account` | The composite foreign keys reject cross-Tenant Account correlation. |
+| TSK-T056 | `test_task_cannot_reference_another_tenants_journal` | The composite foreign key rejects a cross-Tenant result Journal. |
+| TSK-T057 | `test_transition_sequence_is_generated_always_and_cannot_be_caller_supplied` | PostgreSQL rejects a caller-supplied audit ordering value; sequence ownership remains exclusively with the database. |
+
 ## 7. TSK-006 and TSK-008 — partially deferred
 
 **TSK-006** ("An AI-originated Proposal may only be written by an authorized AI Orchestration producer into a `NeedsReview`-or-earlier Task state. Only an authenticated human actor's explicit action may perform `NeedsReview`→`Approved`.") is only half testable today. The second half — every `NeedsReview`→`Approved` transition in this codebase requires an authenticated `ActorReference` drawn from the current HTTP session — is implicitly exercised by every test in §6.3 and §6.4 (none of them can reach `approve()` without a real authenticated session) but has no test isolating it as its own proof. The first half — that AI cannot write a Proposal — has no code path to test at all: no AI Orchestration producer exists yet (WTS-000 §5, WTS-004 deferred). Mirrors [ATS-010 §7](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md#7-aud-007--not-independently-testable)'s own treatment of `AUD-007` exactly: enforcement belongs to whichever future component actually produces AI Proposals, not to a test asserting the absence of code that does not exist.
@@ -141,8 +158,8 @@ Real Chromium browser (Playwright) against the live Docker Compose stack — the
 - Proposal editing, `NeedsInformation`/`Superseded` application flows — no code exists (Discovery Report's own explicitly deferred scope); no test is specified.
 - AI-produced Proposal intake — deferred to the future WTS-004; see §7 for TSK-006.
 - Correction-Task linking mechanism for TSK-008's second clause — see §7.
-- A dedicated migration/schema-constraint test suite for `tasks`/`proposals`/`task_transitions` (mirroring `AUD-T014`–`AUD-T017`'s pattern for `CHECK` constraints, composite foreign keys, and migration reversibility) — the schema constraints exist (see each table's own migration docblock) and are exercised incidentally by every integration test above, but are not yet independently, exhaustively proven the way the Accounting Core migrations are. Tracked as a real, open gap, not fixed in this version.
 
 ## Changelog
 
+- **1.1.0 (2026-09-09):** Adds `TSK-T048`–`TSK-T057`, closing the recorded Workspace migration-assurance gap with isolated real-PostgreSQL proof of forward/reverse execution, canonical enum constraints, tenant-safe composite foreign keys, and database-only audit sequence assignment.
 - **1.0.0 (2026-09-09):** Initial version, authored after WTS-001 v2.0.0's implementation (Phase D "Non-AI Workflow Shell" plus its subsequent reliability closure), per WTS-001 §8's own requirement and a second post-implementation QA pass's explicit request to close this governance gap.
