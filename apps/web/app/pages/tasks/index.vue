@@ -1,10 +1,9 @@
 <script setup lang="ts">
 /**
  * Work Queue (ADR-0009, WTS-001) — the Task-based flow's own entry
- * point, additive alongside (not replacing) Manual Entry mode's
- * `AppComposer`/`/` per the Discovery Report's migration strategy
- * (§13): this page becomes the default landing experience only once
- * it reaches parity, in a later phase.
+ * point and the authenticated default landing experience. Manual
+ * Entry remains available at `/manual-entry` as a controlled fallback;
+ * changing the landing route does not remove its direct-posting path.
  *
  * The composer below intentionally mirrors `AppComposer.vue`'s own
  * five-type shape exactly (same fields, same accounting-side-neutral

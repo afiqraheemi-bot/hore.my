@@ -198,7 +198,7 @@ onMounted(loadProfile)
       class="mt-3 text-sm text-ink-tertiary hover:text-ink hover:underline"
       @click="router.push('/')"
     >
-      Skip for now — go to Home
+      Skip for now — go to Work Queue
     </button>
   </div>
 </template>

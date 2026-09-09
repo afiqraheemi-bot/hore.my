@@ -17,6 +17,7 @@ test.describe('authentication', () => {
 
     await expect(page).toHaveURL(/business-profile/)
     await page.goto('/')
+    await expect(page).toHaveURL(/\/tasks$/)
     await expect(page.getByText(email)).toBeVisible()
   })
 
@@ -36,7 +37,7 @@ test.describe('authentication', () => {
     // regression despite its own name claiming otherwise.
     await login(page, email, password)
 
-    await expect(page).toHaveURL('/')
+    await expect(page).toHaveURL(/\/tasks$/)
     await expect(page.getByText(email)).toBeVisible()
   })
 

@@ -9,6 +9,18 @@ import { createAccount, registerNewUser } from './support/fixtures'
  * previously-flagged gap: see `tests/e2e/README.md`).
  */
 test.describe('Work Queue and Human Confirmation', () => {
+  test('the authenticated landing route opens Work Queue while Manual Entry remains available', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page).toHaveURL(/\/tasks$/)
+    await expect(page.getByRole('heading', { name: 'Work Queue' })).toBeVisible()
+
+    await page.getByRole('link', { name: 'Manual Entry' }).click()
+    await expect(page).toHaveURL(/\/manual-entry$/)
+    await expect(page.getByText('Recent activity')).toBeVisible()
+  })
+
   async function submitExpenseTask(page: import('@playwright/test').Page, description: string) {
     await page.goto('/tasks')
     await page.locator('input[inputmode="decimal"]').fill('88.50')
