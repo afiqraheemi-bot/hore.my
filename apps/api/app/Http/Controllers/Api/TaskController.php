@@ -10,6 +10,7 @@ use App\Domain\Accounting\Money\Exception\InvalidMoneyAmountException;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\EvidenceReference;
+use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Workspace\CommandType;
 use App\Domain\Workspace\Exception\InvalidTaskStateTransitionException;
@@ -82,7 +83,7 @@ final class TaskController extends Controller
                 $request->string('description')->toString(),
                 $evidenceReference === '' ? null : EvidenceReference::of($evidenceReference),
             );
-        } catch (InvalidMoneyAmountException|TaskSubmissionConflictException $e) {
+        } catch (InvalidMoneyAmountException|RejectedAccountReferenceException|TaskSubmissionConflictException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 

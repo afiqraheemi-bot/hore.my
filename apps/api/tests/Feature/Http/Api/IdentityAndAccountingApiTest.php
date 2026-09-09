@@ -795,6 +795,69 @@ final class IdentityAndAccountingApiTest extends TestCase
 
     // --- Workspace / Task (ADR-0009, WTS-001) --------------------------
 
+    public function test_a_task_cannot_submit_another_tenants_account_references(): void
+    {
+        $this->registerAndReturnCredentials('workspace-tenant-a@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Tenant A Expense', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Tenant A Cash', 'Asset');
+        $this->logout();
+
+        $this->registerAndReturnCredentials('workspace-tenant-b@example.my');
+
+        $response = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '50.00',
+            'transaction_date' => '2026-09-08',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+            'description' => 'Cross-Tenant Task attempt',
+        ], ['Idempotency-Key' => 'task-cross-tenant-account-0001']);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('tasks')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('proposals')->count());
+    }
+
+    public function test_a_task_rejects_malformed_money_before_creating_a_proposal(): void
+    {
+        $this->registerAndReturnCredentials('workspace-invalid-money@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Expense', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Cash', 'Asset');
+
+        $response = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '12.3',
+            'transaction_date' => '2026-09-08',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+            'description' => 'Malformed Money attempt',
+        ], ['Idempotency-Key' => 'task-invalid-money-0001']);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('tasks')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('proposals')->count());
+    }
+
+    public function test_a_task_rejects_an_unsupported_command_type(): void
+    {
+        $this->registerAndReturnCredentials('workspace-unsupported-command@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Expense', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Cash', 'Asset');
+
+        $response = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Invoice',
+            'amount' => '12.30',
+            'transaction_date' => '2026-09-08',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+            'description' => 'Unsupported Command attempt',
+        ], ['Idempotency-Key' => 'task-unsupported-command-0001']);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('tasks')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('proposals')->count());
+    }
+
     public function test_a_task_submitted_and_approved_over_http_posts_a_journal(): void
     {
         $this->registerAndReturnCredentials('workspace-owner@example.my');

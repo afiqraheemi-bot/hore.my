@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Workspace;
 
+use App\Domain\Workspace\CommandType;
+use App\Domain\Workspace\ProposalProducerType;
 use App\Domain\Workspace\TaskService;
 use PHPUnit\Framework\TestCase;
 
@@ -47,6 +49,27 @@ final class WorkspaceTranslationBoundaryTest extends TestCase
         ] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $source);
         }
+    }
+
+    public function test_translation_command_type_set_is_explicitly_closed(): void
+    {
+        $this->assertSame([
+            'Expense',
+            'Income',
+            'Transfer',
+            'CapitalContribution',
+            'OwnerDrawing',
+        ], array_map(static fn (CommandType $type): string => $type->name, CommandType::cases()));
+    }
+
+    public function test_current_translation_has_no_ai_or_source_fingerprint_authority(): void
+    {
+        $source = $this->taskServiceSource();
+
+        $this->assertStringContainsString('ProposalProducerType::Human', $source);
+        $this->assertStringNotContainsString('ProposalProducerType::AI,', $source);
+        $this->assertStringNotContainsString('SourceFingerprint', $source);
+        $this->assertContains(ProposalProducerType::AI, ProposalProducerType::cases());
     }
 
     private function taskServiceSource(): string

@@ -33,6 +33,7 @@ Planned, not-yet-created documents — WTS-003 (Task Audit Trail & Evidence Corr
 | Document | Status | Version | Proves | Summary |
 | --- | --- | --- | --- | --- |
 | [WT-001 — Task & Proposal State Model Test Specification](tests/WT-001-Task-Proposal-State-Model-Test-Specification.md) | Active | 1.0.0 | [WTS-001](WTS-001-Task-Proposal-State-Model.md) | 47 test IDs (`TSK-T001`–`TSK-T047`) tracing `TSK-001`–`TSK-012` across unit, real-PostgreSQL integration, HTTP, concurrency, fault-injection and real-browser E2E tests, with partially deferred coverage recorded explicitly for `TSK-006` and `TSK-008` |
+| [WT-002 — Proposal-to-Command Translation Test Specification](tests/WT-002-Proposal-to-Command-Translation-Test-Specification.md) | Active | 1.0.0 | [WTS-002](WTS-002-Proposal-to-Command-Translation.md) | 13 test IDs (`PTC-T001`–`PTC-T013`) covering all five financial mappings, field/Actor/evidence/idempotency propagation, validation parity, rollback, tenant and Period controls, closed command set, and AI/source authority boundaries |
 
 ## Creating a WTS document
 

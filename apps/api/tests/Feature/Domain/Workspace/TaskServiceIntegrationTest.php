@@ -9,6 +9,7 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\EvidenceReference;
+use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
 use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Shared\Tenancy\TenantId;
@@ -100,6 +101,8 @@ final class TaskServiceIntegrationTest extends TestCase
         $this->insertAccount($this->tenantA, 'account-sales-revenue', 'Revenue');
         $this->insertAccount($this->tenantA, 'account-savings', 'Asset');
         $this->insertAccount($this->tenantA, 'account-owner-capital', 'Equity');
+        $this->insertAccount($this->tenantA, 'account-inactive-cash', 'Asset', active: false);
+        $this->insertAccount($this->tenantA, 'account-non-posting-expense', 'Expense', postingEligible: false);
         $this->insertAccount($this->tenantB, 'account-office-supplies-b', 'Expense');
         $this->insertAccount($this->tenantB, 'account-cash-b', 'Asset');
     }
@@ -274,6 +277,106 @@ final class TaskServiceIntegrationTest extends TestCase
         $idempotency = DB::connection('pgsql')->table('posting_idempotency_keys')->where('journal_id', $journalId)->first();
         $this->assertNotNull($idempotency);
         $this->assertSame($proposal->id()->toString(), $idempotency->idempotency_key);
+    }
+
+    /**
+     * WTS-002 PTC-007/PTC-008: Workspace does not pre-approve or
+     * weaken the destination services' Account validation. Each safe
+     * business rejection becomes an explicit Failed Task and leaves
+     * the ledger untouched.
+     */
+    #[DataProvider('rejectedProposalCommands')]
+    public function test_destination_validation_rejections_fail_the_task_without_posting(
+        CommandType $type,
+        string $primary,
+        string $secondary,
+    ): void {
+        $task = $this->taskService->submit(
+            $this->tenantA,
+            ActorReference::of('user-producer'),
+            IdempotencyKey::of('idem-rejected-'.substr(hash('sha256', $type->name.$primary.$secondary), 0, 32)),
+            $type,
+            Money::fromDecimalString('12.34', $this->myr),
+            new \DateTimeImmutable('2026-09-08'),
+            AccountId::of($primary),
+            AccountId::of($secondary),
+            'Rejected command proof',
+            null,
+        );
+
+        $failed = $this->taskService->approve($this->tenantA, $task->id(), ActorReference::of('user-approver'));
+
+        $this->assertSame(TaskState::Failed, $failed->state());
+        $this->assertNotNull($failed->failureReason());
+        $this->assertNull($failed->resultJournalId());
+        $this->assertSame(0, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    /**
+     * @return array<string, array{CommandType, string, string}>
+     */
+    public static function rejectedProposalCommands(): array
+    {
+        return [
+            'wrong Expense Account type' => [CommandType::Expense, 'account-cash', 'account-savings'],
+            'inactive Account reference' => [CommandType::Expense, 'account-office-supplies', 'account-inactive-cash'],
+            'non-posting-eligible Account reference' => [CommandType::Expense, 'account-non-posting-expense', 'account-cash'],
+            'same-Account Transfer' => [CommandType::Transfer, 'account-cash', 'account-cash'],
+        ];
+    }
+
+    public function test_cross_tenant_account_is_rejected_atomically_during_proposal_submission(): void
+    {
+        $this->expectException(RejectedAccountReferenceException::class);
+
+        try {
+            $this->taskService->submit(
+                $this->tenantA,
+                ActorReference::of('user-producer'),
+                IdempotencyKey::of('idem-cross-tenant-proposal'),
+                CommandType::Expense,
+                Money::fromDecimalString('12.34', $this->myr),
+                new \DateTimeImmutable('2026-09-08'),
+                AccountId::of('account-office-supplies-b'),
+                AccountId::of('account-cash'),
+                'Cross-Tenant proposal rejection proof',
+                null,
+            );
+        } finally {
+            $this->assertSame(0, DB::connection('pgsql')->table('tasks')->count());
+            $this->assertSame(0, DB::connection('pgsql')->table('proposals')->count());
+        }
+    }
+
+    /**
+     * WTS-002 PTC-008: an infrastructure/persistence exception is not
+     * converted to a user-safe Failed state. The whole approval unit
+     * rolls back, leaving the Task reviewable and the ledger empty.
+     */
+    public function test_unexpected_persistence_failure_propagates_and_rolls_back_approval(): void
+    {
+        $task = $this->submitExpense();
+        $connection = DB::connection('pgsql');
+        $connection->statement('ALTER TABLE expenses ADD CONSTRAINT force_workspace_expense_failure CHECK (1 = 0)');
+
+        try {
+            try {
+                $this->taskService->approve($this->tenantA, $task->id(), ActorReference::of('user-approver'));
+                $this->fail('Expected the forced persistence failure to propagate.');
+            } catch (QueryException) {
+                // Expected: unexpected infrastructure failures are not
+                // disguised as ordinary user-correctable rejections.
+            }
+        } finally {
+            $connection->statement('ALTER TABLE expenses DROP CONSTRAINT force_workspace_expense_failure');
+        }
+
+        $reloaded = $this->taskRepository->getById($this->tenantA, $task->id());
+        $this->assertSame(TaskState::NeedsReview, $reloaded->state());
+        $this->assertNull($reloaded->failureReason());
+        $this->assertNull($reloaded->resultJournalId());
+        $this->assertSame(0, $connection->table('expenses')->count());
+        $this->assertSame(0, $connection->table('journals')->count());
     }
 
     public function test_approve_is_rejected_once_already_rejected(): void
@@ -901,8 +1004,13 @@ final class TaskServiceIntegrationTest extends TestCase
         );
     }
 
-    private function insertAccount(TenantId $tenantId, string $accountId, string $accountType): void
-    {
+    private function insertAccount(
+        TenantId $tenantId,
+        string $accountId,
+        string $accountType,
+        bool $active = true,
+        bool $postingEligible = true,
+    ): void {
         DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->insert([
             'tenant_id' => $tenantId->toString(),
             'account_id' => $accountId,
@@ -910,8 +1018,8 @@ final class TaskServiceIntegrationTest extends TestCase
             'account_name' => 'Test Account',
             'account_type' => $accountType,
             'account_origin' => 'UserCreated',
-            'active' => true,
-            'posting_eligible' => true,
+            'active' => $active,
+            'posting_eligible' => $postingEligible,
             'parent_id' => null,
         ]);
     }

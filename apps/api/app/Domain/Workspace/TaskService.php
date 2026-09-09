@@ -185,6 +185,14 @@ final class TaskService
                 return $this->applyTransition($task, static fn (Task $t): Task => $t->moveToReview(), $actor, null, $evidenceReference);
             });
         } catch (QueryException $e) {
+            if ($this->isProposalAccountReferenceViolation($e)) {
+                $accountId = str_contains($e->getMessage(), 'proposals_tenant_id_primary_account_id_foreign')
+                    ? $primaryAccountId
+                    : $secondaryAccountId;
+
+                throw RejectedAccountReferenceException::forUnresolvedAccount($accountId);
+            }
+
             if (! $this->isTaskPrimaryKeyViolation($e)) {
                 throw $e;
             }
@@ -229,6 +237,13 @@ final class TaskService
     private function isTaskPrimaryKeyViolation(QueryException $e): bool
     {
         return $e->getCode() === '23505' && str_contains($e->getMessage(), 'tasks_pkey');
+    }
+
+    private function isProposalAccountReferenceViolation(QueryException $e): bool
+    {
+        return $e->getCode() === '23503'
+            && (str_contains($e->getMessage(), 'proposals_tenant_id_primary_account_id_foreign')
+                || str_contains($e->getMessage(), 'proposals_tenant_id_secondary_account_id_foreign'));
     }
 
     /**
