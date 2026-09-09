@@ -94,6 +94,12 @@ final class AgingReportQueryIntegrationTest extends TestCase
     {
         parent::setUp();
 
+        // Allocation effective-time behavior is part of every Aging
+        // assertion below. Freeze the application clock at the suite's
+        // declared as-of date so these financial-report tests do not
+        // change meaning when the wall calendar advances.
+        $this->travelTo(new \DateTimeImmutable('2026-09-08 12:00:00 UTC'));
+
         $this->ensureMigrated();
 
         if (self::$skipReason !== null) {
