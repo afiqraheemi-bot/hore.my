@@ -157,6 +157,7 @@ final class TaskServiceIntegrationTest extends TestCase
             ->first();
         $this->assertNotNull($journal);
         $this->assertSame('Posted', $journal->state);
+        $this->assertSame(0, DB::connection('pgsql')->table('journal_evidence_links')->count());
     }
 
     /**
@@ -267,12 +268,28 @@ final class TaskServiceIntegrationTest extends TestCase
 
         $audit = DB::connection('pgsql')->table('audit_events')->where('journal_id', $journalId)->first();
         $this->assertNotNull($audit);
+        $this->assertSame($this->tenantA->toString(), $audit->tenant_id);
+        $this->assertSame($journalId, $audit->journal_id);
+        $this->assertSame('JournalPosted', $audit->action);
         $this->assertSame('user-human-approver', $audit->actor);
         $this->assertNotSame('user-proposal-producer', $audit->actor);
 
         $evidenceLink = DB::connection('pgsql')->table('journal_evidence_links')->where('journal_id', $journalId)->first();
         $this->assertNotNull($evidenceLink);
+        $this->assertSame($this->tenantA->toString(), $evidenceLink->tenant_id);
         $this->assertSame('evidence-workspace-0001', $evidenceLink->evidence_reference);
+
+        $proposalTransitions = DB::connection('pgsql')->table('task_transitions')
+            ->where('tenant_id', $this->tenantA->toString())
+            ->where('task_id', $task->id()->toString())
+            ->whereNotNull('evidence_reference')
+            ->pluck('evidence_reference')
+            ->all();
+        $this->assertSame([
+            'evidence-workspace-0001',
+            'evidence-workspace-0001',
+            'evidence-workspace-0001',
+        ], $proposalTransitions);
 
         $idempotency = DB::connection('pgsql')->table('posting_idempotency_keys')->where('journal_id', $journalId)->first();
         $this->assertNotNull($idempotency);
@@ -393,6 +410,14 @@ final class TaskServiceIntegrationTest extends TestCase
         $task = $this->submitExpense();
         $this->taskService->approve($this->tenantA, $task->id(), ActorReference::of('user-approver'));
 
+        // TAC-001: remove timestamp ordering as a possible accidental
+        // aid. Every lifecycle row now has the same timestamp, so only
+        // the database-assigned transition sequence can reconstruct it.
+        DB::connection('pgsql')->table('task_transitions')
+            ->where('tenant_id', $this->tenantA->toString())
+            ->where('task_id', $task->id()->toString())
+            ->update(['created_at' => '2026-09-08 12:00:00']);
+
         $transitions = $this->taskRepository->findTransitionsFor($this->tenantA, $task->id());
         $sequence = array_map(static fn ($t): string => ($t->fromState()?->name ?? 'null').'->'.$t->toState()->name, $transitions);
 
@@ -405,9 +430,45 @@ final class TaskServiceIntegrationTest extends TestCase
             'Executing->Completed',
         ], $sequence);
 
+        $persistedSequences = DB::connection('pgsql')->table('task_transitions')
+            ->where('tenant_id', $this->tenantA->toString())
+            ->where('task_id', $task->id()->toString())
+            ->orderBy('transition_sequence')
+            ->pluck('transition_sequence')
+            ->map(static fn ($value): int => (int) $value)
+            ->all();
+        $this->assertCount(6, array_unique($persistedSequences));
+        foreach (array_slice($persistedSequences, 1) as $index => $value) {
+            $this->assertGreaterThan($persistedSequences[$index], $value);
+        }
+
         foreach ($transitions as $transition) {
             $this->assertNotSame('', $transition->actor()->toString());
         }
+    }
+
+    public function test_transition_sequence_is_non_nullable_unique_and_database_assigned(): void
+    {
+        $this->submitExpense();
+
+        $column = DB::connection('pgsql')->table('information_schema.columns')
+            ->where('table_schema', 'public')
+            ->where('table_name', 'task_transitions')
+            ->where('column_name', 'transition_sequence')
+            ->first(['is_nullable', 'is_identity', 'identity_generation']);
+
+        $this->assertNotNull($column);
+        $this->assertSame('NO', $column->is_nullable);
+        $this->assertSame('YES', $column->is_identity);
+        $this->assertSame('ALWAYS', $column->identity_generation);
+
+        $index = DB::connection('pgsql')->table('pg_indexes')
+            ->where('schemaname', 'public')
+            ->where('tablename', 'task_transitions')
+            ->where('indexname', 'task_transitions_transition_sequence_unique')
+            ->value('indexdef');
+        $this->assertIsString($index);
+        $this->assertStringContainsString('UNIQUE INDEX', $index);
     }
 
     public function test_reject_requires_a_task_in_needs_review(): void
@@ -1067,6 +1128,7 @@ final class TaskServiceIntegrationTest extends TestCase
             'database/migrations/2026_09_08_010000_create_tasks_table.php',
             'database/migrations/2026_09_08_020000_create_proposals_table.php',
             'database/migrations/2026_09_08_030000_create_task_transitions_table.php',
+            'database/migrations/2026_09_08_035000_add_transition_sequence_to_task_transitions_table.php',
         ] as $path) {
             Artisan::call('migrate', ['--database' => 'pgsql', '--path' => $path, '--realpath' => false, '--force' => true]);
         }

@@ -72,6 +72,25 @@ final class WorkspaceTranslationBoundaryTest extends TestCase
         $this->assertContains(ProposalProducerType::AI, ProposalProducerType::cases());
     }
 
+    public function test_accounting_core_has_no_dependency_on_workspace_audit_records(): void
+    {
+        $root = dirname((new \ReflectionClass(TaskService::class))->getFileName(), 2);
+
+        foreach (['Accounting'] as $module) {
+            $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root.'/'.$module));
+            foreach ($files as $file) {
+                if (! $file->isFile() || $file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $source = file_get_contents($file->getPathname());
+                $this->assertIsString($source);
+                $this->assertStringNotContainsString('App\\Domain\\Workspace', $source, $file->getPathname());
+                $this->assertStringNotContainsString('task_transitions', $source, $file->getPathname());
+            }
+        }
+    }
+
     private function taskServiceSource(): string
     {
         $reflection = new \ReflectionClass(TaskService::class);

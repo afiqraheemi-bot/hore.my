@@ -192,7 +192,7 @@ final class TaskRepository
         $rows = $this->connection->table(self::TRANSITION_TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('task_id', $taskId->toString())
-            ->orderBy('created_at')
+            ->orderBy('transition_sequence')
             ->get()
             ->all();
 
