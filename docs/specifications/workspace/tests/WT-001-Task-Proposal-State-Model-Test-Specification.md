@@ -1,7 +1,7 @@
 # WT-001: Task & Proposal State Model Test Specification
 
 - Status: Active
-- Version: 1.1.0
+- Version: 1.2.0
 - Effective date: 2026-09-09
 - Owner: Workspace and Task (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative Workspace & Task test specification proving compliance with [WTS-001: Task & Proposal State Model](../WTS-001-Task-Proposal-State-Model.md) — the counterpart WTS-001 §8 itself calls for, mirroring the `ATS-NNN` pattern already established for the AETS series. Every test defined here is identified by a stable ID (`TSK-T001`–`TSK-T057`) and traced to the `TSK-NNN` invariant(s) it proves (§5).
+This document is the normative Workspace & Task test specification proving compliance with [WTS-001: Task & Proposal State Model](../WTS-001-Task-Proposal-State-Model.md) — the counterpart WTS-001 §8 itself calls for, mirroring the `ATS-NNN` pattern already established for the AETS series. Every test defined here is identified by a stable ID (`TSK-T001`–`TSK-T058`) and traced to the `TSK-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md), this document was authored *after* WTS-001's implementation, not before it — every test ID below traces to a concrete, already-passing test (Unit, Integration, HTTP, or E2E), not a future target. The traceability matrix in §5 can be verified directly against the current test suite.
 
@@ -45,7 +45,7 @@ This document is subordinate to [WTS-001](../WTS-001-Task-Proposal-State-Model.m
 | TSK-003 | TSK-T018, TSK-T020, TSK-T039, TSK-T050, TSK-T054–TSK-T056 |
 | TSK-004 | TSK-T026, TSK-T033, TSK-T036 |
 | TSK-005 | TSK-T042 |
-| TSK-006 | *(Partially deferred — see §7.)* |
+| TSK-006 | TSK-T058 *(AI-producer half deferred — see §7.)* |
 | TSK-007 | TSK-T025, TSK-T041, TSK-T046, TSK-T047, TSK-T054–TSK-T056 |
 | TSK-008 | TSK-T013 *(partially proven — see §7)* |
 | TSK-009 | TSK-T008, TSK-T017 |
@@ -117,6 +117,7 @@ Real HTTP requests (Sanctum SPA session, real CSRF handshake) against a real Pos
 | TSK-T040 | `test_a_task_can_be_rejected_with_a_reason` | `POST /tasks/{id}/reject` with a reason moves the Task to `Rejected`. |
 | TSK-T041 | `test_a_tenants_tasks_are_never_visible_to_another_tenant` | A second Tenant's session receives `404` on both `GET /tasks/{id}` and `POST /tasks/{id}/approve` for the first Tenant's Task; the underlying row count is unaffected. |
 | TSK-T042 | `test_a_task_approved_after_its_period_closed_fails_without_posting` | A Task submitted while its financial date is open, then approved *after* the Period closes through that date, transitions to `Failed` with a reason — never posts (`TSK-005`). |
+| TSK-T058 | `test_every_protected_route_rejects_an_unauthenticated_request` | Every non-public `/api/v1` route is structurally required to carry `auth:sanctum`; every tenant-owned route must also carry `tenant.resolved`; an unauthenticated Task approval request receives `401` before Task lookup or transition. |
 
 ### 6.4 End-to-end — `apps/web/tests/e2e/*.spec.ts`
 
@@ -149,7 +150,7 @@ Each case executes the real production migrations inside a dedicated PostgreSQL 
 
 ## 7. TSK-006 and TSK-008 — partially deferred
 
-**TSK-006** ("An AI-originated Proposal may only be written by an authorized AI Orchestration producer into a `NeedsReview`-or-earlier Task state. Only an authenticated human actor's explicit action may perform `NeedsReview`→`Approved`.") is only half testable today. The second half — every `NeedsReview`→`Approved` transition in this codebase requires an authenticated `ActorReference` drawn from the current HTTP session — is implicitly exercised by every test in §6.3 and §6.4 (none of them can reach `approve()` without a real authenticated session) but has no test isolating it as its own proof. The first half — that AI cannot write a Proposal — has no code path to test at all: no AI Orchestration producer exists yet (WTS-000 §5, WTS-004 deferred). Mirrors [ATS-010 §7](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md#7-aud-007--not-independently-testable)'s own treatment of `AUD-007` exactly: enforcement belongs to whichever future component actually produces AI Proposals, not to a test asserting the absence of code that does not exist.
+**TSK-006** ("An AI-originated Proposal may only be written by an authorized AI Orchestration producer into a `NeedsReview`-or-earlier Task state. Only an authenticated human actor's explicit action may perform `NeedsReview`→`Approved`.") is only half testable today. The second half is now isolated by `TSK-T058`: every non-public API route is structurally protected by Sanctum, every tenant-owned route also requires Tenant resolution, and an unauthenticated approval request receives `401` before Task lookup or transition. The first half — that AI cannot write a Proposal — has no code path to test at all: no AI Orchestration producer exists yet (WTS-000 §5, WTS-004 deferred). Mirrors [ATS-010 §7](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md#7-aud-007--not-independently-testable)'s own treatment of `AUD-007` exactly: enforcement belongs to whichever future component actually produces AI Proposals, not to a test asserting the absence of code that does not exist.
 
 **TSK-008**'s first clause ("A `Completed` Task is never re-opened") is proven at the state-machine level (`TSK-T013`: `complete()` itself is unreachable from `Completed`) but not independently proven that *no other code path* could mutate a Completed Task's row — `TaskRepository`'s own public surface (`record`, `updateState`, `transitionIfInState`, `recordTransition`) offers no state-specific guard of its own, relying entirely on `TaskService`'s own transition methods, which are proven. The second clause ("a correction ... creates a new Task referencing the original") is unbuilt: no code path exists to create a correction Task, so no test can prove it without inventing behavior WTS-001 does not yet define at the implementation level. Both gaps are explicitly the same governance discipline this repository's own AETS series requires (flag ambiguity or missing implementation, never invent a test for behavior that does not exist) — a future WTS document defining the correction-Task mechanism must extend this specification with real test IDs at that time.
 
@@ -161,5 +162,6 @@ Each case executes the real production migrations inside a dedicated PostgreSQL 
 
 ## Changelog
 
+- **1.2.0 (2026-09-13):** Adds `TSK-T058`, converting the authenticated-human half of `TSK-006` from implicit coverage into an explicit route-structure and unauthenticated-approval test. AI-producer authorization remains deferred until that producer exists.
 - **1.1.0 (2026-09-09):** Adds `TSK-T048`–`TSK-T057`, closing the recorded Workspace migration-assurance gap with isolated real-PostgreSQL proof of forward/reverse execution, canonical enum constraints, tenant-safe composite foreign keys, and database-only audit sequence assignment.
 - **1.0.0 (2026-09-09):** Initial version, authored after WTS-001 v2.0.0's implementation (Phase D "Non-AI Workflow Shell" plus its subsequent reliability closure), per WTS-001 §8's own requirement and a second post-implementation QA pass's explicit request to close this governance gap.

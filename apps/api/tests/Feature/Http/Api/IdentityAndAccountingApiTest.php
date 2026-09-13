@@ -9,6 +9,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -228,11 +229,28 @@ final class IdentityAndAccountingApiTest extends TestCase
 
     public function test_every_protected_route_rejects_an_unauthenticated_request(): void
     {
+        $publicRoutes = ['api/v1/register', 'api/v1/login'];
+        $tenantlessAuthenticatedRoutes = ['api/v1/logout', 'api/v1/me'];
+
+        foreach (Route::getRoutes()->getRoutes() as $route) {
+            if (! str_starts_with($route->uri(), 'api/v1/') || in_array($route->uri(), $publicRoutes, true)) {
+                continue;
+            }
+
+            $middleware = $route->gatherMiddleware();
+            $this->assertContains('auth:sanctum', $middleware, $route->uri().' must require authentication.');
+
+            if (! in_array($route->uri(), $tenantlessAuthenticatedRoutes, true)) {
+                $this->assertContains('tenant.resolved', $middleware, $route->uri().' must resolve its Tenant.');
+            }
+        }
+
         $this->getJson('/api/v1/me')->assertStatus(401);
         $this->getJson('/api/v1/accounts')->assertStatus(401);
         $this->postJson('/api/v1/accounts', [])->assertStatus(401);
         $this->postJson('/api/v1/expenses', [])->assertStatus(401);
         $this->postJson('/api/v1/incomes', [])->assertStatus(401);
+        $this->postJson('/api/v1/tasks/task-without-session/approve')->assertStatus(401);
         $this->getJson('/api/v1/reports/trial-balance?as_of=2026-08-31')->assertStatus(401);
     }
 
