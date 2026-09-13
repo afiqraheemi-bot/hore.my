@@ -1,7 +1,7 @@
 # AETS-000: Accounting Engine Technical Specification — Foundation
 
 - Status: Active
-- Version: 1.2.0
+- Version: 1.2.1
 - Effective date: 2026-09-03
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -162,7 +162,7 @@ The AETS series itself is not independently versioned; its state at any time is 
 
 ## 10. Planned document structure
 
-**AETS-001 (Accounting Terminology), AETS-002 (Accounting Invariants), and AETS-003 (Money Specification) have already been created** — see the index in [`README.md`](README.md). This table is the single authoritative roadmap for the AETS series; no other document states a competing numbering. The numbers below are **planned, not yet created**. They describe the currently anticipated shape of the rest of the series so later work has a stable home; the list may grow, shrink, or reorder as design work proceeds, and no number below is reserved until a document actually exists under it (§8.5). None of these topics are defined by this document.
+**AETS-001 (Accounting Terminology), AETS-002 (Accounting Invariants), AETS-003 (Money Specification), and the later Active documents listed in [`README.md`](README.md) have already been created. AETS-012 exists as a Draft only.** This table is the single authoritative roadmap for the AETS series; no other document states a competing numbering. Rows without an existing document remain planned and unreserved; a Draft row is not effective until activated under §8. The list may grow, shrink, or reorder as design work proceeds. This roadmap does not itself define any listed topic.
 
 | Planned | Working title | Anticipated concern |
 | --- | --- | --- |
@@ -174,7 +174,7 @@ The AETS series itself is not independently versioned; its state at any time is 
 | AETS-009 | Financial Reporting | Report derivation, rebuild-from-ledger guarantees |
 | AETS-010 | Audit Trail | Audit event shape, evidence retention and linkage |
 | AETS-011 | AI Accounting Proposal Contract | What Accounting Core requires from, and how it validates, an AI-produced proposal |
-| AETS-012 | Proof of Accuracy | Golden dataset scope and acceptance criteria gating full AI workflows |
+| AETS-012 (Draft) | Proof of Accuracy | Proposed golden dataset scope and acceptance criteria gating full AI workflows; not effective or certified pending review |
 | AETS-013 | MyInvois Integration | Idempotent submission, status reconciliation, sandbox/production isolation |
 | AETS-014 | Period Management | Period lifecycle, close/reopen controls |
 
@@ -182,5 +182,6 @@ Each, when created, must include a `Related` field citing the ADR(s) and section
 
 ## Changelog
 
+- **1.2.1 (2026-09-13):** Records that AETS-012 now exists as a Draft and clarifies that roadmap rows can represent existing Active/Draft documents as well as unreserved plans. No accounting or governance rule changed.
 - **1.2.0 (2026-09-03):** Replaced the obsolete §10 roadmap (which listed `AETS-003` as Chart of Accounts and `AETS-005` as Money Representation Design) with the corrected, authoritative roadmap reflecting that `AETS-003` is the Money Specification. No governance rule in this document changed; this is a roadmap/numbering correction only.
 - **1.1.0 (2026-09-03):** Updated §3's illustrative example and §10's AETS-005 description to reflect [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved resolution of the canonical Money representation (integer minor units, PostgreSQL `BIGINT`). No governance rule in this document changed; only a reference to a now-resolved external fact was updated.
