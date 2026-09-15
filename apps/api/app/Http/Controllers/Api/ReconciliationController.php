@@ -122,7 +122,7 @@ final class ReconciliationController extends Controller
     {
         try {
             $reconciliation = $action();
-        } catch (InvalidReconciliationStateTransitionException $e) {
+        } catch (InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (ReconciliationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);

@@ -99,6 +99,7 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         );
 
         $this->reconciliationService = new ReconciliationService(
+            $connection,
             new BankTransactionRepository($connection),
             new ReconciliationRepository($connection),
         );
@@ -198,6 +199,25 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
     }
 
+    public function test_completion_rechecks_the_live_difference_instead_of_trusting_stale_balanced_state(): void
+    {
+        $reconciliation = $this->open('1000.00', '1000.00');
+        $this->reconciliationService->startReview($this->tenant, $reconciliation->id());
+        $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
+
+        $this->importStatement("2026-08-15,Late statement row,10.00,IN,,LATE-001\n");
+
+        try {
+            $this->reconciliationService->complete($this->tenant, $reconciliation->id());
+            $this->fail('Expected completion with a nonzero live difference to be rejected.');
+        } catch (ReconciliationNotBalancedException) {
+            $persisted = (new ReconciliationRepository(DB::connection('pgsql')))->getById($this->tenant, $reconciliation->id());
+
+            $this->assertSame(ReconciliationState::Balanced, $persisted->state());
+            $this->assertNull($persisted->completedAt());
+        }
+    }
+
     public function test_reopen_requires_a_non_empty_reason(): void
     {
         $reconciliation = $this->completedReconciliation();
@@ -233,6 +253,37 @@ final class ReconciliationServiceIntegrationTest extends TestCase
 
         $reopenings = (new ReconciliationRepository(DB::connection('pgsql')))->findReopeningsFor($this->tenant, $reconciliation->id());
         $this->assertCount(2, $reopenings);
+    }
+
+    public function test_a_forced_reopening_history_failure_rolls_back_the_state_change(): void
+    {
+        $reconciliation = $this->completedReconciliation();
+        $connection = DB::connection('pgsql');
+        $constraint = 'reconciliation_reopenings_forced_failure';
+
+        $connection->statement(sprintf(
+            'alter table %s add constraint %s check (reason <> %s) not valid',
+            self::REOPENING_TABLE,
+            $constraint,
+            $connection->getPdo()->quote('force-failure'),
+        ));
+
+        try {
+            try {
+                $this->reconciliationService->reopen($this->tenant, $reconciliation->id(), 'force-failure', ActorReference::of('actor-0001'));
+                $this->fail('Expected the forced reopening-history persistence failure to propagate.');
+            } catch (\Throwable $exception) {
+                $this->assertStringContainsString($constraint, $exception->getMessage());
+            }
+
+            $persisted = (new ReconciliationRepository($connection))->getById($this->tenant, $reconciliation->id());
+
+            $this->assertSame(ReconciliationState::Completed, $persisted->state());
+            $this->assertNotNull($persisted->completedAt());
+            $this->assertSame(0, $connection->table(self::REOPENING_TABLE)->count());
+        } finally {
+            $connection->statement(sprintf('alter table %s drop constraint if exists %s', self::REOPENING_TABLE, $constraint));
+        }
     }
 
     private function completedReconciliation(): Reconciliation

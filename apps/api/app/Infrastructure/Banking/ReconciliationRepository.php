@@ -95,6 +95,31 @@ final class ReconciliationRepository
     }
 
     /**
+     * Reloads and locks one tenant-scoped Reconciliation for the
+     * remainder of the caller's transaction. Lifecycle services use
+     * this boundary so concurrent transitions cannot both act on the
+     * same stale state.
+     *
+     * @throws ReconciliationNotFoundException if no such Reconciliation
+     *                                         exists for this Tenant.
+     */
+    public function getByIdForUpdate(TenantId $tenantId, ReconciliationId $id): Reconciliation
+    {
+        /** @var object{id: string, tenant_id: string, bank_account_id: string, period_start: string, period_end: string, opening_balance: int|string, closing_balance: int|string, currency: string, state: string, created_at: string, completed_at: string|null}|null $row */
+        $row = $this->connection->table(self::TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->where('id', $id->toString())
+            ->lockForUpdate()
+            ->first();
+
+        if ($row === null) {
+            throw ReconciliationNotFoundException::forId($id);
+        }
+
+        return $this->fromPersisted($row);
+    }
+
+    /**
      * @return list<Reconciliation>
      */
     public function findByBankAccount(TenantId $tenantId, BankAccountId $bankAccountId): array

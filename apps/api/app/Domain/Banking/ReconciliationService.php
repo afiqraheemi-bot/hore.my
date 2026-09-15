@@ -14,6 +14,7 @@ use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Banking\BankTransactionRepository;
 use App\Infrastructure\Banking\ReconciliationRepository;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 
 /**
@@ -26,6 +27,7 @@ use Illuminate\Support\Str;
 final class ReconciliationService
 {
     public function __construct(
+        private readonly ConnectionInterface $connection,
         private readonly BankTransactionRepository $bankTransactionRepository,
         private readonly ReconciliationRepository $reconciliationRepository,
     ) {}
@@ -97,10 +99,12 @@ final class ReconciliationService
 
     public function startReview(TenantId $tenantId, ReconciliationId $id): Reconciliation
     {
-        $reconciliation = $this->reconciliationRepository->getById($tenantId, $id)->startReview();
-        $this->reconciliationRepository->updateState($reconciliation);
+        return $this->connection->transaction(function () use ($tenantId, $id): Reconciliation {
+            $reconciliation = $this->reconciliationRepository->getByIdForUpdate($tenantId, $id)->startReview();
+            $this->reconciliationRepository->updateState($reconciliation);
 
-        return $reconciliation;
+            return $reconciliation;
+        });
     }
 
     /**
@@ -109,25 +113,46 @@ final class ReconciliationService
      */
     public function markBalanced(TenantId $tenantId, ReconciliationId $id): Reconciliation
     {
-        $current = $this->reconciliationRepository->getById($tenantId, $id);
-        $difference = $this->computeDifference($tenantId, $current);
+        return $this->connection->transaction(function () use ($tenantId, $id): Reconciliation {
+            $current = $this->reconciliationRepository->getByIdForUpdate($tenantId, $id);
+            $difference = $this->computeDifference($tenantId, $current);
 
-        if (! $difference->isZero()) {
-            throw ReconciliationNotBalancedException::forDifference($id, $difference);
-        }
+            if (! $difference->isZero()) {
+                throw ReconciliationNotBalancedException::forDifference($id, $difference);
+            }
 
-        $reconciliation = $current->markBalanced();
-        $this->reconciliationRepository->updateState($reconciliation);
+            $reconciliation = $current->markBalanced();
+            $this->reconciliationRepository->updateState($reconciliation);
 
-        return $reconciliation;
+            return $reconciliation;
+        });
     }
 
+    /**
+     * Recomputes the live difference at the final transition boundary.
+     * A Reconciliation that was Balanced earlier may no longer be
+     * balanced if additional statement rows arrived before completion;
+     * the authoritative Completed invariant is therefore checked here
+     * again instead of trusting stale state.
+     *
+     * @throws ReconciliationNotBalancedException if the current live
+     *                                            difference is not zero.
+     */
     public function complete(TenantId $tenantId, ReconciliationId $id): Reconciliation
     {
-        $reconciliation = $this->reconciliationRepository->getById($tenantId, $id)->complete(new \DateTimeImmutable);
-        $this->reconciliationRepository->updateState($reconciliation);
+        return $this->connection->transaction(function () use ($tenantId, $id): Reconciliation {
+            $current = $this->reconciliationRepository->getByIdForUpdate($tenantId, $id);
+            $difference = $this->computeDifference($tenantId, $current);
 
-        return $reconciliation;
+            if (! $difference->isZero()) {
+                throw ReconciliationNotBalancedException::forDifference($id, $difference);
+            }
+
+            $reconciliation = $current->complete(new \DateTimeImmutable);
+            $this->reconciliationRepository->updateState($reconciliation);
+
+            return $reconciliation;
+        });
     }
 
     /**
@@ -140,18 +165,20 @@ final class ReconciliationService
             throw ReconciliationReopenRequiresReasonException::forEmptyReason();
         }
 
-        $reconciliation = $this->reconciliationRepository->getById($tenantId, $id)->reopen();
+        return $this->connection->transaction(function () use ($tenantId, $id, $reason, $actor): Reconciliation {
+            $reconciliation = $this->reconciliationRepository->getByIdForUpdate($tenantId, $id)->reopen();
 
-        $this->reconciliationRepository->updateState($reconciliation);
-        $this->reconciliationRepository->recordReopening(new ReconciliationReopening(
-            (string) Str::uuid(),
-            $tenantId,
-            $id,
-            $reason,
-            $actor,
-            new \DateTimeImmutable,
-        ));
+            $this->reconciliationRepository->updateState($reconciliation);
+            $this->reconciliationRepository->recordReopening(new ReconciliationReopening(
+                (string) Str::uuid(),
+                $tenantId,
+                $id,
+                $reason,
+                $actor,
+                new \DateTimeImmutable,
+            ));
 
-        return $reconciliation;
+            return $reconciliation;
+        });
     }
 }
