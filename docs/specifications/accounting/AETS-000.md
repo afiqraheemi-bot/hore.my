@@ -1,7 +1,7 @@
 # AETS-000: Accounting Engine Technical Specification — Foundation
 
 - Status: Active
-- Version: 1.2.1
+- Version: 1.2.2
 - Effective date: 2026-09-03
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -162,7 +162,7 @@ The AETS series itself is not independently versioned; its state at any time is 
 
 ## 10. Planned document structure
 
-**AETS-001 (Accounting Terminology), AETS-002 (Accounting Invariants), AETS-003 (Money Specification), and the later Active documents listed in [`README.md`](README.md) have already been created. AETS-012 exists as a Draft only.** This table is the single authoritative roadmap for the AETS series; no other document states a competing numbering. Rows without an existing document remain planned and unreserved; a Draft row is not effective until activated under §8. The list may grow, shrink, or reorder as design work proceeds. This roadmap does not itself define any listed topic.
+**AETS-001 (Accounting Terminology), AETS-002 (Accounting Invariants), AETS-003 (Money Specification), and the later Active documents listed in [`README.md`](README.md) have already been created. AETS-008 and AETS-012 exist as Drafts only.** This table is the single authoritative roadmap for the AETS series; no other document states a competing numbering. Rows without an existing document remain planned and unreserved; a Draft row is not effective until activated under §8. The list may grow, shrink, or reorder as design work proceeds. This roadmap does not itself define any listed topic.
 
 | Planned | Working title | Anticipated concern |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ The AETS series itself is not independently versioned; its state at any time is 
 | AETS-005 | Chart of Accounts & Account Taxonomy | Account types, structure, and ownership rules |
 | AETS-006 | Posting Rules | Posting validation and correction (reversal/replacement) mechanics, and period-close posting controls |
 | AETS-007 | Accounting Commands | The concrete set of Accounting Commands Accounting Core accepts, including invoicing and payment allocation |
-| AETS-008 | Bank Reconciliation | Import de-duplication, matching, RM0.00 completion rule |
+| AETS-008 (Draft) | Bank Reconciliation | Import de-duplication, matching, RM0.00 completion rule; unresolved workflow decisions explicitly block activation |
 | AETS-009 | Financial Reporting | Report derivation, rebuild-from-ledger guarantees |
 | AETS-010 | Audit Trail | Audit event shape, evidence retention and linkage |
 | AETS-011 | AI Accounting Proposal Contract | What Accounting Core requires from, and how it validates, an AI-produced proposal |
@@ -182,6 +182,7 @@ Each, when created, must include a `Related` field citing the ADR(s) and section
 
 ## Changelog
 
+- **1.2.2 (2026-09-15):** Records that AETS-008 now exists as a Draft with unresolved activation blockers. No accounting requirement or governance rule changed.
 - **1.2.1 (2026-09-13):** Records that AETS-012 now exists as a Draft and clarifies that roadmap rows can represent existing Active/Draft documents as well as unreserved plans. No accounting or governance rule changed.
 - **1.2.0 (2026-09-03):** Replaced the obsolete §10 roadmap (which listed `AETS-003` as Chart of Accounts and `AETS-005` as Money Representation Design) with the corrected, authoritative roadmap reflecting that `AETS-003` is the Money Specification. No governance rule in this document changed; this is a roadmap/numbering correction only.
 - **1.1.0 (2026-09-03):** Updated §3's illustrative example and §10's AETS-005 description to reflect [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved resolution of the canonical Money representation (integer minor units, PostgreSQL `BIGINT`). No governance rule in this document changed; only a reference to a now-resolved external fact was updated.
