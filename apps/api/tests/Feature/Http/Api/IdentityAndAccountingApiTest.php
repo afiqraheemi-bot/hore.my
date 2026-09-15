@@ -1548,6 +1548,55 @@ final class IdentityAndAccountingApiTest extends TestCase
         $response->assertStatus(422);
     }
 
+    public function test_banking_endpoints_do_not_expose_or_accept_another_tenants_records(): void
+    {
+        $this->registerAndReturnCredentials('banking-isolation-a@example.my');
+        $linkedAccountId = $this->createAccount('1010', 'Tenant A Bank', 'Asset');
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $linkedAccountId,
+            'bank_name' => 'Tenant A Bank',
+        ])->json('id');
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Deposit,500.00,IN,,TENANT-A-001\n";
+        $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ])->assertStatus(201);
+
+        $bankTransactionId = DB::connection('pgsql')->table('bank_transactions')->value('id');
+        $reconciliationId = $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '1500.00',
+        ])->json('id');
+
+        $this->logout();
+        $this->registerAndReturnCredentials('banking-isolation-b@example.my');
+
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/transactions")->assertStatus(404);
+        $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ])->assertStatus(404);
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->assertStatus(404);
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations")->assertStatus(404);
+        $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '1500.00',
+        ])->assertStatus(404);
+        $this->getJson("/api/v1/reconciliations/{$reconciliationId}")->assertStatus(404);
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/start-review")->assertStatus(404);
+        $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match", [
+            'journal_id' => 'journal-not-visible',
+        ])->assertStatus(422);
+
+        $this->assertSame(1, DB::connection('pgsql')->table('bank_transactions')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('reconciliations')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('matches')->count());
+    }
+
     // --- Business Profile & Onboarding (M16, SRS IAM-003/IAM-004) --------
 
     public function test_business_profile_is_absent_before_it_is_ever_saved(): void

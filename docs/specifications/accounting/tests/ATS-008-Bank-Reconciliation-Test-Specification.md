@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.1.1
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -67,6 +67,7 @@ All integration and schema tests require real PostgreSQL and must run with skip/
 | BNK-T031 | Existing | Reconciliation rejects another Tenant's Bank Account. | `reconciliation_cannot_reference_another_tenants_bank_account` |
 | BNK-T032 | Existing | Reopening rejects another Tenant's Reconciliation. | `reopening_cannot_reference_another_tenants_reconciliation` |
 | BNK-T033 | Existing | Tenant-hardening migration reverses and reapplies. | `migration_reverses_and_reapplies_cleanly` |
+| BNK-T034 | Existing | Banking HTTP boundaries fail closed across Tenants without changing records. | `banking_endpoints_do_not_expose_or_accept_another_tenants_records` |
 
 The existing Bank Account and Bank Transaction migration test classes additionally prove table shape, canonical direction, file-hash/natural-key uniqueness, basic foreign keys, exact valid inserts, and their original migration rollback paths.
 
@@ -74,19 +75,19 @@ The existing Bank Account and Bank Transaction migration test classes additional
 
 | ID | State | Required proof | Blocker/reference |
 | --- | --- | --- | --- |
-| BNK-T034 | Required | Two concurrent identical file imports produce the approved single-result/replay outcome. | AETS-008 §12.6 |
-| BNK-T035 | Required | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | AETS-008 §12.6 |
-| BNK-T036 | Required | Two concurrent confirmations for one Bank Transaction have the approved caller-visible outcome and one Match. | AETS-008 §12.6 |
-| BNK-T037 | Required | Concurrent lifecycle transitions cannot overwrite or skip state. | Engineering assurance; policy fixed by lifecycle |
-| BNK-T038 | Required | A Completed Reconciliation remains continuously exact under the approved late-import policy. | AETS-008 §12.3 |
-| BNK-T039 | Required | Completion enforces the approved matched/explained-item prerequisite. | AETS-008 §12.1 |
-| BNK-T040 | Required | Transfer/two-sided and any split cardinality follow the approved model. | AETS-008 §12.2 |
-| BNK-T041 | Required | Overlapping/open-period rules are enforced exactly as approved. | AETS-008 §12.4 |
-| BNK-T042 | Required | Guided mapping handles approved noncanonical formats without silent field shifts. | AETS-008 §12.5 |
-| BNK-T043 | Required | Score and rationale round-trip under the approved canonical model. | AETS-008 §12.7 |
-| BNK-T044 | Required | Matching candidates cover every approved source type and reject wrong date, direction, Account, state, Tenant, and currency independently. | AETS-008 §6/§12.8 |
-| BNK-T045 | Required | HTTP authorization, validation, tenant isolation, and error semantics cover every Banking route. | Defence in depth |
-| BNK-T046 | Required | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. | AETS-012 Draft; cannot claim yet |
+| BNK-T035 | Required | Two concurrent identical file imports produce the approved single-result/replay outcome. | AETS-008 §12.6 |
+| BNK-T036 | Required | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | AETS-008 §12.6 |
+| BNK-T037 | Required | Two concurrent confirmations for one Bank Transaction have the approved caller-visible outcome and one Match. | AETS-008 §12.6 |
+| BNK-T038 | Required | Concurrent lifecycle transitions cannot overwrite or skip state. | Engineering assurance; policy fixed by lifecycle |
+| BNK-T039 | Required | A Completed Reconciliation remains continuously exact under the approved late-import policy. | AETS-008 §12.3 |
+| BNK-T040 | Required | Completion enforces the approved matched/explained-item prerequisite. | AETS-008 §12.1 |
+| BNK-T041 | Required | Transfer/two-sided and any split cardinality follow the approved model. | AETS-008 §12.2 |
+| BNK-T042 | Required | Overlapping/open-period rules are enforced exactly as approved. | AETS-008 §12.4 |
+| BNK-T043 | Required | Guided mapping handles approved noncanonical formats without silent field shifts. | AETS-008 §12.5 |
+| BNK-T044 | Required | Score and rationale round-trip under the approved canonical model. | AETS-008 §12.7 |
+| BNK-T045 | Required | Matching candidates cover every approved source type and reject wrong date, direction, Account, state, Tenant, and currency independently. | AETS-008 §6/§12.8 |
+| BNK-T046 | Required | HTTP authentication, validation, missing-record, and error semantics cover every Banking route in addition to existing cross-Tenant proof. | Defence in depth |
+| BNK-T047 | Required | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. | AETS-012 Draft; cannot claim yet |
 
 ## 4. Activation gate
 
@@ -100,4 +101,5 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.1.1 (2026-09-15):** Maps the new Banking HTTP cross-Tenant fail-closed regression proof as BNK-T034; broader per-route HTTP assurance remains required. No Draft policy decision changed.
 - **0.1.0 (2026-09-15):** Initial Draft inventory: 33 existing executable proofs and 13 required assurance items. No release or accuracy claim.

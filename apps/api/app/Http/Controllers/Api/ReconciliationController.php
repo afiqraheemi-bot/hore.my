@@ -21,6 +21,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Banking\OpenReconciliationRequest;
 use App\Http\Requests\Banking\ReopenReconciliationRequest;
 use App\Http\Support\CurrentTenant;
+use App\Infrastructure\Banking\BankAccountRepository;
 use App\Infrastructure\Banking\ReconciliationRepository;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -35,22 +36,35 @@ final class ReconciliationController extends Controller
     public function __construct(
         private readonly ReconciliationService $reconciliationService,
         private readonly ReconciliationRepository $reconciliationRepository,
+        private readonly BankAccountRepository $bankAccountRepository,
     ) {}
 
     public function index(CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $reconciliations = $this->reconciliationRepository->findByBankAccount($currentTenant->id(), BankAccountId::of($bankAccountId));
+        $id = BankAccountId::of($bankAccountId);
+
+        if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
+            return response()->json(['message' => 'BankAccount not found.'], 404);
+        }
+
+        $reconciliations = $this->reconciliationRepository->findByBankAccount($currentTenant->id(), $id);
 
         return response()->json(['data' => array_map(fn (Reconciliation $r): array => $this->toArray($r, $currentTenant), $reconciliations)]);
     }
 
     public function store(OpenReconciliationRequest $request, CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
+        $id = BankAccountId::of($bankAccountId);
+
+        if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
+            return response()->json(['message' => 'BankAccount not found.'], 404);
+        }
+
         $currency = Currency::of('MYR');
 
         $reconciliation = $this->reconciliationService->open(
             $currentTenant->id(),
-            BankAccountId::of($bankAccountId),
+            $id,
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
             Money::fromDecimalString($request->string('opening_balance')->toString(), $currency),

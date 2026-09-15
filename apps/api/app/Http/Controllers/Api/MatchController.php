@@ -14,6 +14,7 @@ use App\Domain\Banking\MatchingService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Banking\ConfirmMatchRequest;
 use App\Http\Support\CurrentTenant;
+use App\Infrastructure\Banking\BankAccountRepository;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
@@ -24,11 +25,18 @@ final class MatchController extends Controller
 {
     public function __construct(
         private readonly MatchingService $matchingService,
+        private readonly BankAccountRepository $bankAccountRepository,
     ) {}
 
     public function suggestions(CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $candidates = $this->matchingService->suggestFor($currentTenant->id(), BankAccountId::of($bankAccountId));
+        $id = BankAccountId::of($bankAccountId);
+
+        if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
+            return response()->json(['message' => 'BankAccount not found.'], 404);
+        }
+
+        $candidates = $this->matchingService->suggestFor($currentTenant->id(), $id);
 
         return response()->json(['data' => array_map(static fn ($candidate): array => [
             'bank_transaction_id' => $candidate->bankTransactionId()->toString(),
