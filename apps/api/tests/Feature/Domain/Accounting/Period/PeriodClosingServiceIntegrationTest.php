@@ -6,6 +6,7 @@ namespace Tests\Feature\Domain\Accounting\Period;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Journal\JournalId;
+use App\Domain\Accounting\Journal\JournalState;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Period\Exception\InvalidRetainedEarningsAccountTypeException;
@@ -17,8 +18,13 @@ use App\Domain\Accounting\Period\PeriodClosingToPostingCommandTranslator;
 use App\Domain\Accounting\Period\RetainedEarningsAccountTypeValidator;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Accounting\Posting\DraftJournalAssembler;
+use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
 use App\Domain\Accounting\Posting\Exception\RejectedClosedPeriodPostingException;
 use App\Domain\Accounting\Posting\IdempotencyKey;
+use App\Domain\Accounting\Posting\JournalCorrectionCandidateAssembler;
+use App\Domain\Accounting\Posting\JournalCorrectionIdempotencyResolver;
+use App\Domain\Accounting\Posting\JournalCorrectionLogicalEquivalence;
+use App\Domain\Accounting\Posting\JournalCorrectionTransactionalExecutor;
 use App\Domain\Accounting\Posting\PostingCommandAccountValidator;
 use App\Domain\Accounting\Posting\PostingCommandExistingDraftLineValidator;
 use App\Domain\Accounting\Posting\PostingCommandIdempotencyResolver;
@@ -27,6 +33,8 @@ use App\Domain\Accounting\Posting\PostingCommandJournalStateResolver;
 use App\Domain\Accounting\Posting\PostingCommandLogicalEquivalence;
 use App\Domain\Accounting\Posting\PostingCommandPeriodLockValidator;
 use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
+use App\Domain\Accounting\Posting\ReverseJournalCommand;
+use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Accounting\Reporting\AccountBalance;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Transactions\Expense\ExpenseAccountTypeValidator;
@@ -52,6 +60,7 @@ use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
 use App\Infrastructure\Transactions\Expense\ExpenseRepository;
 use App\Infrastructure\Transactions\Income\IncomeRepository;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -120,6 +129,8 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
 
     private PeriodClosingService $periodClosingService;
 
+    private JournalCorrectionTransactionalExecutor $correctionExecutor;
+
     private TrialBalanceQuery $trialBalanceQuery;
 
     private ProfitAndLossQuery $profitAndLossQuery;
@@ -148,6 +159,7 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
         $this->expenseService = $this->buildExpenseService($connection);
         $this->incomeService = $this->buildIncomeService($connection);
         $this->periodClosingService = $this->buildPeriodClosingService($connection);
+        $this->correctionExecutor = $this->buildCorrectionExecutor($connection);
 
         $aggregator = new AccountBalanceAggregator($connection);
         $this->trialBalanceQuery = new TrialBalanceQuery($aggregator);
@@ -281,6 +293,157 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
         $this->expectException(InvalidRetainedEarningsAccountTypeException::class);
 
         $this->periodClosingService->close($this->makeClosingCommand(retainedEarningsAccountId: 'account-cash'));
+    }
+
+    public function test_a_missing_retained_earnings_account_is_rejected_before_any_closing_effect(): void
+    {
+        $this->postGoldenExpense();
+
+        try {
+            $this->periodClosingService->close($this->makeClosingCommand(retainedEarningsAccountId: 'account-missing'));
+            $this->fail('Expected an unresolved Retained Earnings Account to be rejected.');
+        } catch (RejectedAccountReferenceException) {
+            // Expected.
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table('period_closures')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    public function test_an_inactive_retained_earnings_account_is_rejected_by_the_ordinary_posting_validator(): void
+    {
+        $this->postGoldenExpense();
+        $this->insertAccount($this->tenantA, 'account-retained-earnings-inactive', 'Equity', active: false);
+
+        try {
+            $this->periodClosingService->close($this->makeClosingCommand(retainedEarningsAccountId: 'account-retained-earnings-inactive'));
+            $this->fail('Expected an inactive Retained Earnings Account to be rejected.');
+        } catch (RejectedAccountReferenceException) {
+            // Expected.
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table('period_closures')->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('journals')->count());
+    }
+
+    public function test_a_non_posting_retained_earnings_account_is_rejected_by_the_ordinary_posting_validator(): void
+    {
+        $this->postGoldenExpense();
+        $this->insertAccount($this->tenantA, 'account-retained-earnings-control', 'Equity', postingEligible: false);
+
+        $this->expectException(RejectedAccountReferenceException::class);
+        $this->periodClosingService->close($this->makeClosingCommand(retainedEarningsAccountId: 'account-retained-earnings-control'));
+    }
+
+    public function test_another_tenants_retained_earnings_account_is_unresolvable(): void
+    {
+        $tenantB = TenantId::of('tenant-0002');
+        $this->insertAccount($tenantB, 'account-retained-earnings-b', 'Equity');
+        $this->postGoldenExpense();
+
+        $this->expectException(RejectedAccountReferenceException::class);
+        $this->periodClosingService->close($this->makeClosingCommand(retainedEarningsAccountId: 'account-retained-earnings-b'));
+    }
+
+    public function test_a_period_closure_insert_failure_rolls_back_the_closing_journal_and_all_side_effects(): void
+    {
+        $this->postGoldenExpense();
+        $connection = DB::connection('pgsql');
+        $before = [
+            'journals' => $connection->table('journals')->count(),
+            'journal_lines' => $connection->table('journal_lines')->count(),
+            'posting_idempotency_keys' => $connection->table('posting_idempotency_keys')->count(),
+            'audit_events' => $connection->table('audit_events')->count(),
+            'journal_evidence_links' => $connection->table('journal_evidence_links')->count(),
+        ];
+
+        $connection->statement('ALTER TABLE period_closures ADD CONSTRAINT force_period_closure_failure CHECK (1 = 0)');
+
+        try {
+            try {
+                $this->periodClosingService->close($this->makeClosingCommand());
+                $this->fail('Expected the forced period_closures constraint to reject the close.');
+            } catch (QueryException) {
+                // Expected.
+            }
+        } finally {
+            $connection->statement('ALTER TABLE period_closures DROP CONSTRAINT force_period_closure_failure');
+        }
+
+        $this->assertSame(0, $connection->table('period_closures')->count());
+        foreach ($before as $table => $count) {
+            $this->assertSame($count, $connection->table($table)->count(), "Unexpected partial write in {$table}.");
+        }
+    }
+
+    public function test_a_closing_journal_uses_the_ordinary_reversal_path_without_mutating_the_original(): void
+    {
+        $this->postGoldenExpense();
+        $closing = $this->periodClosingService->close($this->makeClosingCommand());
+        $closingJournalId = $closing->closure()->closingJournalId();
+        $journalRepository = new JournalRepository(DB::connection('pgsql'));
+        $beforeReversal = $journalRepository->findById($this->tenantA, $closingJournalId);
+        $this->assertNotNull($beforeReversal);
+
+        $result = $this->correctionExecutor->executeReversal(new ReverseJournalCommand(
+            IdempotencyKey::of('key-closing-reversal-0001'),
+            $this->tenantA,
+            ActorReference::of('actor-0001'),
+            SourceReference::of('source-closing-reversal-0001'),
+            JournalId::of('journal-closing-reversal-0001'),
+            $closingJournalId,
+            new \DateTimeImmutable('2026-09-01'),
+        ));
+
+        $original = $journalRepository->findById($this->tenantA, $closingJournalId);
+        $this->assertTrue($result->isNewlyPosted());
+        $this->assertNotNull($original);
+        $this->assertEquals($beforeReversal, $original);
+        $this->assertSame(JournalState::Posted, $original->state());
+        $this->assertTrue($result->journal()->correctedJournalId()?->equals($closingJournalId));
+        $this->assertSame(1, DB::connection('pgsql')->table('period_closures')->count());
+    }
+
+    public function test_period_closing_is_isolated_between_tenants_with_colliding_visible_values(): void
+    {
+        $tenantB = TenantId::of('tenant-0002');
+        foreach ([
+            ['account-cash-b', 'Asset'],
+            ['account-office-supplies-b', 'Expense'],
+            ['account-sales-revenue-b', 'Revenue'],
+            ['account-retained-earnings-b', 'Equity'],
+        ] as [$accountId, $accountType]) {
+            $this->insertAccount($tenantB, $accountId, $accountType);
+        }
+
+        $this->postGoldenExpense();
+        $this->expenseService->record(new RecordExpenseCommand(
+            ExpenseId::of('expense-b-0001'),
+            JournalId::of('journal-expense-b-0001'),
+            IdempotencyKey::of('key-expense-b-0001'),
+            $tenantB,
+            ActorReference::of('actor-0001'),
+            Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-08-10'),
+            AccountId::of('account-office-supplies-b'),
+            AccountId::of('account-cash-b'),
+            'Office supplies',
+            null,
+        ));
+
+        $this->periodClosingService->close($this->makeClosingCommand());
+        $this->periodClosingService->close($this->makeClosingCommand(
+            idempotencyKey: 'key-close-b-0001',
+            journalId: 'journal-closing-b-0001',
+            retainedEarningsAccountId: 'account-retained-earnings-b',
+            tenantId: $tenantB,
+        ));
+
+        $repository = new PeriodClosureRepository(DB::connection('pgsql'));
+        $this->assertNotNull($repository->findLatestForTenant($this->tenantA));
+        $this->assertNotNull($repository->findLatestForTenant($tenantB));
+        $this->assertSame(1, DB::connection('pgsql')->table('period_closures')->where('tenant_id', $this->tenantA->toString())->count());
+        $this->assertSame(1, DB::connection('pgsql')->table('period_closures')->where('tenant_id', $tenantB->toString())->count());
     }
 
     // --- Enforcement: no ordinary posting into a closed period --------------
@@ -419,9 +582,10 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
         string $journalId = 'journal-closing-0001',
         string $closedThroughDate = '2026-08-31',
         string $retainedEarningsAccountId = 'account-retained-earnings',
+        ?TenantId $tenantId = null,
     ): PeriodClosingCommand {
         return new PeriodClosingCommand(
-            $this->tenantA,
+            $tenantId ?? $this->tenantA,
             IdempotencyKey::of($idempotencyKey),
             ActorReference::of('actor-0001'),
             JournalId::of($journalId),
@@ -444,7 +608,7 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
         $this->fail(sprintf('No Trial Balance line found for Account "%s".', $accountId));
     }
 
-    private function insertAccount(TenantId $tenantId, string $accountId, string $accountType): void
+    private function insertAccount(TenantId $tenantId, string $accountId, string $accountType, bool $active = true, bool $postingEligible = true): void
     {
         DB::connection('pgsql')->table('accounts')->insert([
             'tenant_id' => $tenantId->toString(),
@@ -453,8 +617,8 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
             'account_name' => 'Test Account',
             'account_type' => $accountType,
             'account_origin' => 'UserCreated',
-            'active' => true,
-            'posting_eligible' => true,
+            'active' => $active,
+            'posting_eligible' => $postingEligible,
             'parent_id' => null,
         ]);
     }
@@ -494,6 +658,28 @@ final class PeriodClosingServiceIntegrationTest extends TestCase
             new AccountBalanceAggregator($connection),
             new PeriodClosingToPostingCommandTranslator,
             $this->buildPostingExecutor($connection),
+        );
+    }
+
+    private function buildCorrectionExecutor(ConnectionInterface $connection): JournalCorrectionTransactionalExecutor
+    {
+        $journalRepository = new JournalRepository($connection);
+        $idempotencyRepository = new PostingIdempotencyRepository($connection);
+
+        return new JournalCorrectionTransactionalExecutor(
+            $connection,
+            new JournalCorrectionIdempotencyResolver(
+                $idempotencyRepository,
+                $journalRepository,
+                new JournalCorrectionLogicalEquivalence,
+            ),
+            new JournalCorrectionCandidateAssembler(
+                $journalRepository,
+                new PostingCommandAccountValidator(new AccountRepository($connection)),
+            ),
+            $journalRepository,
+            $idempotencyRepository,
+            new AuditEventRepository($connection),
         );
     }
 

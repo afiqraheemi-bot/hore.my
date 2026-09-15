@@ -1,7 +1,7 @@
 # AETS-014: Period Management
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-07
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -91,7 +91,7 @@ Every Posting Command — Expense, Income, or any future command type — MUST b
 
 ## 9. ATS Requirements
 
-A future Period Management ATS (`ATS-014`, numbered to match) MUST include: invariant traceability for every `PER-NNN`; the closing-entry algebra proven for a profit, a loss, an exact break-even, and an Account netting its own non-normal Direction; the watermark-advance and backward/duplicate-rejection rules; the no-posting-into-a-closed-period enforcement, proven against a real ordinary Posting Command; idempotent-replay proof, including the specific "replay must not re-aggregate its own prior closing Journal" correctness property (§6.3); the nothing-to-close rejection; Retained Earnings Account-type validation; and real-PostgreSQL integration tests throughout, consistent with this series' own established precedent.
+The companion [ATS-014](tests/ATS-014-Period-Management-Test-Specification.md) includes: invariant traceability for every `PER-NNN`; the closing-entry algebra proven for a profit, a loss, an exact break-even, and an Account netting its own non-normal Direction; the watermark-advance and backward/duplicate-rejection rules; the no-posting-into-a-closed-period enforcement, proven against a real ordinary Posting Command; idempotent-replay proof, including the specific "replay must not re-aggregate its own prior closing Journal" correctness property (§6.3); the nothing-to-close rejection; Retained Earnings Account-type validation; and real-PostgreSQL integration tests throughout, consistent with this series' own established precedent.
 
 ## 10. Examples (Informative)
 
@@ -105,7 +105,6 @@ A future Period Management ATS (`ATS-014`, numbered to match) MUST include: inva
 - **Discrete, named Periods and a fiscal-year calendar** (§2.2).
 - **Automatic/scheduled closing** (§2.2).
 - **Multi-currency closing** (§2.2, follows AETS-003's own MVP scope).
-- **This document's own future ATS-014** — §9 states its required coverage; the test specification document is not written here (though the current M13 test suite already satisfies its substance — a formal ATS-014 document remains future work, mirroring [AETS-009](AETS-009-Financial-Reporting.md)'s own honest §15 note before its own ATS-009 was written).
 
 ## 12. Change Governance
 
@@ -113,4 +112,5 @@ This document follows [AETS-000](AETS-000.md)'s governance rules in full. A chan
 
 ## Changelog
 
+- **1.1.0 (2026-09-13):** Links the now-Active ATS-014 and removes the resolved deferred-test-specification item. No Period behavior or invariant changed.
 - **1.0.0 (2026-09-07):** Initial creation. Specifies Period closing (watermark-based, not discrete Period entities), the double-entry closing-entry construction and its direction-agnostic plug algebra, closed-period posting enforcement, and 9 `PER-NNN` invariants. Reopening, discrete Periods/fiscal years, and automatic closing explicitly deferred (§2.2), each for a named reason.
