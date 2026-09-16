@@ -282,7 +282,7 @@
             <article class="card"><h3>Transactions</h3><p>Expense, income, transfer, modal dan owner drawing.</p></article>
             <article class="card"><h3>Customers & Invoicing</h3><p>Pelanggan, draft invoice, issue dan receivable.</p></article>
             <article class="card"><h3>Payments</h3><p>Bayaran masuk dan allocation kepada outstanding invoices.</p></article>
-            <article class="card"><h3>Banking</h3><p>Import penyata CSV, transaksi bank dan match suggestion.</p></article>
+            <article class="card"><h3>Banking</h3><p>Import penyata CSV/XLSX, transaksi bank, match suggestion dan reconciliation.</p></article>
             <article class="card"><h3>Reconciliation</h3><p>Rekonsiliasi hanya selesai apabila perbezaan tepat RM0.00.</p></article>
             <article class="card"><h3>Accounting Core</h3><p>Journal, period lock, idempotency dan correction chain.</p></article>
             <article class="card"><h3>Reporting</h3><p>Trial Balance, P&amp;L, Balance Sheet, Ledger, Aging dan Evidence Index.</p></article>
@@ -293,34 +293,102 @@
 
         <section id="reality">
           <div class="section-head">
-            <div><span class="kicker">05 · Reality check</span><h2>Apa yang ada dan apa yang belum</h2></div>
-            <p>Pemisahan ini mengelakkan prototype, foundation dan production readiness disalah anggap sebagai perkara yang sama.</p>
+            <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>699ae9e</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
-          <div class="compare">
+          <div class="status-strip" style="margin: 0 0 18px">
+            <span class="pill good">✅ Ada &amp; functional</span>
+            <span class="pill partial">🟡 Partial / separuh siap</span>
+            <span class="pill" style="border-color: #efc3bf; background: var(--red-soft); color: var(--red)">❌ Belum ada</span>
+          </div>
+          <table class="status-table" aria-label="Status feature accounting micro SME">
+            <thead>
+              <tr><th>#</th><th>Keupayaan</th><th>Status</th><th>Reality semasa</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td><td>Categorised cash-in / cash-out</td>
+                <td><span class="status-badge good">✅ Functional</span></td>
+                <td>Expense, income, modal, owner drawing serta guided loan received/repayment mempunyai laluan berasingan dan account-type validation. Klasifikasi masih dipilih manusia; auto-classification belum ada.</td>
+              </tr>
+              <tr>
+                <td>2</td><td>Invoicing &amp; resit automatik</td>
+                <td><span class="status-badge good">✅ Functional</span></td>
+                <td>Invoice lifecycle, sequential number, issue/posting, PDF invoice dan PDF payment receipt tersedia. Penghantaran automatik melalui e-mel belum dibina.</td>
+              </tr>
+              <tr>
+                <td>3</td><td>Expense tracking mengikut kategori</td>
+                <td><span class="status-badge good">✅ Functional</span></td>
+                <td>Chart preset merangkumi bahan mentah, sewa, utiliti dan gaji; setiap expense dipost kepada Expense account dan muncul dalam P&amp;L.</td>
+              </tr>
+              <tr>
+                <td>4</td><td>Dashboard visual</td>
+                <td><span class="status-badge review">🟡 Partial</span></td>
+                <td>Dashboard memaparkan income, expense, net, assets dan trend enam bulan. Ia belum menyediakan formal Cash Flow Statement atau pecahan trend jualan mengikut channel.</td>
+              </tr>
+              <tr>
+                <td>5</td><td>Multi-channel sales capture</td>
+                <td><span class="status-badge pending">❌ Belum ada</span></td>
+                <td>Belum ada source/channel model atau adapter POS, walk-in dan online. Jualan kini direkod melalui Income atau Invoice web.</td>
+              </tr>
+              <tr>
+                <td>6</td><td>Cashflow + P&amp;L loan-ready</td>
+                <td><span class="status-badge review">🟡 Partial</span></td>
+                <td>P&amp;L dan Balance Sheet boleh dieksport sebagai loan-ready PDF. Formal Cash Flow Statement masih deferred kerana klasifikasi operating/investing/financing belum diwujudkan.</td>
+              </tr>
+              <tr>
+                <td>7</td><td>Annual tax / accountant export pack</td>
+                <td><span class="status-badge review">🟡 Partial</span></td>
+                <td>Compliance Pack ZIP serta CSV/XLSX reports tersedia untuk semakan akauntan. Tax computation, SST/LHDN forms dan annual filing workflow belum ada.</td>
+              </tr>
+              <tr>
+                <td>8</td><td>Input mudah</td>
+                <td><span class="status-badge good">✅ Functional</span></td>
+                <td>Universal web composer, Manual Entry dan evidence upload menyediakan input ringkas. Telegram bot dan AI/OCR interpretation belum tersedia.</td>
+              </tr>
+              <tr>
+                <td>9</td><td>Hidden double-entry ledger</td>
+                <td><span class="status-badge good">✅ Functional</span></td>
+                <td>Exact money, balanced and atomic posting, idempotency, period lock, append-only Journal serta reversal/replacement berjalan di belakang UI pengguna.</td>
+              </tr>
+              <tr>
+                <td>10</td><td>Bank / e-wallet reconciliation</td>
+                <td><span class="status-badge review">🟡 Partial</span></td>
+                <td>Bank CSV/XLSX import, matching dan reconciliation tersedia. E-wallet-specific adapter, configurable column mapping dan live feed belum ada.</td>
+              </tr>
+              <tr>
+                <td>11</td><td>Multi-user / staff access</td>
+                <td><span class="status-badge pending">❌ Belum ada</span></td>
+                <td>Model semasa ialah seorang owner bagi satu tenant. Membership, invitation, roles dan permissions belum dibina.</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="compare" style="margin-top: 18px">
             <div>
-              <h3>Foundation yang sudah dibina</h3>
+              <h3>Yang telah dibuktikan dalam produk</h3>
               <ul>
-                <li>Identity, tenant dan business profile</li>
-                <li>Chart of Accounts dan exact-money model</li>
-                <li>Balanced, atomic, idempotent posting</li>
-                <li>Expense, income, transfer dan owner equity</li>
-                <li>Customers, invoices, payments dan allocations</li>
-                <li>Bank import, matching dan reconciliation</li>
-                <li>Financial reports dan audit/evidence linkage</li>
-                <li>Manual Task → Proposal → confirmation flow</li>
+                <li>Composer-first Work Queue, Manual Entry dan evidence upload</li>
+                <li>Expense, income, transfer, modal, drawing dan guided loan</li>
+                <li>Customers, quotations, invoices, payments dan PDF documents</li>
+                <li>Dashboard income/expense/net/assets dan trend enam bulan</li>
+                <li>Bank CSV/XLSX import, matching dan reconciliation</li>
+                <li>Financial reports, loan-ready PDF dan Compliance Pack</li>
+                <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
+                <li>Exact-money double-entry dengan traceability dan correction chain</li>
               </ul>
             </div>
             <div class="future">
-              <h3>Pengalaman sasaran yang masih perlu dilengkapkan</h3>
+              <h3>Gap seterusnya yang nyata</h3>
               <ul>
-                <li>Home sebagai action-first workspace utama</li>
-                <li>Universal composer dan lampiran bukti sebenar</li>
-                <li>Document processing, OCR dan AI proposals</li>
-                <li>NeedsInformation dan edit/supersede Proposal UX</li>
+                <li>Multi-channel sales source dan adapter POS/e-commerce</li>
+                <li>Formal Cash Flow Statement dengan activity classification</li>
+                <li>Annual tax pack, tax codes dan filing workflow</li>
+                <li>E-wallet import profile dan configurable statement mapping</li>
+                <li>Tenant membership, staff invitation, roles dan permissions</li>
+                <li>Document processing, OCR dan governed AI proposals</li>
                 <li>MyInvois live adapter dan status reconciliation</li>
-                <li>Quotation, compliance pack dan export menyeluruh</li>
                 <li>PWA dan production operations hardening</li>
-                <li>Proof of Accuracy serta release certification</li>
+                <li>Release certification, security review dan restore drill</li>
               </ul>
             </div>
           </div>
@@ -333,7 +401,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>2ff19f2</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>699ae9e</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -342,14 +410,14 @@
               <p>Money, Chart of Accounts, Journal, Posting, Reporting, Audit dan Period Management mempunyai AETS aktif.</p>
             </article>
             <article class="progress-card">
-              <span class="label">Banking proof</span>
-              <strong class="value">62 bukti</strong>
-              <p>ATS-008 v0.5.0 merekodkan 62 test ID sedia ada, termasuk concurrency, tenant isolation dan completion snapshot.</p>
+              <span class="label">Product surface</span>
+              <strong class="value">Bertambah</strong>
+              <p>Dashboard, quotations, PDF documents, XLSX import/export, Compliance Pack dan guided loan entry kini tersedia.</p>
             </article>
             <article class="progress-card">
-              <span class="label">Banking governance</span>
-              <strong class="value">Draft</strong>
-              <p>AETS-008 v0.3.0 belum aktif sehingga Accounting Domain Reviewer memberikan sign-off.</p>
+              <span class="label">Coverage</span>
+              <strong class="value">6 gap</strong>
+              <p>Empat feature masih partial dan dua belum ada daripada 11 keupayaan micro-SME yang disaring.</p>
             </article>
             <article class="progress-card">
               <span class="label">Release readiness</span>
@@ -371,12 +439,12 @@
               <tr>
                 <td>Bank import, matching &amp; reconciliation</td>
                 <td><span class="status-badge review">Review required</span></td>
-                <td>Sembilan keputusan Banking telah dilaksanakan dan dipetakan kepada bukti PostgreSQL. AETS/ATS kekal Draft; connected golden dataset masih diperlukan dan guided mapping ditangguh secara jelas.</td>
+                <td>Bank CSV/XLSX flow telah dilaksanakan dan diuji. E-wallet adapter, guided mapping dan operational certification masih diperlukan.</td>
               </tr>
               <tr>
                 <td>Task → Proposal → confirmation</td>
                 <td><span class="status-badge good">Baseline available</span></td>
-                <td>Flow manual dan E2E asas tersedia. Universal composer, lampiran sebenar, NeedsInformation serta edit/supersede masih perlu disempurnakan.</td>
+                <td>Universal composer, evidence upload, NeedsInformation, edit/supersede serta E2E flow tersedia. AI/OCR proposal generation belum lengkap.</td>
               </tr>
               <tr>
                 <td>AI, OCR &amp; automation</td>
@@ -386,14 +454,14 @@
               <tr>
                 <td>External compliance &amp; delivery</td>
                 <td><span class="status-badge pending">Not release-ready</span></td>
-                <td>MyInvois live adapter, PWA, observability, backup/restore drill, security/release certification dan Proof of Accuracy masih menjadi gate.</td>
+                <td>MyInvois live adapter, tax filing, PWA, observability, backup/restore drill serta security/release certification masih menjadi gate.</td>
               </tr>
             </tbody>
           </table>
 
           <div class="callout" style="margin-top: 18px">
             <strong>Gate seterusnya</strong>
-            Lengkapkan connected Proof of Accuracy golden dataset dan semakan bebas Accounting Domain Reviewer sebelum Banking boleh dinaikkan daripada Draft. Selepas itu barulah readiness produk dan operasi boleh dinilai sebagai release candidate.
+            Tutup gap formal Cash Flow Statement, tax/accountant completeness dan multi-user foundation tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review, observability serta backup/restore drill.
           </div>
         </section>
 
@@ -412,7 +480,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 16 September 2026 · committed baseline <code>2ff19f2</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 17 September 2026 · committed baseline <code>699ae9e</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
