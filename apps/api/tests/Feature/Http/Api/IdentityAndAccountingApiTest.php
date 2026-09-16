@@ -1426,6 +1426,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         $suggestions->assertStatus(200);
         $suggestions->assertJsonCount(1, 'data');
         $suggestions->assertJsonPath('data.0.source_type', 'Expense');
+        $suggestions->assertJsonPath('data.0.confidence', 'Exact');
 
         $bankTransactionId = $suggestions->json('data.0.bank_transaction_id');
         $journalId = $suggestions->json('data.0.journal_id');
@@ -1434,6 +1435,7 @@ final class IdentityAndAccountingApiTest extends TestCase
             'journal_id' => $journalId,
         ]);
         $confirm->assertStatus(201);
+        $confirm->assertJsonPath('confidence', 'Exact');
 
         $this->assertSame(1, DB::connection('pgsql')->table('matches')->count());
 

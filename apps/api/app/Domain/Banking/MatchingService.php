@@ -164,6 +164,7 @@ final class MatchingService
                     $matchedCandidate->rationale(),
                     $actor,
                     new \DateTimeImmutable,
+                    $matchedCandidate->confidence(),
                 );
 
                 $this->matchRepository->record($match);

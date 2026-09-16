@@ -20,6 +20,7 @@ final class MatchCandidate
         private readonly JournalId $journalId,
         private readonly MatchSourceType $sourceType,
         private readonly string $rationale,
+        private readonly MatchConfidence $confidence = MatchConfidence::Exact,
     ) {}
 
     public function bankTransactionId(): BankTransactionId
@@ -40,5 +41,10 @@ final class MatchCandidate
     public function rationale(): string
     {
         return $this->rationale;
+    }
+
+    public function confidence(): MatchConfidence
+    {
+        return $this->confidence;
     }
 }

@@ -50,6 +50,7 @@ final class MatchController extends Controller
             'journal_id' => $candidate->journalId()->toString(),
             'source_type' => $candidate->sourceType()->name,
             'rationale' => $candidate->rationale(),
+            'confidence' => $candidate->confidence()->name,
         ], $candidates)]);
     }
 
@@ -79,6 +80,7 @@ final class MatchController extends Controller
             'journal_id' => $match->journalId()->toString(),
             'source_type' => $match->sourceType()->name,
             'rationale' => $match->rationale(),
+            'confidence' => $match->confidence()->name,
             'is_new_match' => $result->isNewMatch(),
         ], $result->isNewMatch() ? 201 : 200);
     }

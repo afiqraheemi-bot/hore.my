@@ -8,6 +8,7 @@ use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\BankTransactionId;
 use App\Domain\Banking\BankTransactionMatch;
+use App\Domain\Banking\MatchConfidence;
 use App\Domain\Banking\MatchId;
 use App\Domain\Banking\MatchSourceType;
 use App\Domain\Shared\Tenancy\TenantId;
@@ -36,12 +37,13 @@ final class MatchRepository
             'rationale' => $match->rationale(),
             'matched_by' => $match->matchedBy()->toString(),
             'matched_at' => $match->matchedAt()->format('Y-m-d H:i:s'),
+            'confidence' => $match->confidence()->name,
         ]);
     }
 
     public function findByBankTransactionId(TenantId $tenantId, BankTransactionId $bankTransactionId): ?BankTransactionMatch
     {
-        /** @var object{id: string, tenant_id: string, bank_transaction_id: string, journal_id: string, source_type: string, rationale: string, matched_by: string, matched_at: string}|null $row */
+        /** @var object{id: string, tenant_id: string, bank_transaction_id: string, journal_id: string, source_type: string, rationale: string, matched_by: string, matched_at: string, confidence: string}|null $row */
         $row = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('bank_transaction_id', $bankTransactionId->toString())
@@ -71,7 +73,7 @@ final class MatchRepository
     }
 
     /**
-     * @param  object{id: string, tenant_id: string, bank_transaction_id: string, journal_id: string, source_type: string, rationale: string, matched_by: string, matched_at: string}  $row
+     * @param  object{id: string, tenant_id: string, bank_transaction_id: string, journal_id: string, source_type: string, rationale: string, matched_by: string, matched_at: string, confidence: string}  $row
      */
     private function fromPersisted(object $row): BankTransactionMatch
     {
@@ -84,6 +86,7 @@ final class MatchRepository
             $row->rationale,
             ActorReference::of($row->matched_by),
             new \DateTimeImmutable($row->matched_at),
+            self::confidenceFromPersisted($row->confidence),
         );
     }
 
@@ -96,5 +99,16 @@ final class MatchRepository
         }
 
         throw new \RuntimeException(sprintf('Unrecognized persisted Match source type "%s".', $value));
+    }
+
+    private static function confidenceFromPersisted(string $value): MatchConfidence
+    {
+        foreach (MatchConfidence::cases() as $case) {
+            if ($case->name === $value) {
+                return $case;
+            }
+        }
+
+        throw new \RuntimeException(sprintf('Unrecognized persisted Match confidence "%s".', $value));
     }
 }

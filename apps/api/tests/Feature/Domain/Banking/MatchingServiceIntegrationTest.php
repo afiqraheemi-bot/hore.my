@@ -26,6 +26,7 @@ use App\Domain\Banking\BankTransactionMatchSuggester;
 use App\Domain\Banking\CsvBankStatementParser;
 use App\Domain\Banking\Exception\MatchConfirmationConflictException;
 use App\Domain\Banking\Exception\NoSuchMatchCandidateException;
+use App\Domain\Banking\MatchConfidence;
 use App\Domain\Banking\MatchingService;
 use App\Domain\Banking\MatchSourceType;
 use App\Domain\Shared\Tenancy\TenantId;
@@ -178,6 +179,7 @@ final class MatchingServiceIntegrationTest extends TestCase
         $this->assertTrue($candidates[0]->journalId()->equals($expenseResult->expense()->journalId()));
         $this->assertSame(MatchSourceType::Expense, $candidates[0]->sourceType());
         $this->assertStringContainsString('Office supplies', $candidates[0]->rationale());
+        $this->assertSame(MatchConfidence::Exact, $candidates[0]->confidence());
     }
 
     public function test_confirming_a_suggested_match_persists_it(): void
@@ -195,6 +197,8 @@ final class MatchingServiceIntegrationTest extends TestCase
 
         $this->assertTrue($result->isNewMatch());
         $this->assertTrue($result->match()->journalId()->equals($expenseResult->expense()->journalId()));
+        $this->assertSame(MatchConfidence::Exact, $result->match()->confidence());
+        $this->assertSame('Exact', DB::connection('pgsql')->table(self::MATCH_TABLE)->value('confidence'));
         $this->assertSame(1, DB::connection('pgsql')->table(self::MATCH_TABLE)->count());
     }
 
@@ -739,6 +743,10 @@ final class MatchingServiceIntegrationTest extends TestCase
             if (! Schema::connection('pgsql')->hasTable($table)) {
                 self::forceCleanMigration($migrationPath, []);
             }
+        }
+
+        if (! Schema::connection('pgsql')->hasColumn(self::MATCH_TABLE, 'confidence')) {
+            self::forceCleanMigration('database/migrations/2026_09_16_010000_add_confidence_to_matches_table.php', []);
         }
 
         if (! Schema::connection('pgsql')->hasColumn('journals', 'financial_date')) {

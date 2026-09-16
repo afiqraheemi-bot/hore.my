@@ -29,6 +29,7 @@ final class BankTransactionMatch
         private readonly string $rationale,
         private readonly ActorReference $matchedBy,
         private readonly \DateTimeImmutable $matchedAt,
+        private readonly MatchConfidence $confidence = MatchConfidence::Exact,
     ) {}
 
     public static function confirm(
@@ -40,8 +41,9 @@ final class BankTransactionMatch
         string $rationale,
         ActorReference $matchedBy,
         \DateTimeImmutable $matchedAt,
+        MatchConfidence $confidence = MatchConfidence::Exact,
     ): self {
-        return new self($id, $tenantId, $bankTransactionId, $journalId, $sourceType, $rationale, $matchedBy, $matchedAt);
+        return new self($id, $tenantId, $bankTransactionId, $journalId, $sourceType, $rationale, $matchedBy, $matchedAt, $confidence);
     }
 
     public static function reconstitute(
@@ -53,8 +55,9 @@ final class BankTransactionMatch
         string $rationale,
         ActorReference $matchedBy,
         \DateTimeImmutable $matchedAt,
+        MatchConfidence $confidence = MatchConfidence::Exact,
     ): self {
-        return new self($id, $tenantId, $bankTransactionId, $journalId, $sourceType, $rationale, $matchedBy, $matchedAt);
+        return new self($id, $tenantId, $bankTransactionId, $journalId, $sourceType, $rationale, $matchedBy, $matchedAt, $confidence);
     }
 
     public function id(): MatchId
@@ -95,6 +98,11 @@ final class BankTransactionMatch
     public function matchedAt(): \DateTimeImmutable
     {
         return $this->matchedAt;
+    }
+
+    public function confidence(): MatchConfidence
+    {
+        return $this->confidence;
     }
 
     public function equals(self $other): bool

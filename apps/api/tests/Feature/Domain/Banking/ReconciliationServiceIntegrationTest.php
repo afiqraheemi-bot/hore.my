@@ -127,6 +127,10 @@ final class ReconciliationServiceIntegrationTest extends TestCase
             self::forceCleanMigration('database/migrations/2026_09_07_120000_create_matches_table.php', []);
         }
 
+        if (! Schema::connection('pgsql')->hasColumn('matches', 'confidence')) {
+            self::forceCleanMigration('database/migrations/2026_09_16_010000_add_confidence_to_matches_table.php', []);
+        }
+
         if (! Schema::connection('pgsql')->hasTable('expenses')) {
             self::forceCleanMigration('database/migrations/2026_09_06_220000_create_expenses_table.php', []);
         }
