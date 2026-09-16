@@ -12,6 +12,7 @@ use App\Domain\Banking\BankAccount;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankStatementImportService;
 use App\Domain\Banking\CsvBankStatementParser;
+use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Banking\Reconciliation;
@@ -286,6 +287,40 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * Proves the row lock at the Reconciliation lifecycle boundary with
+     * genuine OS-process races. For every fixed state transition, exactly
+     * one caller may advance the aggregate; the loser reloads the winner's
+     * committed state and is rejected by the existing state machine.
+     *
+     * Reopen is included because it has a second authoritative write: the
+     * winning state change and its reopening-history row must remain one
+     * atomic outcome, never two histories for one Completed -> Draft edge.
+     */
+    public function test_concurrent_lifecycle_transitions_cannot_overwrite_or_skip_state(): void
+    {
+        $draft = $this->open('1000.00', '1000.00');
+        $this->assertConcurrentTransition('start-review', $draft, ReconciliationState::InReview);
+
+        $inReview = $this->open('1000.00', '1000.00');
+        $inReview = $this->reconciliationService->startReview($this->tenant, $inReview->id());
+        $this->assertConcurrentTransition('mark-balanced', $inReview, ReconciliationState::Balanced);
+
+        $balanced = $this->open('1000.00', '1000.00');
+        $this->reconciliationService->startReview($this->tenant, $balanced->id());
+        $balanced = $this->reconciliationService->markBalanced($this->tenant, $balanced->id());
+        $this->assertConcurrentTransition('complete', $balanced, ReconciliationState::Completed);
+
+        $completed = $this->completedReconciliation();
+        $this->assertConcurrentTransition('reopen', $completed, ReconciliationState::Draft);
+
+        $reopenings = (new ReconciliationRepository(DB::connection('pgsql')))
+            ->findReopeningsFor($this->tenant, $completed->id());
+
+        $this->assertCount(1, $reopenings);
+        $this->assertSame('Concurrent integrity proof', $reopenings[0]->reason());
+    }
+
     private function completedReconciliation(): Reconciliation
     {
         $reconciliation = $this->open('1000.00', '1000.00');
@@ -293,6 +328,116 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
 
         return $this->reconciliationService->complete($this->tenant, $reconciliation->id());
+    }
+
+    private function assertConcurrentTransition(string $action, Reconciliation $reconciliation, ReconciliationState $expectedState): void
+    {
+        [$resultA, $resultB] = $this->raceTransitionWorkers($action, $reconciliation);
+        $outcomes = ['A' => $resultA, 'B' => $resultB];
+
+        $succeeded = array_filter(
+            $outcomes,
+            static fn (array $result): bool => ($result['state'] ?? null) === $expectedState->name,
+        );
+        $rejected = array_filter(
+            $outcomes,
+            static fn (array $result): bool => ($result['exception'] ?? null) === InvalidReconciliationStateTransitionException::class,
+        );
+
+        $this->assertCount(1, $succeeded, sprintf(
+            'Exactly one concurrent %s transition must succeed. Got: %s',
+            $action,
+            json_encode($outcomes),
+        ));
+        $this->assertCount(1, $rejected, sprintf(
+            'The other concurrent %s transition must be safely rejected. Got: %s',
+            $action,
+            json_encode($outcomes),
+        ));
+
+        $persisted = (new ReconciliationRepository(DB::connection('pgsql')))
+            ->getById($this->tenant, $reconciliation->id());
+
+        $this->assertSame($expectedState, $persisted->state());
+    }
+
+    /**
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function raceTransitionWorkers(string $action, Reconciliation $reconciliation): array
+    {
+        $temporaryDirectory = sys_get_temp_dir();
+        $readyA = tempnam($temporaryDirectory, 'recon_ready_a_');
+        $readyB = tempnam($temporaryDirectory, 'recon_ready_b_');
+        $goFile = tempnam($temporaryDirectory, 'recon_go_');
+        $resultA = tempnam($temporaryDirectory, 'recon_result_a_');
+        $resultB = tempnam($temporaryDirectory, 'recon_result_b_');
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            unlink($file);
+        }
+
+        $workerScript = base_path('tests/bin/concurrent_reconciliation_transition_worker.php');
+        $arguments = [$this->tenant->toString(), $reconciliation->id()->toString(), $action];
+
+        $processA = proc_open(
+            ['php', $workerScript, ...$arguments, 'actor-concurrent-a', $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, ...$arguments, 'actor-concurrent-b', $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        try {
+            $deadline = microtime(true) + 5.0;
+            while (! (file_exists($readyA) && file_exists($readyB))) {
+                if (microtime(true) > $deadline) {
+                    $this->fail('Timed out waiting for both Reconciliation workers to signal ready.');
+                }
+
+                usleep(2000);
+            }
+
+            touch($goFile);
+
+            foreach ([$processA, $processB] as $process) {
+                proc_close($process);
+            }
+
+            $deadline = microtime(true) + 5.0;
+            while (! (file_exists($resultA) && file_exists($resultB))) {
+                if (microtime(true) > $deadline) {
+                    $this->fail('Timed out waiting for both Reconciliation worker results.');
+                }
+
+                usleep(2000);
+            }
+
+            /** @var array<string, mixed> $resultAData */
+            $resultAData = json_decode((string) file_get_contents($resultA), true, flags: JSON_THROW_ON_ERROR);
+            /** @var array<string, mixed> $resultBData */
+            $resultBData = json_decode((string) file_get_contents($resultB), true, flags: JSON_THROW_ON_ERROR);
+
+            return [$resultAData, $resultBData];
+        } finally {
+            foreach ([$pipesA ?? [], $pipesB ?? []] as $pipes) {
+                foreach ($pipes as $pipe) {
+                    if (is_resource($pipe)) {
+                        fclose($pipe);
+                    }
+                }
+            }
+
+            foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+                @unlink($file);
+            }
+        }
     }
 
     private function importStatement(string $rows): void

@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.1.1
+- Version: 0.1.2
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the unresolved workflow decisions in §12
@@ -104,7 +104,7 @@ The current lifecycle is:
 
 - `markBalanced` rejects any nonzero live difference.
 - `complete` recomputes and rejects any nonzero live difference instead of trusting stale `Balanced` state.
-- lifecycle transitions lock the Reconciliation row and persist transactionally.
+- lifecycle transitions lock the Reconciliation row and persist transactionally; genuine two-process races prove that exactly one caller advances each lifecycle edge while the other is safely rejected.
 - `reopen` accepts only `Completed`, requires a non-empty reason, returns to `Draft`, clears `completed_at`, and atomically appends a reopening-history record.
 
 Whether matching completeness is also a prerequisite for `Balanced` or `Completed` is not decided by the current authoritative text and is deferred to §12.1.
@@ -211,5 +211,6 @@ The active Money model is non-negative, while a real bank statement's running, o
 
 ## Changelog
 
+- **0.1.2 (2026-09-16):** Records the executable two-process concurrency proof for every fixed Reconciliation lifecycle edge, including atomic reopening history. No caller-visible API policy or unresolved workflow decision changed.
 - **0.1.1 (2026-09-15):** Records database enforcement of approved exact-value/state facts and explicitly defers negative bank-balance/overdraft sign semantics. No unresolved policy was selected.
 - **0.1.0 (2026-09-15):** Initial Draft. Records locked requirements, current implementation evidence, schema tenant hardening, and eight unresolved decision groups. No new authority, MVP scope, or accuracy claim is introduced.

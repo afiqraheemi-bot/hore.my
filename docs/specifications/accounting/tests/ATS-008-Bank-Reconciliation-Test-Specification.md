@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.2.0
+- Version: 0.2.1
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -84,6 +84,12 @@ All integration and schema tests require real PostgreSQL and must run with skip/
 | BNK-T043 | Existing | Reopening reason cannot be blank. | `reopening_reason_cannot_be_blank` |
 | BNK-T044 | Existing | Financial-integrity migration reverses and reapplies. | `migration_reverses_and_reapplies_cleanly` |
 
+### 2.6 Lifecycle concurrency
+
+| ID | State | Proof | Executable suffix (`test_…`) |
+| --- | --- | --- | --- |
+| BNK-T048 | Existing | Genuine two-process races across every lifecycle edge permit exactly one transition, preserve the final state, and append exactly one reopening-history row. | `concurrent_lifecycle_transitions_cannot_overwrite_or_skip_state` |
+
 The existing Bank Account and Bank Transaction migration test classes additionally prove table shape, canonical direction, file-hash/natural-key uniqueness, basic foreign keys, exact valid inserts, and their original migration rollback paths.
 
 ## 3. Required evidence not yet satisfied
@@ -93,7 +99,6 @@ The existing Bank Account and Bank Transaction migration test classes additional
 | BNK-T045 | Required | Two concurrent identical file imports produce the approved single-result/replay outcome. | AETS-008 §12.6 |
 | BNK-T046 | Required | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | AETS-008 §12.6 |
 | BNK-T047 | Required | Two concurrent confirmations for one Bank Transaction have the approved caller-visible outcome and one Match. | AETS-008 §12.6 |
-| BNK-T048 | Required | Concurrent lifecycle transitions cannot overwrite or skip state. | Engineering assurance; policy fixed by lifecycle |
 | BNK-T049 | Required | A Completed Reconciliation remains continuously exact under the approved late-import policy. | AETS-008 §12.3 |
 | BNK-T050 | Required | Completion enforces the approved matched/explained-item prerequisite. | AETS-008 §12.1 |
 | BNK-T051 | Required | Transfer/two-sided and any split cardinality follow the approved model. | AETS-008 §12.2 |
@@ -116,6 +121,7 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.2.1 (2026-09-16):** Moves BNK-T048 to Existing with a genuine two-process proof across every fixed lifecycle edge and reopening-history atomicity. Twelve policy-dependent or broader assurance items remain required.
 - **0.2.0 (2026-09-15):** Adds BNK-T035–BNK-T044 for exact import counts, Money/currency, completion-time consistency, non-blank reopening reasons, and migration rollback. No Draft workflow decision changed.
 - **0.1.1 (2026-09-15):** Maps the new Banking HTTP cross-Tenant fail-closed regression proof as BNK-T034; broader per-route HTTP assurance remains required. No Draft policy decision changed.
 - **0.1.0 (2026-09-15):** Initial Draft inventory: 33 existing executable proofs and 13 required assurance items. No release or accuracy claim.
