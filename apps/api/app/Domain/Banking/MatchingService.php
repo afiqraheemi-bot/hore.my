@@ -6,12 +6,14 @@ namespace App\Domain\Banking;
 
 use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Posting\ActorReference;
-use App\Domain\Banking\Exception\BankTransactionAlreadyMatchedException;
+use App\Domain\Banking\Exception\MatchConfirmationConflictException;
 use App\Domain\Banking\Exception\NoSuchMatchCandidateException;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Banking\BankAccountRepository;
 use App\Infrastructure\Banking\BankTransactionRepository;
 use App\Infrastructure\Banking\MatchRepository;
+use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 
 /**
@@ -28,10 +30,27 @@ use Illuminate\Support\Str;
  * suggestion was first shown (another BankTransaction claimed the same
  * Journal, for example), confirmation is rejected rather than trusting
  * stale client state.
+ *
+ * **Concurrency contract (AETS-008 §12.6, `BNK-018`).** `confirm()`
+ * never trusts a check-then-insert race: it locks the target Journal's
+ * row before revalidating candidacy (closing the two-leg-Transfer race
+ * `BNK-014` needs — see {@see BankTransactionMatchSuggester}'s own
+ * docblock) and, on a `bank_transaction_id`-uniqueness race it cannot
+ * avoid by locking (two different BankTransactions can only collide at
+ * insert time), catches the resulting constraint violation and
+ * re-checks: the same (BankTransaction, Journal) pair a concurrent
+ * winner already confirmed is a deterministic replay
+ * ({@see MatchConfirmationResult::replayed()}), never an error; a
+ * *different* Journal is an explicit
+ * {@see MatchConfirmationConflictException}. Mirrors WTS-001
+ * `TSK-011`'s identical replay-vs-conflict pattern.
  */
 final class MatchingService
 {
+    private const MATCHES_BANK_TRANSACTION_UNIQUE_CONSTRAINT = 'matches_bank_transaction_id_unique';
+
     public function __construct(
+        private readonly ConnectionInterface $connection,
         private readonly BankAccountRepository $bankAccountRepository,
         private readonly BankTransactionRepository $bankTransactionRepository,
         private readonly BankTransactionMatchSuggester $suggester,
@@ -71,58 +90,114 @@ final class MatchingService
     }
 
     /**
-     * @throws BankTransactionAlreadyMatchedException if this
-     *                                                BankTransaction already has a confirmed Match.
+     * @throws MatchConfirmationConflictException if a concurrent caller
+     *                                            already confirmed this BankTransaction against a *different*
+     *                                            Journal.
      * @throws NoSuchMatchCandidateException if `$journalId` is not
      *                                       (still) a valid candidate for `$bankTransactionId`.
      */
-    public function confirm(TenantId $tenantId, BankTransactionId $bankTransactionId, JournalId $journalId, ActorReference $actor): BankTransactionMatch
+    public function confirm(TenantId $tenantId, BankTransactionId $bankTransactionId, JournalId $journalId, ActorReference $actor): MatchConfirmationResult
     {
-        if ($this->matchRepository->findByBankTransactionId($tenantId, $bankTransactionId) !== null) {
-            throw BankTransactionAlreadyMatchedException::forBankTransaction($bankTransactionId);
-        }
+        // Sequential replay/conflict short-circuit: cheaper than the
+        // full lock-and-revalidate path below, and necessary
+        // correctness-wise too — the suggester (BNK-014) excludes a
+        // Journal that already has a Match, which would otherwise make
+        // a legitimate replay of an *already-confirmed* pair look like
+        // "not a valid candidate" instead of a deterministic no-op
+        // success.
+        $existing = $this->matchRepository->findByBankTransactionId($tenantId, $bankTransactionId);
 
-        $bankTransactionRecord = $this->bankTransactionRepository->findById($tenantId, $bankTransactionId);
-
-        if ($bankTransactionRecord === null) {
-            throw NoSuchMatchCandidateException::forPair($bankTransactionId, $journalId);
-        }
-
-        $bankAccount = $this->bankAccountRepository->findById($tenantId, $bankTransactionRecord->bankAccountId());
-
-        if ($bankAccount === null) {
-            throw NoSuchMatchCandidateException::forPair($bankTransactionId, $journalId);
-        }
-
-        $candidates = $this->suggester->suggestFor($tenantId, $bankAccount, $bankTransactionRecord);
-        $matchedCandidate = null;
-
-        foreach ($candidates as $candidate) {
-            if ($candidate->journalId()->equals($journalId)) {
-                $matchedCandidate = $candidate;
-
-                break;
+        if ($existing !== null) {
+            if ($existing->journalId()->equals($journalId)) {
+                return MatchConfirmationResult::replayed($existing);
             }
+
+            throw MatchConfirmationConflictException::forBankTransaction($bankTransactionId);
         }
 
-        if ($matchedCandidate === null) {
-            throw NoSuchMatchCandidateException::forPair($bankTransactionId, $journalId);
+        try {
+            $match = $this->connection->transaction(function () use ($tenantId, $bankTransactionId, $journalId, $actor): BankTransactionMatch {
+                $bankTransactionRecord = $this->bankTransactionRepository->findById($tenantId, $bankTransactionId);
+
+                if ($bankTransactionRecord === null) {
+                    throw NoSuchMatchCandidateException::forPair($bankTransactionId, $journalId);
+                }
+
+                $bankAccount = $this->bankAccountRepository->findById($tenantId, $bankTransactionRecord->bankAccountId());
+
+                if ($bankAccount === null) {
+                    throw NoSuchMatchCandidateException::forPair($bankTransactionId, $journalId);
+                }
+
+                // Locks the Journal row so a concurrent confirmation
+                // racing for this same Journal (a Transfer's second
+                // leg, or a would-be third leg, BNK-014) serializes
+                // instead of both reading a stale existing-match count
+                // from the suggester below.
+                $this->connection->table('journals')
+                    ->where('tenant_id', $tenantId->toString())
+                    ->where('journal_id', $journalId->toString())
+                    ->lockForUpdate()
+                    ->first();
+
+                $candidates = $this->suggester->suggestFor($tenantId, $bankAccount, $bankTransactionRecord);
+                $matchedCandidate = null;
+
+                foreach ($candidates as $candidate) {
+                    if ($candidate->journalId()->equals($journalId)) {
+                        $matchedCandidate = $candidate;
+
+                        break;
+                    }
+                }
+
+                if ($matchedCandidate === null) {
+                    throw NoSuchMatchCandidateException::forPair($bankTransactionId, $journalId);
+                }
+
+                $match = BankTransactionMatch::confirm(
+                    MatchId::of((string) Str::uuid()),
+                    $tenantId,
+                    $bankTransactionId,
+                    $journalId,
+                    $matchedCandidate->sourceType(),
+                    $matchedCandidate->rationale(),
+                    $actor,
+                    new \DateTimeImmutable,
+                );
+
+                $this->matchRepository->record($match);
+
+                return $match;
+            });
+        } catch (QueryException $e) {
+            // Lost a genuine race: a concurrent caller committed a
+            // Match for this BankTransaction between this call's own
+            // upfront check above and its insert attempt here. The
+            // transaction Laravel just rolled back on this exception
+            // leaves the connection clean, so re-checking now is safe
+            // — unlike checking from inside the failed transaction,
+            // which would hit PostgreSQL's "current transaction is
+            // aborted" error instead of a real answer.
+            if (! self::isBankTransactionUniquenessViolation($e)) {
+                throw $e;
+            }
+
+            $winner = $this->matchRepository->findByBankTransactionId($tenantId, $bankTransactionId);
+
+            if ($winner !== null && $winner->journalId()->equals($journalId)) {
+                return MatchConfirmationResult::replayed($winner);
+            }
+
+            throw MatchConfirmationConflictException::forBankTransaction($bankTransactionId);
         }
 
-        $match = BankTransactionMatch::confirm(
-            MatchId::of((string) Str::uuid()),
-            $tenantId,
-            $bankTransactionId,
-            $journalId,
-            $matchedCandidate->sourceType(),
-            $matchedCandidate->rationale(),
-            $actor,
-            new \DateTimeImmutable,
-        );
+        return MatchConfirmationResult::newlyConfirmed($match);
+    }
 
-        $this->matchRepository->record($match);
-
-        return $match;
+    private static function isBankTransactionUniquenessViolation(QueryException $e): bool
+    {
+        return $e->getCode() === '23505' && str_contains($e->getMessage(), self::MATCHES_BANK_TRANSACTION_UNIQUE_CONSTRAINT);
     }
 
     /**

@@ -37,11 +37,20 @@ use Illuminate\Database\ConnectionInterface;
  * always "Exact" — a genuine fuzzy-scoring engine is deferred, tracked
  * work, not silently approximated here.
  *
- * **Already-confirmed Journals are excluded** — SRS §10.5's "Baris
- * sumber bank yang sama tidak boleh dipost dua kali kepada peristiwa
- * sama" (the same bank source row must never be posted twice to the
- * same event) extends here to mean a Journal already confirmed-matched
- * to some *other* BankTransaction is never suggested again.
+ * **Already-confirmed Journals are excluded — except a Transfer's
+ * second leg** (AETS-008 §12.2, `BNK-014`). SRS §10.5's "Baris sumber
+ * bank yang sama tidak boleh dipost dua kali kepada peristiwa sama"
+ * (the same bank source row must never be posted twice to the same
+ * event) means a Journal already confirmed-matched to some *other*
+ * BankTransaction is never suggested again — except a Transfer
+ * Journal, which genuinely produces two bank-statement rows (money
+ * leaving one of the Tenant's Bank Accounts, arriving at another) for
+ * one accounting event. A Transfer Journal already confirmed-matched
+ * once, on a *different* Bank Account than the one this call is
+ * suggesting for, is suggested exactly once more, for its second and
+ * final leg; a Transfer already matched twice, or already matched on
+ * this same Bank Account, is excluded like any other fully-matched
+ * Journal.
  */
 final class BankTransactionMatchSuggester
 {
@@ -76,11 +85,27 @@ final class BankTransactionMatchSuggester
             ->where('journal_lines.amount', $this->money->toPersistedAmount($bankTransaction->amount()))
             ->where('journals.financial_date', $bankTransaction->transactionDate()->format('Y-m-d'))
             ->where('journals.state', 'Posted')
-            ->whereNotIn('journals.journal_id', function ($query) use ($tenantId): void {
-                $query->select('journal_id')->from('matches')->where('tenant_id', $tenantId->toString());
-            })
             ->pluck('journals.journal_id')
             ->all();
+
+        if ($candidateJournalIds === []) {
+            return [];
+        }
+
+        /** @var array<string, list<string>> $existingMatchBankAccountIdsByJournal */
+        $existingMatchBankAccountIdsByJournal = [];
+
+        foreach ($this->connection->table('matches')
+            ->join('bank_transactions', function ($join): void {
+                $join->on('matches.tenant_id', '=', 'bank_transactions.tenant_id')
+                    ->on('matches.bank_transaction_id', '=', 'bank_transactions.id');
+            })
+            ->where('matches.tenant_id', $tenantId->toString())
+            ->whereIn('matches.journal_id', $candidateJournalIds)
+            ->select('matches.journal_id', 'bank_transactions.bank_account_id')
+            ->get() as $row) {
+            $existingMatchBankAccountIdsByJournal[$row->journal_id][] = $row->bank_account_id;
+        }
 
         $candidates = [];
 
@@ -92,10 +117,34 @@ final class BankTransactionMatchSuggester
                 continue;
             }
 
+            $existingBankAccountIds = $existingMatchBankAccountIdsByJournal[$journalIdString] ?? [];
+
+            if (! self::isEligibleForAnotherMatch($identified[0], $existingBankAccountIds, $bankAccount->id())) {
+                continue;
+            }
+
             $candidates[] = new MatchCandidate($bankTransaction->id(), $journalId, $identified[0], $identified[1]);
         }
 
         return $candidates;
+    }
+
+    /**
+     * @param  list<string>  $existingMatchBankAccountIds  the Bank Account
+     *                                                     ID (as a raw string) of every Bank Transaction already
+     *                                                     confirmed-matched to this Journal
+     */
+    private static function isEligibleForAnotherMatch(MatchSourceType $sourceType, array $existingMatchBankAccountIds, BankAccountId $candidateBankAccountId): bool
+    {
+        if ($sourceType !== MatchSourceType::Transfer) {
+            return $existingMatchBankAccountIds === [];
+        }
+
+        if (count($existingMatchBankAccountIds) >= 2) {
+            return false;
+        }
+
+        return ! in_array($candidateBankAccountId->toString(), $existingMatchBankAccountIds, true);
     }
 
     public static function expectedJournalDirectionFor(BankTransactionDirection $direction): JournalDirection

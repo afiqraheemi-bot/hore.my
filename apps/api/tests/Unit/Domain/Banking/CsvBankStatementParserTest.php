@@ -186,6 +186,22 @@ final class CsvBankStatementParserTest extends TestCase
         $this->parser->parse($csv, $this->myr);
     }
 
+    /**
+     * BNK-020 (AETS-008 §12.9): a negative running balance describes an
+     * overdraft, which Money cannot represent and this milestone does
+     * not support — the whole file fails closed atomically rather than
+     * silently truncating or misreading it.
+     */
+    public function test_negative_balance_is_rejected(): void
+    {
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Overdrawn,100.00,OUT,-50.00,\n";
+
+        $this->expectException(MalformedBankStatementException::class);
+
+        $this->parser->parse($csv, $this->myr);
+    }
+
     public function test_a_single_malformed_row_fails_the_whole_import_not_just_that_row(): void
     {
         $csv = "date,description,amount,direction,balance,reference\n"

@@ -1441,11 +1441,20 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->assertJsonCount(0, 'data');
     }
 
-    public function test_confirming_an_already_matched_bank_transaction_is_rejected_via_the_api(): void
+    /**
+     * BNK-018 (AETS-008 §12.6): re-confirming the exact same
+     * (BankTransaction, Journal) pair deterministically replays the
+     * existing Match (200, same Match ID, no second row) rather than
+     * erroring; confirming a *different*, equally-eligible Journal
+     * against an already-matched BankTransaction is an explicit 409
+     * conflict, not a silent second Match or an ambiguous 422.
+     */
+    public function test_confirming_an_already_matched_bank_transaction_replays_or_conflicts_via_the_api(): void
     {
         $this->registerAndReturnCredentials('bank-match-dup@example.my');
         $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
         $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $travelId = $this->createAccount('5010', 'Travel', 'Expense');
 
         $this->postJson('/api/v1/expenses', [
             'amount' => '50.00',
@@ -1454,6 +1463,14 @@ final class IdentityAndAccountingApiTest extends TestCase
             'payment_account_id' => $bankLinkedAccountId,
             'description' => 'Office supplies',
         ], ['Idempotency-Key' => 'key-match-expense-0002'])->assertStatus(201);
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-05',
+            'expense_account_id' => $travelId,
+            'payment_account_id' => $bankLinkedAccountId,
+            'description' => 'Travel',
+        ], ['Idempotency-Key' => 'key-match-expense-0003'])->assertStatus(201);
 
         $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
             'linked_account_id' => $bankLinkedAccountId,
@@ -1466,16 +1483,30 @@ final class IdentityAndAccountingApiTest extends TestCase
             'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
         ])->assertStatus(201);
 
-        $suggestion = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->json('data.0');
+        $suggestions = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->json('data');
+        $this->assertCount(2, $suggestions);
+        $bankTransactionId = $suggestions[0]['bank_transaction_id'];
+        [$journalA, $journalB] = [$suggestions[0]['journal_id'], $suggestions[1]['journal_id']];
 
-        $this->postJson("/api/v1/bank-transactions/{$suggestion['bank_transaction_id']}/confirm-match", [
-            'journal_id' => $suggestion['journal_id'],
-        ])->assertStatus(201);
-
-        $again = $this->postJson("/api/v1/bank-transactions/{$suggestion['bank_transaction_id']}/confirm-match", [
-            'journal_id' => $suggestion['journal_id'],
+        $first = $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match", [
+            'journal_id' => $journalA,
         ]);
-        $again->assertStatus(422);
+        $first->assertStatus(201);
+        $first->assertJsonPath('is_new_match', true);
+        $matchId = $first->json('id');
+
+        $replay = $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match", [
+            'journal_id' => $journalA,
+        ]);
+        $replay->assertStatus(200);
+        $replay->assertJsonPath('is_new_match', false);
+        $replay->assertJsonPath('id', $matchId);
+        $this->assertSame(1, DB::connection('pgsql')->table('matches')->count());
+
+        $conflict = $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match", [
+            'journal_id' => $journalB,
+        ]);
+        $conflict->assertStatus(409);
         $this->assertSame(1, DB::connection('pgsql')->table('matches')->count());
     }
 
@@ -1521,6 +1552,40 @@ final class IdentityAndAccountingApiTest extends TestCase
         $reopen->assertStatus(200);
         $reopen->assertJsonPath('state', 'Draft');
         $this->assertSame(1, DB::connection('pgsql')->table('reconciliation_reopenings')->count());
+    }
+
+    /**
+     * BNK-020 (AETS-008 §12.9): a negative opening or closing balance
+     * describes an overdraft, out of scope for this milestone — the
+     * request-validation boundary fails closed with 422 before Money is
+     * ever constructed, rather than accepting it and failing later,
+     * confusingly, deep inside difference computation.
+     */
+    public function test_opening_a_reconciliation_with_a_negative_balance_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('reconciliation-negative-balance@example.my');
+        $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankLinkedAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '-100.00',
+            'closing_balance' => '1500.00',
+        ])->assertStatus(422);
+
+        $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '-1.00',
+        ])->assertStatus(422);
+
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliations')->count());
     }
 
     public function test_marking_a_reconciliation_balanced_with_a_nonzero_difference_is_rejected_via_the_api(): void

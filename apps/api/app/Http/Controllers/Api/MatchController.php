@@ -9,9 +9,9 @@ use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankTransactionId;
-use App\Domain\Banking\Exception\BankTransactionAlreadyMatchedException;
 use App\Domain\Banking\Exception\InvalidBankAccountIdException;
 use App\Domain\Banking\Exception\InvalidBankTransactionIdException;
+use App\Domain\Banking\Exception\MatchConfirmationConflictException;
 use App\Domain\Banking\Exception\NoSuchMatchCandidateException;
 use App\Domain\Banking\MatchingService;
 use App\Http\Controllers\Controller;
@@ -59,15 +59,19 @@ final class MatchController extends Controller
         $user = $request->user();
 
         try {
-            $match = $this->matchingService->confirm(
+            $result = $this->matchingService->confirm(
                 $currentTenant->id(),
                 BankTransactionId::of($bankTransactionId),
                 JournalId::of($request->string('journal_id')->toString()),
                 ActorReference::of($user->id),
             );
-        } catch (InvalidBankTransactionIdException|InvalidJournalIdException|BankTransactionAlreadyMatchedException|NoSuchMatchCandidateException $e) {
+        } catch (InvalidBankTransactionIdException|InvalidJournalIdException|NoSuchMatchCandidateException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        } catch (MatchConfirmationConflictException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
         }
+
+        $match = $result->match();
 
         return response()->json([
             'id' => $match->id()->toString(),
@@ -75,6 +79,7 @@ final class MatchController extends Controller
             'journal_id' => $match->journalId()->toString(),
             'source_type' => $match->sourceType()->name,
             'rationale' => $match->rationale(),
-        ], 201);
+            'is_new_match' => $result->isNewMatch(),
+        ], $result->isNewMatch() ? 201 : 200);
     }
 }

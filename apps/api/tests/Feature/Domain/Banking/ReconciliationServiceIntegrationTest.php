@@ -13,6 +13,7 @@ use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankStatementImportService;
 use App\Domain\Banking\CsvBankStatementParser;
 use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
+use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Banking\Reconciliation;
@@ -158,6 +159,26 @@ final class ReconciliationServiceIntegrationTest extends TestCase
 
         $this->assertFalse($difference->isZero());
         $this->assertSame('200.00', $difference->amount()->toDecimalString());
+    }
+
+    /**
+     * BNK-020 (AETS-008 §12.9): an overdraft mid-period — where imported
+     * MoneyOut exceeds opening balance plus imported MoneyIn at the
+     * point Money would need to go negative to represent the implied
+     * running balance — fails closed with a distinct, explicit
+     * exception rather than an incorrect or silently wrong difference.
+     * Overdraft support itself remains out of scope; this only proves
+     * the boundary fails safely instead of lying.
+     */
+    public function test_an_implied_overdraft_fails_closed_instead_of_computing_a_wrong_difference(): void
+    {
+        $this->importStatement("2026-08-01,Large withdrawal,900.00,OUT,,\n");
+
+        $reconciliation = $this->open('100.00', '0.01');
+
+        $this->expectException(ReconciliationComputationExceedsSupportedRangeException::class);
+
+        $this->reconciliationService->computeDifference($this->tenant, $reconciliation);
     }
 
     public function test_transactions_outside_the_period_are_excluded_from_the_difference(): void
