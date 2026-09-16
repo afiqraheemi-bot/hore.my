@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.2.2
+- Version: 0.3.0
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -9,7 +9,7 @@
 
 ## 1. Purpose and status warning
 
-This Draft inventories current Banking proof and names missing acceptance evidence. It is not a release certificate. IDs marked `Existing` map to executable tests already in the repository; IDs marked `Required` must not be implemented by inventing answers to AETS-008 §12.
+This Draft inventories current Banking proof and names missing acceptance evidence. It is not a release certificate. IDs marked `Existing` map to executable tests already in the repository; IDs marked `Required` must be implemented against the decisions AETS-008 §12 now records (as of v0.2.0), not invented independently; IDs marked `Deferred` test a capability §12 has explicitly placed out of this Draft's Active-version scope and do not gate Activation.
 
 All integration and schema tests require real PostgreSQL and must run with skip/warning/risky/deprecation failures enabled.
 
@@ -95,32 +95,34 @@ The existing Bank Account and Bank Transaction migration test classes additional
 
 ## 3. Required evidence not yet satisfied
 
-| ID | State | Required proof | Blocker/reference |
+| ID | State | Required proof | Invariant/reference |
 | --- | --- | --- | --- |
-| BNK-T045 | Required | Two concurrent identical file imports produce the approved single-result/replay outcome. | AETS-008 §12.6 |
-| BNK-T046 | Required | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | AETS-008 §12.6 |
-| BNK-T047 | Required | Two concurrent confirmations for one Bank Transaction have the approved caller-visible outcome and one Match. | AETS-008 §12.6 |
-| BNK-T049 | Required | A Completed Reconciliation remains continuously exact under the approved late-import policy. | AETS-008 §12.3 |
-| BNK-T050 | Required | Completion enforces the approved matched/explained-item prerequisite. | AETS-008 §12.1 |
-| BNK-T051 | Required | Transfer/two-sided and any split cardinality follow the approved model. | AETS-008 §12.2 |
-| BNK-T052 | Required | Overlapping/open-period rules are enforced exactly as approved. | AETS-008 §12.4 |
-| BNK-T053 | Required | Guided mapping handles approved noncanonical formats without silent field shifts. | AETS-008 §12.5 |
-| BNK-T054 | Required | Score and rationale round-trip under the approved canonical model. | AETS-008 §12.7 |
-| BNK-T055 | Required | Matching candidates cover every approved source type and reject wrong date, direction, Account, state, Tenant, and currency independently. | AETS-008 §6/§12.8 |
+| BNK-T045 | Required | Two concurrent identical file imports return the same `ImportBatch` result (deterministic replay), never an error. | `BNK-018`, AETS-008 §12.6 |
+| BNK-T046 | Required | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | `BNK-018`, AETS-008 §12.6 |
+| BNK-T047 | Required | Two concurrent confirmations for one Bank Transaction: an identical candidate replays the confirmed Match, a differing candidate receives an explicit typed conflict, and exactly one Match persists. | `BNK-018`, AETS-008 §12.6 |
+| BNK-T049 | Required | A Completed Reconciliation's snapshot never changes after a later import inside its period; the late transaction surfaces separately and only `reopen()` can incorporate it. | `BNK-017`, AETS-008 §12.3 |
+| BNK-T050 | Required | Completion is rejected while any in-period Bank Transaction lacks a confirmed Match, even at exact zero arithmetic difference. | `BNK-016`, AETS-008 §12.1 |
+| BNK-T051 | Required | A Transfer Journal accepts exactly two confirmed Matches, one per leg, each on the correct Bank Account; every other Journal type still accepts at most one. | `BNK-014`, AETS-008 §12.2 |
+| BNK-T052 | Required | Opening a Reconciliation whose period overlaps any existing Reconciliation for the same Bank Account — in any lifecycle state — is rejected at both the application and schema boundary. | `BNK-015`, AETS-008 §12.4 |
+| BNK-T053 | Deferred | Guided mapping of noncanonical statement formats. Out of this Draft's Active-version scope; does not gate Activation. | AETS-008 §12.5 |
+| BNK-T054 | Required | Every Match persists confidence as the discrete value `Exact`; no numeric or calibrated score is ever produced or claimed. | `BNK-019`, AETS-008 §12.7 |
+| BNK-T055 | Required | Matching candidates cover every currently supported source type (Expense, Income, Transfer, Owner Equity) and independently reject wrong date, direction, Account, state, Tenant, and currency. | §6; Invoice/document targets remain out of scope per §12.8 |
 | BNK-T057 | Required | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. | AETS-012 Draft; cannot claim yet |
+| BNK-T058 | Required | Importing or reconciling a Bank Account/period with a negative opening, closing, or running balance fails closed with an explicit validation error raised at import time. | `BNK-020`, AETS-008 §12.9 |
 
 ## 4. Activation gate
 
 ATS-008 may become `Active` only when:
 
 - AETS-008 is Active;
-- every accepted `BNK-NNN` invariant maps to executable evidence;
-- all §3 proofs whose policy has been approved are implemented and passing;
+- every accepted `BNK-NNN` invariant, including `BNK-014`–`BNK-020`, maps to executable evidence;
+- every §3 item marked `Required` is implemented and passing (items marked `Deferred` do not gate Activation);
 - real PostgreSQL runs with zero skips/failures; and
 - neither this document nor CI claims Proof of Accuracy before AETS-012's separate certification gate is satisfied.
 
 ## Changelog
 
+- **0.3.0 (2026-09-16):** Follows AETS-008 v0.2.0's resolution of every §12 decision: retitles §3's required proofs against the now-decided `BNK-014`–`BNK-020` invariants instead of an unresolved policy, adds `BNK-T058` for the negative-balance fail-closed proof, and reclassifies `BNK-T053` (guided mapping) as `Deferred` since §12.5 places it out of this Draft's Active-version scope. No test in this document is newly `Existing`; all decided invariants remain unimplemented until their own proof lands.
 - **0.2.2 (2026-09-16):** Moves BNK-T056 to Existing with authentication, request-validation, malformed/missing identifier, no-persistence, and cross-Tenant HTTP proofs covering the Banking route surface. Eleven broader or policy-dependent assurance items remain required.
 - **0.2.1 (2026-09-16):** Moves BNK-T048 to Existing with a genuine two-process proof across every fixed lifecycle edge and reopening-history atomicity. Twelve policy-dependent or broader assurance items remain required.
 - **0.2.0 (2026-09-15):** Adds BNK-T035–BNK-T044 for exact import counts, Money/currency, completion-time consistency, non-blank reopening reasons, and migration rollback. No Draft workflow decision changed.

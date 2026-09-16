@@ -1,17 +1,17 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.1.3
+- Version: 0.2.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
-- Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the unresolved workflow decisions in §12
+- Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the workflow decisions in §12 — **the Founder explicitly delegated §12's decisions to the CTO on 2026-09-16, in lieu of deciding each individually**; a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness (distinct from the product/workflow judgment calls §12 required) remains outstanding and is still required before Activation (§13)
 - Related: [AETS-000](AETS-000.md), [AETS-001](AETS-001-Accounting-Terminology.md), [AETS-002](AETS-002-Accounting-Invariants.md), [AETS-003](AETS-003-Money-Specification.md), [AETS-004](AETS-004-Journal-Posting-Model.md), [AETS-007](AETS-007-Posting-Command.md), [ADR-0004](../../adr/0004-financial-integrity-principles.md), [ADR-0005](../../adr/0005-ai-provider-abstraction.md), [ADR-0007](../../adr/0007-money-representation-strategy.md), [`HORE_MY_PROJECT_INSTRUCTIONS.txt`](../../product/reference/HORE_MY_PROJECT_INSTRUCTIONS.txt), [`HORE_MY_MASTER_CONTEXT.md`](../../product/reference/HORE_MY_MASTER_CONTEXT.md), System Requirements Specification v1.0 BM
 
 ## 1. Purpose and status warning
 
-This document is the planned AETS-008 home for bank-statement import, matching, and reconciliation. It records the requirements already locked by higher authority, inventories the current implementation, and exposes the decisions that remain unresolved.
+This document is the planned AETS-008 home for bank-statement import, matching, and reconciliation. It records the requirements already locked by higher authority, inventories the current implementation, and records the Founder/Product decisions §12 now resolves.
 
-**This Draft is not governing implementation and is not an accuracy or release certification.** It must not be marked `Active` until the review required by AETS-000 §8.2 is recorded and every Founder/Product decision in §12 is resolved. Existing code described here is evidence of current behaviour, not authority for that behaviour.
+**This Draft is not governing implementation and is not an accuracy or release certification.** It must not be marked `Active` until the review required by AETS-000 §8.2 is recorded, every decision in §12 is implemented (not merely decided) and proven, and the Accounting Domain Reviewer sign-off in §13 is recorded. As of v0.2.0, every §12 decision has been made — under explicit Founder delegation to the CTO — but §12's own text describes the decided policy, not yet the implemented behaviour; existing code described elsewhere in this document remains evidence of current behaviour, not authority for it, until each decision is built and tested.
 
 ## 2. Scope
 
@@ -31,7 +31,7 @@ This document is the planned AETS-008 home for bank-statement import, matching, 
 - Multi-currency banking or reconciliation.
 - Autonomous AI posting or autonomous reconciliation completion.
 - Invoicing/document match targets not yet exposed by the current matching implementation.
-- A fuzzy scoring model, tolerance windows, partial matches, split matches, and many-to-one/one-to-many matching semantics until §12 is resolved.
+- A fuzzy scoring model, tolerance windows, partial matches, and many-to-one/one-to-many matching semantics beyond the single two-leg Transfer exception §12.2 decides.
 - The Reconciliation Report deferred by AETS-009.
 - Any claim that BNK-002 guided column mapping is implemented; the current parser accepts one canonical CSV layout only.
 
@@ -73,7 +73,7 @@ The current implementation:
 - commits the ImportBatch and all new Bank Transactions in one database transaction; and
 - creates no Journal and has no posting permission.
 
-This does **not** yet prove concurrent identical imports return one deterministic replay result. The database rejects duplication, but the service-level concurrent replay contract remains an open assurance item (§12.6).
+The database-level proof that concurrent identical imports never duplicate exists (`f7f05c9`); §12.6 now ratifies deterministic replay as the caller-visible contract this must also satisfy at the service/HTTP boundary, which is not yet separately proven.
 
 ## 6. Matching contract already evidenced
 
@@ -88,7 +88,7 @@ Current candidate generation is read-only and requires:
 
 Confirmation revalidates candidacy at confirmation time and persists only a confirmed immutable Match. A Bank Transaction may have at most one confirmed Match at the database boundary.
 
-These exact-candidate rules and supported source types describe current code; they remain Draft until reviewed. The cardinality of Journal-to-Bank-Transaction matches is intentionally unresolved (§12.2), particularly for Transfers with bank rows on both sides.
+These exact-candidate rules and supported source types describe current code; they remain Draft until reviewed. §12.2 decides the cardinality of Journal-to-Bank-Transaction matches — one, except a Transfer's two legs — but the suggester does not yet implement the two-leg exception.
 
 ## 7. Reconciliation calculation and lifecycle
 
@@ -107,7 +107,7 @@ The current lifecycle is:
 - lifecycle transitions lock the Reconciliation row and persist transactionally; genuine two-process races prove that exactly one caller advances each lifecycle edge while the other is safely rejected.
 - `reopen` accepts only `Completed`, requires a non-empty reason, returns to `Draft`, clears `completed_at`, and atomically appends a reopening-history record.
 
-Whether matching completeness is also a prerequisite for `Balanced` or `Completed` is not decided by the current authoritative text and is deferred to §12.1.
+§12.1 decides that matching completeness is also a prerequisite for `Completed` (every in-period Bank Transaction must hold a confirmed Match, not only a zero arithmetic difference); this is not yet implemented in `markBalanced`/`complete` today.
 
 ## 8. Persistence integrity
 
@@ -121,7 +121,7 @@ The production migration chain now enforces tenant-coherent composite relationsh
 
 Invalid pre-existing cross-tenant rows make the hardening migration fail. It never rewrites, reassigns, or silently accepts ambiguous financial data.
 
-The migration chain also enforces the already-approved persistence facts that import counts are non-negative and reconcile exactly, Bank Transaction amounts are non-negative magnitudes, Banking currency is MYR, `Completed` and `completed_at` are mutually consistent, and reopening reasons are non-blank. These constraints do not decide whether statement or reconciliation *balances* may be negative; that separate overdraft/sign-policy question remains open (§12.9).
+The migration chain also enforces the already-approved persistence facts that import counts are non-negative and reconcile exactly, Bank Transaction amounts are non-negative magnitudes, Banking currency is MYR, `Completed` and `completed_at` are mutually consistent, and reopening reasons are non-blank. §12.9 decides that a negative statement or reconciliation *balance* is out of scope and must fail closed at import time; this fail-closed validation is not yet implemented at that boundary — today's code only fails later, implicitly, when difference computation needs a negative intermediate value.
 
 ## 9. Candidate invariants for review
 
@@ -140,6 +140,15 @@ The following IDs are proposed so the corresponding Draft ATS can trace current 
 - `BNK-011` — Lifecycle transitions are serialized and atomic.
 - `BNK-012` — Reopening is explicit, reasoned, append-only audited, and atomic.
 - `BNK-013` — AI/matching cannot post or bypass Accounting Core.
+- `BNK-014` — A Transfer Journal has at most two confirmed Matches, one per leg, each against the Bank Account corresponding to that leg's own Account; every other Journal type retains at most one (§12.2).
+- `BNK-015` — A Reconciliation's period never overlaps another Reconciliation's period for the same Bank Account, in any lifecycle state (§12.4).
+- `BNK-016` — Completion requires exact zero arithmetic difference **and** a confirmed Match for every in-period Bank Transaction (§12.1).
+- `BNK-017` — A Completed Reconciliation's verified result is an immutable snapshot; a later import never silently alters it, and re-inclusion requires an explicit `reopen()` (§12.3).
+- `BNK-018` — Concurrent identical import and Match-confirmation races resolve as deterministic replay or an explicit typed conflict, never a raw persistence error or a silent duplicate effect (§12.6).
+- `BNK-019` — Every Match's confidence is the discrete value `Exact`; no calibrated numeric score is claimed by the currently supported matcher (§12.7).
+- `BNK-020` — Import or reconciliation of any Bank Account or period containing a negative balance fails closed with an explicit validation error at import time (§12.9).
+
+These eight join `BNK-001`–`BNK-013` as candidate invariants pending the same ATS-008 traceability and Accounting Domain Reviewer sign-off (§13); none is implemented by this document alone.
 
 ## 10. Failure semantics
 
@@ -162,57 +171,62 @@ The following IDs are proposed so the corresponding Draft ATS can trace current 
 - Explicit tenant-isolation proof at repository, service, HTTP, and schema boundaries.
 - A connected bank-statement segment in the approved Proof of Accuracy golden dataset when AETS-012 is activated.
 - Accounting Domain Reviewer confirmation of difference sign semantics, lifecycle prerequisites, and transfer matching cardinality.
+- Implementation and real-PostgreSQL proof of `BNK-014`–`BNK-020` (§12's decisions): two-leg Transfer matching, period-overlap rejection, full-matching completion prerequisite, the immutable completion snapshot, replay/conflict concurrency contracts for both import and match confirmation, the discrete `Exact` confidence value, and fail-closed negative-balance validation at import time. None of these seven exists in code yet; §12 records policy, not implementation status.
 
-## 12. Unresolved decisions — activation blockers
+## 12. Founder/Product decisions (2026-09-16)
 
-### 12.1 Completion prerequisite
+Every decision below was made by the CTO under explicit, dated Founder delegation ("aku serahkan keputusan ini pada kau, decide yang paling terbaik untuk release dan jangka panjang" — 2026-09-16), optimizing for release safety and long-term architectural coherence over short-term feature breadth. This section records what was decided and why. None of it is implemented by this edit alone — §11 and §13 still gate Activation on building, testing, and proving each decision, and on a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness.
 
-The sources require exact RM0.00 and say matched items are tracked, but do not settle whether every in-period Bank Transaction must be matched/explained before completion. Founder/Product and Accounting Domain Reviewer must decide this explicitly.
+### 12.1 Completion prerequisite — decided: full matching required
 
-### 12.2 Match cardinality and split/transfer behaviour
+`complete()` requires exact RM0.00 arithmetic difference **and** a confirmed Match for every in-period Bank Transaction. Arithmetic-zero alone permits offsetting errors (two wrong, canceling mismatches) to pass as a clean reconciliation; requiring every line matched is what real double-entry reconciliation practice (and this project's own exact-matching, no-fuzzy-shortcuts posture) means by "reconciled." A Bank Transaction with no corresponding accounting record is a signal to post the missing Expense/Income/Transfer/Owner-Equity entry first — reconciliation is deliberately built as the process that surfaces unrecorded activity, not one that tolerates it silently. See `BNK-016`.
 
-The current database guarantees one Match per Bank Transaction but permits a Journal to have multiple Matches. The current suggester excludes an already-matched Journal. Those facts conflict for plausible two-sided Transfer reconciliation and must not be resolved by inference.
+### 12.2 Match cardinality and split/transfer behaviour — decided: two-leg Transfers are the one exception
 
-### 12.3 Late imports affecting a Completed Reconciliation
+Every Journal type keeps at most one confirmed Match — except a Transfer Journal, which may have at most two: one per leg, each against a distinct Bank Transaction on the Bank Account that corresponds to that leg's own source or destination Account. A Transfer between two of the Tenant's own onboarded Bank Accounts genuinely produces two bank-statement rows (money leaving one, arriving at the other) for one accounting event; the matching suggester must stop excluding an already-matched Journal outright and instead allow exactly the second, opposite-Bank-Account leg. See `BNK-014`.
 
-Difference is currently a live projection over imported rows. A later import inside a completed period can therefore make a previously exact Reconciliation nonzero after completion. The approved contract must choose and specify one coherent policy—such as immutable membership/snapshot semantics, blocking affected imports until audited reopen, or another reviewed design—before the implementation can claim `BNK-010` continuously rather than only at the completion instant.
+### 12.3 Late imports affecting a Completed Reconciliation — decided: immutable completion snapshot, never silent drift
 
-### 12.4 Overlapping Reconciliations
+`complete()` durably records the exact set of Bank Transactions (or an equivalent deterministic aggregate) it verified as zero-difference, at the instant of completion. A Bank Transaction imported afterward — even one whose Transaction Date falls inside an already-completed period — is never silently absorbed into that stored result; a `Completed` Reconciliation's recorded outcome does not change without a human action. The late Bank Transaction is instead surfaced as unreconciled, and reusing this project's own already-built, already-audited `reopen()` flow (§7) is the only path to incorporate it. This was chosen over blocking the late import outright because banks do post backdated value dates in practice, and over silent live recomputation because a `Completed` reconciliation that can quietly stop being true defeats its entire purpose as a trusted, signed-off artifact. See `BNK-017`.
 
-No authoritative source decides whether periods for one Bank Account may overlap, or whether only one open Reconciliation may exist for a period. The database currently permits both.
+### 12.4 Overlapping Reconciliations — decided: no overlap, ever, per Bank Account
 
-### 12.5 Guided file mapping and parser variants
+A new Reconciliation's period must not overlap, in whole or in part, any existing Reconciliation's period for the same Bank Account, regardless of that existing Reconciliation's lifecycle state — including `Completed` and a `Completed` Reconciliation currently sitting reopened back in `Draft`. Real bank statements arrive as an ordered, non-overlapping sequence of periods; allowing overlap would make "which Reconciliation does this Bank Transaction's difference belong to" ambiguous and would undermine the immutable-snapshot guarantee just decided in §12.3. Enforced at both the application boundary and, matching this project's established double-layer integrity pattern, a database constraint. See `BNK-015`.
 
-SRS BNK-002 calls for guided mapping of unrecognized formats. The current canonical CSV parser does not implement it. Accepted formats, mapping persistence, validation UX, and parser-provider boundaries require product specification before implementation.
+### 12.5 Guided file mapping and parser variants — decided: out of MVP scope
 
-### 12.6 Concurrency outcome contracts
+The canonical single CSV layout (§5) remains the complete supported import contract for this document's Active version. SRS BNK-002's guided-mapping aspiration is real but is a substantial, independent product surface (accepted-format inventory, mapping-persistence UX, validation flow) that does not gate this release. This mirrors the Master Context's own precedent of explicitly excluding live bank feeds from MVP (§2.2): a scoped boundary, not a temporary gap, to be picked up by a dedicated future minor version or successor document.
 
-Database uniqueness prevents duplicate rows, but the required caller-visible result for concurrent identical file imports and concurrent Match confirmations is not yet specified: deterministic replay, focused conflict, or another response. Integrity is fail-safe; API semantics remain undecided.
+### 12.6 Concurrency outcome contracts — decided: deterministic replay, or an explicit typed conflict
 
-### 12.7 Matching score and rationale
+Concurrent identical-file import races resolve as deterministic replay: a second caller submitting the same file hash against the same Bank Account while the first is still in flight receives the same `ImportBatch` result as the first, never an error — the database-level proof already committed for this (`f7f05c9`) is ratified as the caller-visible contract, not merely an internal safety property. Concurrent Match confirmations against the same Bank Transaction resolve the same way this codebase already resolves Task-submission races (WTS-001 `TSK-011`): confirming the same candidate Journal again replays the existing confirmed Match; confirming a different candidate Journal against a Bank Transaction a concurrent winner already confirmed returns an explicit, typed conflict — never a raw database exception, never a silent second Match. See `BNK-018`.
 
-The SRS requires score and rationale. The current exact matcher persists rationale but models its score only implicitly as exact. The canonical score representation, calibration, thresholds, and human-review rules are not decided.
+### 12.7 Matching score and rationale — decided: a discrete Exact confidence, not a calibrated number
 
-### 12.8 Additional match targets and reporting
+The only score this document's supported matcher may claim is a discrete `MatchConfidence::Exact` value, since only exact-criterion matching (§6) is in scope. A calibrated, weighted, or probability-based score — and the thresholds and human-review rules a real fuzzy score would require — stay explicitly out of scope, consistent with §2.2's existing exclusion of fuzzy matching. This closes the representation ambiguity without building the fuzzy system the SRS aspires to. See `BNK-019`.
 
-Invoice/document targets and the Reconciliation Report remain incomplete/deferred. Their contracts must be added without weakening the invariants above.
+### 12.8 Additional match targets and reporting — decided: confirmed deferred, not silently dropped
 
-### 12.9 Negative statement balances and overdrafts
+Invoice/document match targets and the Reconciliation Report (already excluded by §2.2) are confirmed out of this document's Active-version scope. Their eventual contracts must be added as a future addition that does not weaken any invariant in §9 — this is a scope boundary the team is choosing deliberately, not an implementation gap blocking Activation.
 
-The active Money model is non-negative, while a real bank statement's running, opening, or closing balance may be negative for an overdraft. Current code cannot faithfully reconstruct such a balance and difference computation explicitly fails when it needs a negative intermediate value. The Accounting Domain Reviewer must define signed-balance semantics and their relationship to unsigned Money magnitudes before support is implemented; this Draft does not prohibit legitimate overdrafts by adding an arbitrary non-negative balance constraint.
+### 12.9 Negative statement balances and overdrafts — decided: fail closed, explicitly, at the right boundary
+
+Overdraft and negative statement/running/closing balances are out of scope for this document's Active version. A Bank Account or statement period whose opening balance, closing balance, or any running balance is negative must fail closed with an explicit, user-facing validation error raised at import time — not only implicitly, later, when difference computation happens to need a negative intermediate value, as today. This defers rather than forecloses an eventual signed-balance model: introducing negative Money handling has cross-cutting blast radius across AETS-003's non-negative Money invariant well beyond Banking alone, and a change with that reach must not be decided as a side effect of unblocking Banking. Malaysian solopreneur/microbusiness banking (this product's actual target per the Master Context) rarely operates in genuine sustained overdraft, so this ships the common case now and leaves the harder signed-Money architecture question for its own dedicated ADR if real customer need ever demands it. See `BNK-020`.
 
 ## 13. Activation checklist
 
 - [ ] CTO / Technical Partner review recorded.
-- [ ] Accounting Domain Reviewer approval recorded.
-- [ ] Founder / Product decisions in §12 recorded where required.
-- [ ] Every accepted decision converted into normative MUST-level language.
+- [ ] Accounting Domain Reviewer approval recorded — outstanding; distinct from the Founder-delegated CTO decisions in §12, and still required for accounting correctness sign-off.
+- [x] Founder / Product decisions in §12 recorded where required — recorded 2026-09-16 under explicit Founder delegation to the CTO.
+- [x] Every accepted decision converted into normative MUST-level language — see §12 and `BNK-014`–`BNK-020`.
+- [ ] `BNK-014`–`BNK-020` implemented in code and proven against real PostgreSQL (§11).
 - [ ] ATS-008 updated from evidence inventory to complete normative traceability.
 - [ ] All required tests pass against real PostgreSQL with zero skips.
 - [ ] AETS/ATS indexes and versions updated.
 
 ## Changelog
 
+- **0.2.0 (2026-09-16):** Resolves every §12 decision group under explicit Founder delegation to the CTO ("aku serahkan keputusan ini pada kau, decide yang paling terbaik untuk release dan jangka panjang") and adds `BNK-014`–`BNK-020` to §9 as the resulting candidate invariants. This records accepted policy; none of it is implemented in code yet — §11 and §13 updated accordingly. A qualified Accounting Domain Reviewer's independent sign-off on accounting correctness remains outstanding and unaffected by this delegation.
 - **0.1.3 (2026-09-16):** Records the implemented authenticated HTTP boundary and deterministic malformed/missing identifier semantics across every Banking route. No workflow or accounting policy changed.
 - **0.1.2 (2026-09-16):** Records the executable two-process concurrency proof for every fixed Reconciliation lifecycle edge, including atomic reopening history. No caller-visible API policy or unresolved workflow decision changed.
 - **0.1.1 (2026-09-15):** Records database enforcement of approved exact-value/state facts and explicitly defers negative bank-balance/overdraft sign semantics. No unresolved policy was selected.
