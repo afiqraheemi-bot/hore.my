@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankStatementImportService;
+use App\Domain\Banking\Exception\InvalidBankAccountIdException;
 use App\Domain\Banking\Exception\MalformedBankStatementException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Banking\ImportBankStatementRequest;
@@ -30,7 +31,13 @@ final class BankStatementImportController extends Controller
 
     public function store(ImportBankStatementRequest $request, CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $bankAccount = $this->bankAccountRepository->findById($currentTenant->id(), BankAccountId::of($bankAccountId));
+        try {
+            $id = BankAccountId::of($bankAccountId);
+        } catch (InvalidBankAccountIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $bankAccount = $this->bankAccountRepository->findById($currentTenant->id(), $id);
 
         if ($bankAccount === null) {
             return response()->json(['message' => 'BankAccount not found.'], 404);

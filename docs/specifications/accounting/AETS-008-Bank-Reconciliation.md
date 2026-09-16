@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.1.2
+- Version: 0.1.3
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the unresolved workflow decisions in §12
@@ -143,6 +143,8 @@ The following IDs are proposed so the corresponding Draft ATS can trace current 
 
 ## 10. Failure semantics
 
+- Every Banking route requires authenticated, tenant-resolved access.
+- Malformed route identifiers and invalid write payloads return validation failure without persistence; canonical identifiers that are absent or belong to another Tenant fail closed as not found where the route addresses a resource directly.
 - Parse or validation failure writes no Import Batch and no Bank Transaction.
 - A persistence failure during import rolls back the whole batch.
 - A failed lifecycle transition leaves state and completion time unchanged.
@@ -211,6 +213,7 @@ The active Money model is non-negative, while a real bank statement's running, o
 
 ## Changelog
 
+- **0.1.3 (2026-09-16):** Records the implemented authenticated HTTP boundary and deterministic malformed/missing identifier semantics across every Banking route. No workflow or accounting policy changed.
 - **0.1.2 (2026-09-16):** Records the executable two-process concurrency proof for every fixed Reconciliation lifecycle edge, including atomic reopening history. No caller-visible API policy or unresolved workflow decision changed.
 - **0.1.1 (2026-09-15):** Records database enforcement of approved exact-value/state facts and explicitly defers negative bank-balance/overdraft sign semantics. No unresolved policy was selected.
 - **0.1.0 (2026-09-15):** Initial Draft. Records locked requirements, current implementation evidence, schema tenant hardening, and eight unresolved decision groups. No new authority, MVP scope, or accuracy claim is introduced.

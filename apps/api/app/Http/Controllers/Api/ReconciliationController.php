@@ -8,6 +8,8 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\BankAccountId;
+use App\Domain\Banking\Exception\InvalidBankAccountIdException;
+use App\Domain\Banking\Exception\InvalidReconciliationIdException;
 use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
@@ -41,7 +43,11 @@ final class ReconciliationController extends Controller
 
     public function index(CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $id = BankAccountId::of($bankAccountId);
+        try {
+            $id = BankAccountId::of($bankAccountId);
+        } catch (InvalidBankAccountIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
             return response()->json(['message' => 'BankAccount not found.'], 404);
@@ -54,7 +60,11 @@ final class ReconciliationController extends Controller
 
     public function store(OpenReconciliationRequest $request, CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $id = BankAccountId::of($bankAccountId);
+        try {
+            $id = BankAccountId::of($bankAccountId);
+        } catch (InvalidBankAccountIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
             return response()->json(['message' => 'BankAccount not found.'], 404);
@@ -78,6 +88,8 @@ final class ReconciliationController extends Controller
     {
         try {
             $reconciliation = $this->reconciliationRepository->getById($currentTenant->id(), ReconciliationId::of($reconciliationId));
+        } catch (InvalidReconciliationIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         } catch (ReconciliationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);
         }
@@ -94,7 +106,7 @@ final class ReconciliationController extends Controller
     {
         try {
             $reconciliation = $this->reconciliationService->markBalanced($currentTenant->id(), ReconciliationId::of($reconciliationId));
-        } catch (InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException $e) {
+        } catch (InvalidReconciliationIdException|InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (ReconciliationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);
@@ -120,7 +132,7 @@ final class ReconciliationController extends Controller
                 $request->string('reason')->toString(),
                 ActorReference::of($user->id),
             );
-        } catch (InvalidReconciliationStateTransitionException|ReconciliationReopenRequiresReasonException $e) {
+        } catch (InvalidReconciliationIdException|InvalidReconciliationStateTransitionException|ReconciliationReopenRequiresReasonException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (ReconciliationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);
@@ -136,7 +148,7 @@ final class ReconciliationController extends Controller
     {
         try {
             $reconciliation = $action();
-        } catch (InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException $e) {
+        } catch (InvalidReconciliationIdException|InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (ReconciliationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);

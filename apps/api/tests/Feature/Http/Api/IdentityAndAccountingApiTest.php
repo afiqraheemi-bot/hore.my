@@ -1597,6 +1597,126 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->assertSame(0, DB::connection('pgsql')->table('matches')->count());
     }
 
+    public function test_banking_routes_fail_deterministically_for_malformed_and_missing_identifiers(): void
+    {
+        $this->registerAndReturnCredentials('banking-http-boundaries@example.my');
+
+        $malformedId = str_repeat('x', 65);
+        $validStatement = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Deposit,10.00,IN,,BOUNDARY-001\n";
+        $openPayload = [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '1010.00',
+        ];
+
+        $this->getJson("/api/v1/bank-accounts/{$malformedId}/transactions")->assertStatus(422);
+        $this->post("/api/v1/bank-accounts/{$malformedId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $validStatement),
+        ])->assertStatus(422);
+        $this->getJson("/api/v1/bank-accounts/{$malformedId}/match-suggestions")->assertStatus(422);
+        $this->getJson("/api/v1/bank-accounts/{$malformedId}/reconciliations")->assertStatus(422);
+        $this->postJson("/api/v1/bank-accounts/{$malformedId}/reconciliations", $openPayload)->assertStatus(422);
+        $this->postJson("/api/v1/bank-transactions/{$malformedId}/confirm-match", [
+            'journal_id' => 'journal-canonical-but-missing',
+        ])->assertStatus(422);
+        $this->getJson("/api/v1/reconciliations/{$malformedId}")->assertStatus(422);
+        $this->postJson("/api/v1/reconciliations/{$malformedId}/start-review")->assertStatus(422);
+        $this->postJson("/api/v1/reconciliations/{$malformedId}/mark-balanced")->assertStatus(422);
+        $this->postJson("/api/v1/reconciliations/{$malformedId}/complete")->assertStatus(422);
+        $this->postJson("/api/v1/reconciliations/{$malformedId}/reopen", [
+            'reason' => 'Boundary proof',
+        ])->assertStatus(422);
+
+        $missingBankAccountId = 'bank-account-canonical-but-missing';
+        $missingReconciliationId = 'reconciliation-canonical-but-missing';
+
+        $this->getJson("/api/v1/bank-accounts/{$missingBankAccountId}/transactions")->assertStatus(404);
+        $this->post("/api/v1/bank-accounts/{$missingBankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('statement.csv', $validStatement),
+        ])->assertStatus(404);
+        $this->getJson("/api/v1/bank-accounts/{$missingBankAccountId}/match-suggestions")->assertStatus(404);
+        $this->getJson("/api/v1/bank-accounts/{$missingBankAccountId}/reconciliations")->assertStatus(404);
+        $this->postJson("/api/v1/bank-accounts/{$missingBankAccountId}/reconciliations", $openPayload)->assertStatus(404);
+        $this->getJson("/api/v1/reconciliations/{$missingReconciliationId}")->assertStatus(404);
+        $this->postJson("/api/v1/reconciliations/{$missingReconciliationId}/start-review")->assertStatus(404);
+        $this->postJson("/api/v1/reconciliations/{$missingReconciliationId}/mark-balanced")->assertStatus(404);
+        $this->postJson("/api/v1/reconciliations/{$missingReconciliationId}/complete")->assertStatus(404);
+        $this->postJson("/api/v1/reconciliations/{$missingReconciliationId}/reopen", [
+            'reason' => 'Boundary proof',
+        ])->assertStatus(404);
+
+        $this->assertSame(0, DB::connection('pgsql')->table('bank_statement_import_batches')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('bank_transactions')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('matches')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliations')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliation_reopenings')->count());
+    }
+
+    public function test_every_banking_route_rejects_unauthenticated_access(): void
+    {
+        $bankAccountId = 'bank-account-without-session';
+        $bankTransactionId = 'bank-transaction-without-session';
+        $reconciliationId = 'reconciliation-without-session';
+
+        $this->getJson('/api/v1/bank-accounts')->assertStatus(401);
+        $this->postJson('/api/v1/bank-accounts')->assertStatus(401);
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/transactions")->assertStatus(401);
+        $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/import")->assertStatus(401);
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->assertStatus(401);
+        $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match")->assertStatus(401);
+        $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations")->assertStatus(401);
+        $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations")->assertStatus(401);
+        $this->getJson("/api/v1/reconciliations/{$reconciliationId}")->assertStatus(401);
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/start-review")->assertStatus(401);
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/mark-balanced")->assertStatus(401);
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/complete")->assertStatus(401);
+        $this->postJson("/api/v1/reconciliations/{$reconciliationId}/reopen")->assertStatus(401);
+    }
+
+    public function test_banking_write_routes_reject_invalid_payloads_without_persistence(): void
+    {
+        $this->registerAndReturnCredentials('banking-validation@example.my');
+        $linkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $this->postJson('/api/v1/bank-accounts')->assertStatus(422);
+        $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $linkedAccountId,
+            'bank_name' => 'Maybank',
+            'account_number_last4' => '123',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/bank-accounts/bank-account-missing/import')->assertStatus(422);
+        $this->post('/api/v1/bank-accounts/bank-account-missing/import', [
+            'statement' => UploadedFile::fake()->create('statement.exe', 1, 'application/octet-stream'),
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/bank-transactions/bank-transaction-missing/confirm-match')->assertStatus(422);
+        $this->postJson('/api/v1/bank-transactions/bank-transaction-missing/confirm-match', [
+            'journal_id' => str_repeat('j', 65),
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/bank-accounts/bank-account-missing/reconciliations')->assertStatus(422);
+        $this->postJson('/api/v1/bank-accounts/bank-account-missing/reconciliations', [
+            'period_start' => '2026-08-31',
+            'period_end' => '2026-08-01',
+            'opening_balance' => '1000',
+            'closing_balance' => '-10.00',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/reconciliations/reconciliation-missing/reopen')->assertStatus(422);
+        $this->postJson('/api/v1/reconciliations/reconciliation-missing/reopen', [
+            'reason' => str_repeat('r', 501),
+        ])->assertStatus(422);
+
+        $this->assertSame(0, DB::connection('pgsql')->table('bank_accounts')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('bank_statement_import_batches')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('matches')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliations')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliation_reopenings')->count());
+    }
+
     // --- Business Profile & Onboarding (M16, SRS IAM-003/IAM-004) --------
 
     public function test_business_profile_is_absent_before_it_is_ever_saved(): void

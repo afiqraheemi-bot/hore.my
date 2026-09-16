@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
+use App\Domain\Accounting\ChartOfAccounts\Exception\InvalidAccountIdException;
 use App\Domain\Accounting\Posting\Exception\RejectedAccountReferenceException;
 use App\Domain\Banking\BankAccount;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankAccountLinkedAccountValidator;
+use App\Domain\Banking\Exception\InvalidBankAccountIdException;
 use App\Domain\Banking\Exception\InvalidBankAccountNameException;
 use App\Domain\Banking\Exception\InvalidLinkedAccountTypeException;
 use App\Http\Controllers\Controller;
@@ -53,7 +55,11 @@ final class BankAccountController extends Controller
 
     public function store(StoreBankAccountRequest $request, CurrentTenant $currentTenant): JsonResponse
     {
-        $linkedAccountId = AccountId::of($request->string('linked_account_id')->toString());
+        try {
+            $linkedAccountId = AccountId::of($request->string('linked_account_id')->toString());
+        } catch (InvalidAccountIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         try {
             $this->linkedAccountValidator->validate($currentTenant->id(), $linkedAccountId);
@@ -82,7 +88,11 @@ final class BankAccountController extends Controller
 
     public function transactions(CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $id = BankAccountId::of($bankAccountId);
+        try {
+            $id = BankAccountId::of($bankAccountId);
+        } catch (InvalidBankAccountIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
             return response()->json(['message' => 'BankAccount not found.'], 404);

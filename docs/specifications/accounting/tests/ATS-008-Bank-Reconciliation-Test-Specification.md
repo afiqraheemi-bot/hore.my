@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.2.1
+- Version: 0.2.2
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -89,6 +89,7 @@ All integration and schema tests require real PostgreSQL and must run with skip/
 | ID | State | Proof | Executable suffix (`test_…`) |
 | --- | --- | --- | --- |
 | BNK-T048 | Existing | Genuine two-process races across every lifecycle edge permit exactly one transition, preserve the final state, and append exactly one reopening-history row. | `concurrent_lifecycle_transitions_cannot_overwrite_or_skip_state` |
+| BNK-T056 | Existing | Every Banking route requires authentication; every write boundary rejects invalid payloads without persistence; malformed identifiers fail as validation errors and canonical missing identifiers fail closed. | `every_banking_route_rejects_unauthenticated_access`; `banking_write_routes_reject_invalid_payloads_without_persistence`; `banking_routes_fail_deterministically_for_malformed_and_missing_identifiers` |
 
 The existing Bank Account and Bank Transaction migration test classes additionally prove table shape, canonical direction, file-hash/natural-key uniqueness, basic foreign keys, exact valid inserts, and their original migration rollback paths.
 
@@ -106,7 +107,6 @@ The existing Bank Account and Bank Transaction migration test classes additional
 | BNK-T053 | Required | Guided mapping handles approved noncanonical formats without silent field shifts. | AETS-008 §12.5 |
 | BNK-T054 | Required | Score and rationale round-trip under the approved canonical model. | AETS-008 §12.7 |
 | BNK-T055 | Required | Matching candidates cover every approved source type and reject wrong date, direction, Account, state, Tenant, and currency independently. | AETS-008 §6/§12.8 |
-| BNK-T056 | Required | HTTP authentication, validation, missing-record, and error semantics cover every Banking route in addition to existing cross-Tenant proof. | Defence in depth |
 | BNK-T057 | Required | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. | AETS-012 Draft; cannot claim yet |
 
 ## 4. Activation gate
@@ -121,6 +121,7 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.2.2 (2026-09-16):** Moves BNK-T056 to Existing with authentication, request-validation, malformed/missing identifier, no-persistence, and cross-Tenant HTTP proofs covering the Banking route surface. Eleven broader or policy-dependent assurance items remain required.
 - **0.2.1 (2026-09-16):** Moves BNK-T048 to Existing with a genuine two-process proof across every fixed lifecycle edge and reopening-history atomicity. Twelve policy-dependent or broader assurance items remain required.
 - **0.2.0 (2026-09-15):** Adds BNK-T035–BNK-T044 for exact import counts, Money/currency, completion-time consistency, non-blank reopening reasons, and migration rollback. No Draft workflow decision changed.
 - **0.1.1 (2026-09-15):** Maps the new Banking HTTP cross-Tenant fail-closed regression proof as BNK-T034; broader per-route HTTP assurance remains required. No Draft policy decision changed.

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Accounting\Journal\Exception\InvalidJournalIdException;
 use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankTransactionId;
 use App\Domain\Banking\Exception\BankTransactionAlreadyMatchedException;
+use App\Domain\Banking\Exception\InvalidBankAccountIdException;
+use App\Domain\Banking\Exception\InvalidBankTransactionIdException;
 use App\Domain\Banking\Exception\NoSuchMatchCandidateException;
 use App\Domain\Banking\MatchingService;
 use App\Http\Controllers\Controller;
@@ -30,7 +33,11 @@ final class MatchController extends Controller
 
     public function suggestions(CurrentTenant $currentTenant, string $bankAccountId): JsonResponse
     {
-        $id = BankAccountId::of($bankAccountId);
+        try {
+            $id = BankAccountId::of($bankAccountId);
+        } catch (InvalidBankAccountIdException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         if ($this->bankAccountRepository->findById($currentTenant->id(), $id) === null) {
             return response()->json(['message' => 'BankAccount not found.'], 404);
@@ -58,7 +65,7 @@ final class MatchController extends Controller
                 JournalId::of($request->string('journal_id')->toString()),
                 ActorReference::of($user->id),
             );
-        } catch (BankTransactionAlreadyMatchedException|NoSuchMatchCandidateException $e) {
+        } catch (InvalidBankTransactionIdException|InvalidJournalIdException|BankTransactionAlreadyMatchedException|NoSuchMatchCandidateException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
