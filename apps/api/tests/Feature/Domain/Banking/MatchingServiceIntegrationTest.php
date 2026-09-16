@@ -35,6 +35,17 @@ use App\Domain\Transactions\Expense\ExpenseId;
 use App\Domain\Transactions\Expense\ExpenseRecordingService;
 use App\Domain\Transactions\Expense\ExpenseToPostingCommandTranslator;
 use App\Domain\Transactions\Expense\RecordExpenseCommand;
+use App\Domain\Transactions\Income\IncomeAccountTypeValidator;
+use App\Domain\Transactions\Income\IncomeId;
+use App\Domain\Transactions\Income\IncomeRecordingService;
+use App\Domain\Transactions\Income\IncomeToPostingCommandTranslator;
+use App\Domain\Transactions\Income\RecordIncomeCommand;
+use App\Domain\Transactions\OwnerEquity\OwnerEquityAccountTypeValidator;
+use App\Domain\Transactions\OwnerEquity\OwnerEquityMovementType;
+use App\Domain\Transactions\OwnerEquity\OwnerEquityTransactionId;
+use App\Domain\Transactions\OwnerEquity\OwnerEquityTransactionRecordingService;
+use App\Domain\Transactions\OwnerEquity\OwnerEquityTransactionToPostingCommandTranslator;
+use App\Domain\Transactions\OwnerEquity\RecordOwnerEquityTransactionCommand;
 use App\Domain\Transactions\Transfer\RecordTransferCommand;
 use App\Domain\Transactions\Transfer\TransferAccountTypeValidator;
 use App\Domain\Transactions\Transfer\TransferId;
@@ -393,6 +404,185 @@ final class MatchingServiceIntegrationTest extends TestCase
     }
 
     /**
+     * BNK-T055 (AETS-008 §6): every currently supported source type is
+     * independently suggestible, not just Expense.
+     */
+    public function test_a_bank_transaction_is_suggested_against_a_matching_income(): void
+    {
+        $this->insertAccount('account-revenue', 'Revenue');
+        $connection = DB::connection('pgsql');
+
+        $incomeResult = $this->buildIncomeService($connection)->record(new RecordIncomeCommand(
+            IncomeId::of('income-match-0001'),
+            JournalId::of('journal-income-match-0001'),
+            IdempotencyKey::of('key-income-match-0001'),
+            $this->tenant,
+            ActorReference::of('actor-0001'),
+            Money::fromDecimalString('250.00', $this->myr),
+            new \DateTimeImmutable('2026-08-05'),
+            AccountId::of('account-revenue'),
+            AccountId::of('account-bank'),
+            'Consulting revenue',
+            null,
+        ));
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Client payment,250.00,IN,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+
+        $this->assertCount(1, $candidates);
+        $this->assertTrue($candidates[0]->journalId()->equals($incomeResult->income()->journalId()));
+        $this->assertSame(MatchSourceType::Income, $candidates[0]->sourceType());
+        $this->assertStringContainsString('Consulting revenue', $candidates[0]->rationale());
+    }
+
+    /**
+     * BNK-T055 (AETS-008 §6): a Capital Contribution (Owner Equity) is
+     * suggested too.
+     */
+    public function test_a_bank_transaction_is_suggested_against_a_matching_owner_equity_contribution(): void
+    {
+        $this->insertAccount('account-equity', 'Equity');
+        $connection = DB::connection('pgsql');
+
+        $result = $this->buildOwnerEquityService($connection)->record(new RecordOwnerEquityTransactionCommand(
+            OwnerEquityTransactionId::of('equity-match-0001'),
+            JournalId::of('journal-equity-match-0001'),
+            IdempotencyKey::of('key-equity-match-0001'),
+            $this->tenant,
+            ActorReference::of('actor-0001'),
+            OwnerEquityMovementType::Contribution,
+            Money::fromDecimalString('1000.00', $this->myr),
+            new \DateTimeImmutable('2026-08-05'),
+            AccountId::of('account-equity'),
+            AccountId::of('account-bank'),
+            'Owner capital injection',
+            null,
+        ));
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Owner deposit,1000.00,IN,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+
+        $this->assertCount(1, $candidates);
+        $this->assertTrue($candidates[0]->journalId()->equals($result->transaction()->journalId()));
+        $this->assertSame(MatchSourceType::OwnerEquity, $candidates[0]->sourceType());
+        $this->assertStringContainsString('Owner capital injection', $candidates[0]->rationale());
+    }
+
+    public function test_a_wrong_date_produces_no_candidate(): void
+    {
+        $this->expenseService->record($this->makeExpenseCommand());
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-06,Card payment,123.45,OUT,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+
+        $this->assertSame([], $candidates);
+    }
+
+    public function test_a_wrong_direction_produces_no_candidate(): void
+    {
+        $this->expenseService->record($this->makeExpenseCommand());
+
+        // The Expense debits the Expense account and credits the bank
+        // (an outflow); importing it as an inflow must not match.
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment,123.45,IN,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+
+        $this->assertSame([], $candidates);
+    }
+
+    public function test_a_wrong_bank_account_produces_no_candidate(): void
+    {
+        $this->insertAccount('account-bank-unrelated', 'Asset');
+        $unrelatedBankAccount = BankAccount::register(BankAccountId::of('bank-account-unrelated'), $this->tenant, AccountId::of('account-bank-unrelated'), 'CIMB', null);
+        (new BankAccountRepository(DB::connection('pgsql')))->save($unrelatedBankAccount);
+
+        $this->expenseService->record($this->makeExpenseCommand());
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment,123.45,OUT,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-unrelated'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-unrelated'));
+
+        $this->assertSame([], $candidates);
+    }
+
+    /**
+     * A Draft (not yet Posted) Journal must never be suggested — the
+     * suggester only ever reads Posted Journals (§6).
+     */
+    public function test_a_draft_journal_produces_no_candidate(): void
+    {
+        $this->expenseService->record($this->makeExpenseCommand());
+        DB::connection('pgsql')->table('journals')->where('journal_id', 'journal-0001')->update(['state' => 'Draft']);
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment,123.45,OUT,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+
+        $this->assertSame([], $candidates);
+    }
+
+    /**
+     * BNK-006 (AETS-008 §6): another Tenant's otherwise-identical
+     * Journal is never suggested — tenant isolation, not merely amount/
+     * date/direction/Account matching.
+     */
+    public function test_another_tenants_matching_journal_is_not_suggested(): void
+    {
+        $otherTenant = TenantId::of('tenant-0002');
+        foreach ([['account-bank-t2', 'Asset'], ['account-office-t2', 'Expense']] as [$accountId, $accountType]) {
+            DB::connection('pgsql')->table(self::ACCOUNT_TABLE)->insert([
+                'tenant_id' => $otherTenant->toString(),
+                'account_id' => $accountId,
+                'account_code' => substr(md5($accountId.'-tenant-2'), 0, 10),
+                'account_name' => 'Test Account',
+                'account_type' => $accountType,
+                'account_origin' => 'UserCreated',
+                'active' => true,
+                'posting_eligible' => true,
+                'parent_id' => null,
+            ]);
+        }
+
+        $this->expenseService->record(new RecordExpenseCommand(
+            ExpenseId::of('expense-tenant-2-0001'),
+            JournalId::of('journal-tenant-2-0001'),
+            IdempotencyKey::of('key-tenant-2-0001'),
+            $otherTenant,
+            ActorReference::of('actor-0001'),
+            Money::fromDecimalString('123.45', $this->myr),
+            new \DateTimeImmutable('2026-08-05'),
+            AccountId::of('account-office-t2'),
+            AccountId::of('account-bank-t2'),
+            'Office supplies',
+            null,
+        ));
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment,123.45,OUT,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+
+        $this->assertSame([], $candidates);
+    }
+
+    /**
      * BNK-014 (AETS-008 §12.2): a genuine two-process race between a
      * Transfer's two legs — concurrent confirmations for two different
      * BankTransactions against the *same* Transfer Journal — must both
@@ -674,6 +864,84 @@ final class MatchingServiceIntegrationTest extends TestCase
             new TransferToPostingCommandTranslator,
             $postingExecutor,
             new TransferRepository($connection),
+        );
+    }
+
+    private function buildIncomeService(ConnectionInterface $connection): IncomeRecordingService
+    {
+        $journalRepository = new JournalRepository($connection);
+        $accountRepository = new AccountRepository($connection);
+        $idempotencyRepository = new PostingIdempotencyRepository($connection);
+
+        $journalExecutor = new PostingCommandJournalExecutor(
+            new PostingCommandJournalStateResolver($journalRepository),
+            new PostingCommandAccountValidator($accountRepository),
+            new PostingCommandPeriodLockValidator(new PeriodClosureRepository($connection)),
+            new PostingCommandExistingDraftLineValidator,
+            new DraftJournalAssembler,
+            $journalRepository,
+        );
+
+        $idempotencyResolver = new PostingCommandIdempotencyResolver(
+            $idempotencyRepository,
+            $journalRepository,
+            new PostingCommandLogicalEquivalence,
+        );
+
+        $postingExecutor = new PostingCommandTransactionalExecutor(
+            $connection,
+            $idempotencyResolver,
+            $journalExecutor,
+            $idempotencyRepository,
+            new AuditEventRepository($connection),
+            new JournalEvidenceLinkRepository($connection),
+        );
+
+        return new IncomeRecordingService(
+            $connection,
+            new IncomeAccountTypeValidator($accountRepository),
+            new IncomeToPostingCommandTranslator,
+            $postingExecutor,
+            new IncomeRepository($connection),
+        );
+    }
+
+    private function buildOwnerEquityService(ConnectionInterface $connection): OwnerEquityTransactionRecordingService
+    {
+        $journalRepository = new JournalRepository($connection);
+        $accountRepository = new AccountRepository($connection);
+        $idempotencyRepository = new PostingIdempotencyRepository($connection);
+
+        $journalExecutor = new PostingCommandJournalExecutor(
+            new PostingCommandJournalStateResolver($journalRepository),
+            new PostingCommandAccountValidator($accountRepository),
+            new PostingCommandPeriodLockValidator(new PeriodClosureRepository($connection)),
+            new PostingCommandExistingDraftLineValidator,
+            new DraftJournalAssembler,
+            $journalRepository,
+        );
+
+        $idempotencyResolver = new PostingCommandIdempotencyResolver(
+            $idempotencyRepository,
+            $journalRepository,
+            new PostingCommandLogicalEquivalence,
+        );
+
+        $postingExecutor = new PostingCommandTransactionalExecutor(
+            $connection,
+            $idempotencyResolver,
+            $journalExecutor,
+            $idempotencyRepository,
+            new AuditEventRepository($connection),
+            new JournalEvidenceLinkRepository($connection),
+        );
+
+        return new OwnerEquityTransactionRecordingService(
+            $connection,
+            new OwnerEquityAccountTypeValidator($accountRepository),
+            new OwnerEquityTransactionToPostingCommandTranslator,
+            $postingExecutor,
+            new OwnerEquityTransactionRepository($connection),
         );
     }
 
