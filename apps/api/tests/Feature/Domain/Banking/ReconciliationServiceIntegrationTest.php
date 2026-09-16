@@ -15,6 +15,7 @@ use App\Domain\Banking\CsvBankStatementParser;
 use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
+use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Banking\ReconciliationService;
@@ -27,6 +28,7 @@ use App\Infrastructure\Banking\ReconciliationRepository;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CleansSharedAccountingTables;
 use Tests\TestCase;
 
@@ -134,6 +136,170 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $reloaded = (new ReconciliationRepository(DB::connection('pgsql')))->getById($this->tenant, $reconciliation->id());
 
         $this->assertSame($reconciliation->createdAt()->format('Y-m-d H:i:s'), $reloaded->createdAt()->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * BNK-015 (AETS-008 §12.4): overlapping periods for the same Bank
+     * Account are rejected, regardless of the existing Reconciliation's
+     * lifecycle state — including `Completed`.
+     *
+     * @return iterable<string, array{string, string, string, string}>
+     */
+    public static function overlappingPeriodProvider(): iterable
+    {
+        yield 'identical period' => ['2026-08-01', '2026-08-31', '2026-08-01', '2026-08-31'];
+        yield 'new period starts inside existing' => ['2026-08-01', '2026-08-31', '2026-08-15', '2026-09-15'];
+        yield 'new period ends inside existing' => ['2026-08-01', '2026-08-31', '2026-07-15', '2026-08-15'];
+        yield 'new period wholly contains existing' => ['2026-08-01', '2026-08-31', '2026-07-01', '2026-09-30'];
+        yield 'new period wholly inside existing' => ['2026-08-01', '2026-08-31', '2026-08-10', '2026-08-20'];
+        yield 'single-day touch at the boundary' => ['2026-08-01', '2026-08-31', '2026-08-31', '2026-09-15'];
+    }
+
+    #[DataProvider('overlappingPeriodProvider')]
+    public function test_opening_an_overlapping_period_is_rejected(string $existingStart, string $existingEnd, string $newStart, string $newEnd): void
+    {
+        $this->open('1000.00', '1000.00', $existingStart, $existingEnd);
+
+        $this->expectException(ReconciliationPeriodOverlapException::class);
+
+        $this->open('1000.00', '1000.00', $newStart, $newEnd);
+    }
+
+    /**
+     * BNK-015 still allows adjacent, genuinely non-overlapping periods —
+     * this is a period-overlap rule, not a one-Reconciliation-ever
+     * limit.
+     */
+    public function test_opening_an_adjacent_non_overlapping_period_is_allowed(): void
+    {
+        $this->open('1000.00', '1000.00', '2026-08-01', '2026-08-31');
+
+        $second = $this->open('1000.00', '1000.00', '2026-09-01', '2026-09-30');
+
+        $this->assertSame(ReconciliationState::Draft, $second->state());
+        $this->assertSame(2, DB::connection('pgsql')->table(self::RECONCILIATION_TABLE)->count());
+    }
+
+    /**
+     * BNK-015 (AETS-008 §12.4): overlap is rejected even against an
+     * existing Reconciliation that is `Completed` — the rule is about
+     * the *period*, not the lifecycle state.
+     */
+    public function test_opening_a_period_overlapping_a_completed_reconciliation_is_rejected(): void
+    {
+        $completed = $this->open('1000.00', '1000.00');
+        $this->reconciliationService->startReview($this->tenant, $completed->id());
+        $this->reconciliationService->markBalanced($this->tenant, $completed->id());
+        $this->reconciliationService->complete($this->tenant, $completed->id());
+
+        $this->expectException(ReconciliationPeriodOverlapException::class);
+
+        $this->open('1000.00', '1000.00', '2026-08-15', '2026-09-15');
+    }
+
+    /**
+     * BNK-015 (AETS-008 §12.4): a genuine two-process race between two
+     * overlapping `open()` calls for the same Bank Account must let
+     * exactly one succeed — the BankAccount row lock must serialize the
+     * overlap check, not let both read a stale, empty existing-period
+     * list.
+     */
+    public function test_concurrent_opening_of_overlapping_periods_lets_only_one_succeed(): void
+    {
+        [$resultA, $resultB] = $this->raceOpenWorkers(
+            ['2026-08-01', '2026-08-31'],
+            ['2026-08-15', '2026-09-15'],
+        );
+        $outcomes = ['A' => $resultA, 'B' => $resultB];
+
+        $succeeded = array_filter($outcomes, static fn (array $r): bool => ($r['status'] ?? null) === 'success');
+        $rejected = array_filter($outcomes, static fn (array $r): bool => ($r['exception'] ?? null) === ReconciliationPeriodOverlapException::class);
+
+        $this->assertCount(1, $succeeded, sprintf('Exactly one concurrent open() must succeed. Got: %s', json_encode($outcomes)));
+        $this->assertCount(1, $rejected, sprintf('The other must be rejected as overlapping. Got: %s', json_encode($outcomes)));
+        $this->assertSame(1, DB::connection('pgsql')->table(self::RECONCILIATION_TABLE)->count());
+    }
+
+    /**
+     * @param  array{0: string, 1: string}  $periodA
+     * @param  array{0: string, 1: string}  $periodB
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function raceOpenWorkers(array $periodA, array $periodB): array
+    {
+        $temporaryDirectory = sys_get_temp_dir();
+        $readyA = tempnam($temporaryDirectory, 'recon_open_ready_a_');
+        $readyB = tempnam($temporaryDirectory, 'recon_open_ready_b_');
+        $goFile = tempnam($temporaryDirectory, 'recon_open_go_');
+        $resultA = tempnam($temporaryDirectory, 'recon_open_result_a_');
+        $resultB = tempnam($temporaryDirectory, 'recon_open_result_b_');
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            unlink($file);
+        }
+
+        $workerScript = base_path('tests/bin/concurrent_reconciliation_open_worker.php');
+
+        $processA = proc_open(
+            ['php', $workerScript, $this->tenant->toString(), 'bank-account-0001', ...$periodA, $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, $this->tenant->toString(), 'bank-account-0001', ...$periodB, $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        try {
+            $deadline = microtime(true) + 5.0;
+            while (! (file_exists($readyA) && file_exists($readyB))) {
+                if (microtime(true) > $deadline) {
+                    $this->fail('Timed out waiting for both Reconciliation-open workers to signal ready.');
+                }
+
+                usleep(2000);
+            }
+
+            touch($goFile);
+
+            foreach ([$processA, $processB] as $process) {
+                proc_close($process);
+            }
+
+            $deadline = microtime(true) + 5.0;
+            while (! (file_exists($resultA) && file_exists($resultB))) {
+                if (microtime(true) > $deadline) {
+                    $this->fail('Timed out waiting for both Reconciliation-open worker results.');
+                }
+
+                usleep(2000);
+            }
+
+            /** @var array<string, mixed> $resultAData */
+            $resultAData = json_decode((string) file_get_contents($resultA), true, flags: JSON_THROW_ON_ERROR);
+            /** @var array<string, mixed> $resultBData */
+            $resultBData = json_decode((string) file_get_contents($resultB), true, flags: JSON_THROW_ON_ERROR);
+
+            return [$resultAData, $resultBData];
+        } finally {
+            foreach ([$pipesA ?? [], $pipesB ?? []] as $pipes) {
+                foreach ($pipes as $pipe) {
+                    if (is_resource($pipe)) {
+                        fclose($pipe);
+                    }
+                }
+            }
+
+            foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+                if (file_exists($file)) {
+                    unlink($file);
+                }
+            }
+        }
     }
 
     public function test_difference_is_zero_when_imported_transactions_reconcile_exactly(): void
@@ -320,19 +486,22 @@ final class ReconciliationServiceIntegrationTest extends TestCase
      */
     public function test_concurrent_lifecycle_transitions_cannot_overwrite_or_skip_state(): void
     {
-        $draft = $this->open('1000.00', '1000.00');
+        // Distinct, non-overlapping periods per Reconciliation opened
+        // here (BNK-015) — this test exercises four independent
+        // lifecycle races, not four transitions of the same period.
+        $draft = $this->open('1000.00', '1000.00', '2026-01-01', '2026-01-31');
         $this->assertConcurrentTransition('start-review', $draft, ReconciliationState::InReview);
 
-        $inReview = $this->open('1000.00', '1000.00');
+        $inReview = $this->open('1000.00', '1000.00', '2026-02-01', '2026-02-28');
         $inReview = $this->reconciliationService->startReview($this->tenant, $inReview->id());
         $this->assertConcurrentTransition('mark-balanced', $inReview, ReconciliationState::Balanced);
 
-        $balanced = $this->open('1000.00', '1000.00');
+        $balanced = $this->open('1000.00', '1000.00', '2026-03-01', '2026-03-31');
         $this->reconciliationService->startReview($this->tenant, $balanced->id());
         $balanced = $this->reconciliationService->markBalanced($this->tenant, $balanced->id());
         $this->assertConcurrentTransition('complete', $balanced, ReconciliationState::Completed);
 
-        $completed = $this->completedReconciliation();
+        $completed = $this->completedReconciliation('2026-04-01', '2026-04-30');
         $this->assertConcurrentTransition('reopen', $completed, ReconciliationState::Draft);
 
         $reopenings = (new ReconciliationRepository(DB::connection('pgsql')))
@@ -342,9 +511,9 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $this->assertSame('Concurrent integrity proof', $reopenings[0]->reason());
     }
 
-    private function completedReconciliation(): Reconciliation
+    private function completedReconciliation(string $periodStart = '2026-08-01', string $periodEnd = '2026-08-31'): Reconciliation
     {
-        $reconciliation = $this->open('1000.00', '1000.00');
+        $reconciliation = $this->open('1000.00', '1000.00', $periodStart, $periodEnd);
         $this->reconciliationService->startReview($this->tenant, $reconciliation->id());
         $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
 

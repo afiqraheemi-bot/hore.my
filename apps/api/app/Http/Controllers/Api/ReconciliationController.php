@@ -10,10 +10,12 @@ use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\Exception\InvalidBankAccountIdException;
 use App\Domain\Banking\Exception\InvalidReconciliationIdException;
+use App\Domain\Banking\Exception\InvalidReconciliationPeriodException;
 use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationNotFoundException;
+use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Banking\ReconciliationDifference;
@@ -72,14 +74,18 @@ final class ReconciliationController extends Controller
 
         $currency = Currency::of('MYR');
 
-        $reconciliation = $this->reconciliationService->open(
-            $currentTenant->id(),
-            $id,
-            new \DateTimeImmutable($request->string('period_start')->toString()),
-            new \DateTimeImmutable($request->string('period_end')->toString()),
-            Money::fromDecimalString($request->string('opening_balance')->toString(), $currency),
-            Money::fromDecimalString($request->string('closing_balance')->toString(), $currency),
-        );
+        try {
+            $reconciliation = $this->reconciliationService->open(
+                $currentTenant->id(),
+                $id,
+                new \DateTimeImmutable($request->string('period_start')->toString()),
+                new \DateTimeImmutable($request->string('period_end')->toString()),
+                Money::fromDecimalString($request->string('opening_balance')->toString(), $currency),
+                Money::fromDecimalString($request->string('closing_balance')->toString(), $currency),
+            );
+        } catch (InvalidReconciliationPeriodException|ReconciliationPeriodOverlapException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json($this->toArray($reconciliation, $currentTenant), 201);
     }

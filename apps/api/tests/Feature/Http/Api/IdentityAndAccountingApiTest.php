@@ -1588,6 +1588,38 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->assertSame(0, DB::connection('pgsql')->table('reconciliations')->count());
     }
 
+    /**
+     * BNK-015 (AETS-008 §12.4): opening a Reconciliation whose period
+     * overlaps an existing one for the same Bank Account is rejected
+     * with 422, not silently allowed.
+     */
+    public function test_opening_an_overlapping_reconciliation_period_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('reconciliation-overlap@example.my');
+        $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankLinkedAccountId,
+            'bank_name' => 'Maybank',
+        ])->json('id');
+
+        $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-01',
+            'period_end' => '2026-08-31',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '1000.00',
+        ])->assertStatus(201);
+
+        $overlapping = $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
+            'period_start' => '2026-08-15',
+            'period_end' => '2026-09-15',
+            'opening_balance' => '1000.00',
+            'closing_balance' => '1000.00',
+        ]);
+        $overlapping->assertStatus(422);
+        $this->assertSame(1, DB::connection('pgsql')->table('reconciliations')->count());
+    }
+
     public function test_marking_a_reconciliation_balanced_with_a_nonzero_difference_is_rejected_via_the_api(): void
     {
         $this->registerAndReturnCredentials('reconciliation-unbalanced@example.my');

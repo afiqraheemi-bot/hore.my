@@ -10,6 +10,7 @@ use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
+use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Banking\BankTransactionRepository;
@@ -32,6 +33,11 @@ final class ReconciliationService
         private readonly ReconciliationRepository $reconciliationRepository,
     ) {}
 
+    /**
+     * @throws ReconciliationPeriodOverlapException if `$periodStart`..`$periodEnd`
+     *                                              overlaps any existing Reconciliation's period for this Bank
+     *                                              Account, in any lifecycle state (`BNK-015`).
+     */
     public function open(
         TenantId $tenantId,
         BankAccountId $bankAccountId,
@@ -40,20 +46,46 @@ final class ReconciliationService
         Money $openingBalance,
         Money $closingBalance,
     ): Reconciliation {
-        $reconciliation = Reconciliation::open(
-            ReconciliationId::of((string) Str::uuid()),
-            $tenantId,
-            $bankAccountId,
-            $periodStart,
-            $periodEnd,
-            $openingBalance,
-            $closingBalance,
-            new \DateTimeImmutable,
-        );
+        return $this->connection->transaction(function () use ($tenantId, $bankAccountId, $periodStart, $periodEnd, $openingBalance, $closingBalance): Reconciliation {
+            // Locks the BankAccount row so two concurrent `open()` calls
+            // for the same Bank Account serialize instead of both
+            // reading a stale existing-period list below (BNK-015).
+            $this->connection->table('bank_accounts')
+                ->where('tenant_id', $tenantId->toString())
+                ->where('id', $bankAccountId->toString())
+                ->lockForUpdate()
+                ->first();
 
-        $this->reconciliationRepository->record($reconciliation);
+            foreach ($this->reconciliationRepository->findByBankAccount($tenantId, $bankAccountId) as $existing) {
+                if (self::periodsOverlap($periodStart, $periodEnd, $existing->periodStart(), $existing->periodEnd())) {
+                    throw ReconciliationPeriodOverlapException::forOverlap($bankAccountId, $existing->id());
+                }
+            }
 
-        return $reconciliation;
+            $reconciliation = Reconciliation::open(
+                ReconciliationId::of((string) Str::uuid()),
+                $tenantId,
+                $bankAccountId,
+                $periodStart,
+                $periodEnd,
+                $openingBalance,
+                $closingBalance,
+                new \DateTimeImmutable,
+            );
+
+            $this->reconciliationRepository->record($reconciliation);
+
+            return $reconciliation;
+        });
+    }
+
+    private static function periodsOverlap(
+        \DateTimeImmutable $aStart,
+        \DateTimeImmutable $aEnd,
+        \DateTimeImmutable $bStart,
+        \DateTimeImmutable $bEnd,
+    ): bool {
+        return $aStart <= $bEnd && $aEnd >= $bStart;
     }
 
     /**
