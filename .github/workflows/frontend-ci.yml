@@ -26,7 +26,11 @@ defaults:
 
 jobs:
   validate:
-    name: Validate
+    # Named distinctly from Repository CI's own "Validate" job: both were
+    # previously named "Validate", producing two indistinguishable
+    # GitHub check-runs — impossible to reference unambiguously as a
+    # required status check.
+    name: Validate (Frontend)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
