@@ -134,6 +134,30 @@ async function downloadCsv() {
   }
 }
 
+const exportingXlsx = ref(false)
+
+/** AETS-009 §20: the identical report data as `downloadCsv()`, as a real XLSX workbook. */
+async function downloadXlsx() {
+  exportingXlsx.value = true
+  error.value = null
+  try {
+    const blob = await request<Blob>(reportEndpoints[activeTab.value], {
+      query: { ...currentReportQuery(), format: 'xlsx' },
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${activeTab.value.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.xlsx`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    error.value = 'Failed to export this report as XLSX.'
+  } finally {
+    exportingXlsx.value = false
+  }
+}
+
 onMounted(async () => {
   await loadAccounts()
   await runReport()
@@ -221,6 +245,9 @@ async function selectTab(tab: (typeof tabs)[number]) {
         <AppButton variant="primary" @click="runReport">Run</AppButton>
         <AppButton :disabled="exporting" @click="downloadCsv">
           <AppIcon name="download" :size="14" /> {{ exporting ? 'Exporting…' : 'CSV' }}
+        </AppButton>
+        <AppButton :disabled="exportingXlsx" @click="downloadXlsx">
+          <AppIcon name="download" :size="14" /> {{ exportingXlsx ? 'Exporting…' : 'XLSX' }}
         </AppButton>
       </div>
     </AppCard>

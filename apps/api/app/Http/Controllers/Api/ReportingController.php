@@ -23,6 +23,7 @@ use App\Http\Requests\Reporting\GeneralLedgerRequest;
 use App\Http\Requests\Reporting\PeriodRequest;
 use App\Http\Support\CsvResponseBuilder;
 use App\Http\Support\CurrentTenant;
+use App\Http\Support\XlsxResponseBuilder;
 use App\Http\Support\ZipResponseBuilder;
 use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
 use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
@@ -40,16 +41,16 @@ use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
  * Query layer itself, extended to cover {@see AgingReportQuery} too;
  * this controller adds nothing that layer does not already guarantee).
  *
- * **`?format=csv` (M23, Hasil MVP item 8: "Eksport PDF, XLSX dan CSV")**
- * on every endpoint here returns the same already-computed report
- * reshaped into a downloadable CSV via {@see CsvResponseBuilder}
- * instead of JSON — no new Query-layer code, no new business logic,
- * purely an HTTP-layer presentation choice. PDF (Invoice) and XLSX
- * exports remain each their own future milestone, unchanged by this
- * docblock's own 2026-09-16 update: PDF needs an invoice
- * layout/branding decision that is a Founder-level product call, not
- * an engineering default to guess, and XLSX would need a new
- * dependency for marginal gain over CSV at this stage.
+ * **`?format=csv|xlsx` (M23/AETS-009 §20, Hasil MVP item 8: "Eksport
+ * PDF, XLSX dan CSV")** on every endpoint here returns the same
+ * already-computed report reshaped into a downloadable CSV or XLSX
+ * via {@see CsvResponseBuilder}/{@see XlsxResponseBuilder} instead of
+ * JSON — no new Query-layer code, no new business logic, purely an
+ * HTTP-layer presentation choice; both formats are built from the
+ * identical `(header, rows)` tuple ({@see buildExport()}), so they can
+ * never diverge in content. PDF rendering of a *report* (as opposed to
+ * an Invoice/Quotation, see AETS-017) remains its own deferred item —
+ * AETS-009 §2.2 explains why.
  *
  * **{@see compliancePack()} (AETS-009 §19, added 2026-09-16)** bundles
  * five of the reports above into one downloadable ZIP of CSVs —
@@ -70,15 +71,12 @@ final class ReportingController extends Controller
     public function trialBalance(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
     {
         $trialBalance = $this->trialBalanceQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+        $format = $this->requestedExportFormat($request);
 
-        if ($this->wantsCsv($request)) {
+        if ($format !== null) {
             [$header, $rows] = $this->trialBalanceCsvRows($trialBalance);
 
-            return CsvResponseBuilder::build(
-                sprintf('trial-balance-%s.csv', $trialBalance->asOfDate()->format('Y-m-d')),
-                $header,
-                $rows,
-            );
+            return $this->buildExport($format, sprintf('trial-balance-%s', $trialBalance->asOfDate()->format('Y-m-d')), $header, $rows);
         }
 
         return response()->json($this->trialBalanceToArray($trialBalance));
@@ -91,15 +89,12 @@ final class ReportingController extends Controller
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
         );
+        $format = $this->requestedExportFormat($request);
 
-        if ($this->wantsCsv($request)) {
+        if ($format !== null) {
             [$header, $rows] = $this->profitAndLossCsvRows($statement);
 
-            return CsvResponseBuilder::build(
-                sprintf('profit-and-loss-%s-to-%s.csv', $statement->periodStart()->format('Y-m-d'), $statement->periodEnd()->format('Y-m-d')),
-                $header,
-                $rows,
-            );
+            return $this->buildExport($format, sprintf('profit-and-loss-%s-to-%s', $statement->periodStart()->format('Y-m-d'), $statement->periodEnd()->format('Y-m-d')), $header, $rows);
         }
 
         return response()->json($this->profitAndLossToArray($statement));
@@ -108,15 +103,12 @@ final class ReportingController extends Controller
     public function balanceSheet(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
     {
         $balanceSheet = $this->balanceSheetQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+        $format = $this->requestedExportFormat($request);
 
-        if ($this->wantsCsv($request)) {
+        if ($format !== null) {
             [$header, $rows] = $this->balanceSheetCsvRows($balanceSheet);
 
-            return CsvResponseBuilder::build(
-                sprintf('balance-sheet-%s.csv', $balanceSheet->asOfDate()->format('Y-m-d')),
-                $header,
-                $rows,
-            );
+            return $this->buildExport($format, sprintf('balance-sheet-%s', $balanceSheet->asOfDate()->format('Y-m-d')), $header, $rows);
         }
 
         return response()->json($this->balanceSheetToArray($balanceSheet));
@@ -130,21 +122,12 @@ final class ReportingController extends Controller
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
         );
+        $format = $this->requestedExportFormat($request);
 
-        if ($this->wantsCsv($request)) {
-            return CsvResponseBuilder::build(
-                sprintf('general-ledger-%s-%s-to-%s.csv', $activity->accountId()->toString(), $activity->periodStart()->format('Y-m-d'), $activity->periodEnd()->format('Y-m-d')),
-                ['Journal ID', 'Financial Date', 'Posted At', 'Amount', 'Direction', 'Source', 'Evidence References'],
-                array_map(static fn (GeneralLedgerEntry $entry): array => [
-                    $entry->journalId()->toString(),
-                    $entry->financialDate()->format('Y-m-d'),
-                    $entry->postedAt()->format(DATE_ATOM),
-                    $entry->amount()->toDecimalString(),
-                    $entry->direction()->name,
-                    $entry->source()->toString(),
-                    implode('; ', $entry->evidenceReferences()),
-                ], $activity->entries()),
-            );
+        if ($format !== null) {
+            [$header, $rows] = $this->generalLedgerCsvRows($activity);
+
+            return $this->buildExport($format, sprintf('general-ledger-%s-%s-to-%s', $activity->accountId()->toString(), $activity->periodStart()->format('Y-m-d'), $activity->periodEnd()->format('Y-m-d')), $header, $rows);
         }
 
         return response()->json($this->generalLedgerToArray($activity));
@@ -157,15 +140,12 @@ final class ReportingController extends Controller
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
         );
+        $format = $this->requestedExportFormat($request);
 
-        if ($this->wantsCsv($request)) {
+        if ($format !== null) {
             [$header, $rows] = $this->evidenceIndexCsvRows($index);
 
-            return CsvResponseBuilder::build(
-                sprintf('evidence-index-%s-to-%s.csv', $index->periodStart()->format('Y-m-d'), $index->periodEnd()->format('Y-m-d')),
-                $header,
-                $rows,
-            );
+            return $this->buildExport($format, sprintf('evidence-index-%s-to-%s', $index->periodStart()->format('Y-m-d'), $index->periodEnd()->format('Y-m-d')), $header, $rows);
         }
 
         return response()->json($this->evidenceIndexToArray($index));
@@ -174,15 +154,12 @@ final class ReportingController extends Controller
     public function agingReport(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
     {
         $report = $this->agingReportQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+        $format = $this->requestedExportFormat($request);
 
-        if ($this->wantsCsv($request)) {
+        if ($format !== null) {
             [$header, $rows] = $this->agingReportCsvRows($report);
 
-            return CsvResponseBuilder::build(
-                sprintf('aging-report-%s.csv', $report->asOfDate()->format('Y-m-d')),
-                $header,
-                $rows,
-            );
+            return $this->buildExport($format, sprintf('aging-report-%s', $report->asOfDate()->format('Y-m-d')), $header, $rows);
         }
 
         return response()->json($this->agingReportToArray($report));
@@ -232,9 +209,42 @@ final class ReportingController extends Controller
         );
     }
 
-    private function wantsCsv(AsOfDateRequest|PeriodRequest|GeneralLedgerRequest $request): bool
+    /**
+     * `null` for a JSON request (no `format`, or `format=json`);
+     * `'csv'` or `'xlsx'` otherwise — each Request class's own
+     * validation rule (`in:json,csv,xlsx`) already guarantees no other
+     * value ever reaches here.
+     *
+     * @return 'csv'|'xlsx'|null
+     */
+    private function requestedExportFormat(AsOfDateRequest|PeriodRequest|GeneralLedgerRequest $request): ?string
     {
-        return $request->string('format')->toString() === 'csv';
+        $format = $request->string('format')->toString();
+
+        return match ($format) {
+            'csv' => 'csv',
+            'xlsx' => 'xlsx',
+            default => null,
+        };
+    }
+
+    /**
+     * The single choke point every report's CSV/XLSX export passes
+     * through (AETS-009 §20) — dispatches to
+     * {@see CsvResponseBuilder}/{@see XlsxResponseBuilder} on the
+     * identical `(header, rows)` tuple either way, so the two formats
+     * can never diverge in content, only in file format.
+     *
+     * @param  'csv'|'xlsx'  $format
+     * @param  list<string>  $header
+     * @param  list<list<string>>  $rows
+     */
+    private function buildExport(string $format, string $baseFilename, array $header, array $rows): Response
+    {
+        return match ($format) {
+            'csv' => CsvResponseBuilder::build($baseFilename.'.csv', $header, $rows),
+            'xlsx' => XlsxResponseBuilder::build($baseFilename.'.xlsx', $header, $rows),
+        };
     }
 
     /**
@@ -277,6 +287,25 @@ final class ReportingController extends Controller
                 ...array_map(fn (AccountBalance $line): array => ['Equity', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->equityLines()),
                 ['Cumulative Net Income', '(Cumulative Net Income)', '', '', '', $netIncome->amount()->toDecimalString(), $netIncome->direction() === null ? '' : $netIncome->direction()->name],
             ],
+        ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function generalLedgerCsvRows(GeneralLedgerAccountActivity $activity): array
+    {
+        return [
+            ['Journal ID', 'Financial Date', 'Posted At', 'Amount', 'Direction', 'Source', 'Evidence References'],
+            array_map(static fn (GeneralLedgerEntry $entry): array => [
+                $entry->journalId()->toString(),
+                $entry->financialDate()->format('Y-m-d'),
+                $entry->postedAt()->format(DATE_ATOM),
+                $entry->amount()->toDecimalString(),
+                $entry->direction()->name,
+                $entry->source()->toString(),
+                implode('; ', $entry->evidenceReferences()),
+            ], $activity->entries()),
         ];
     }
 

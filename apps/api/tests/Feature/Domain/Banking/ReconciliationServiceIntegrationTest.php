@@ -34,6 +34,7 @@ use App\Domain\Banking\MatchingService;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Banking\ReconciliationService;
 use App\Domain\Banking\ReconciliationState;
+use App\Domain\Banking\XlsxBankStatementParser;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Transactions\Expense\ExpenseAccountTypeValidator;
 use App\Domain\Transactions\Expense\ExpenseId;
@@ -157,6 +158,7 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $this->importService = new BankStatementImportService(
             $connection,
             new CsvBankStatementParser,
+            new XlsxBankStatementParser,
             new ImportBatchRepository($connection),
             new BankTransactionRepository($connection),
         );

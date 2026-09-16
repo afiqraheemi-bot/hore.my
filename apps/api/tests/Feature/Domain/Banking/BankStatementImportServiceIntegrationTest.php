@@ -10,6 +10,7 @@ use App\Domain\Banking\BankStatementImportService;
 use App\Domain\Banking\BankTransactionDirection;
 use App\Domain\Banking\CsvBankStatementParser;
 use App\Domain\Banking\Exception\MalformedBankStatementException;
+use App\Domain\Banking\XlsxBankStatementParser;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Banking\BankTransactionRepository;
 use App\Infrastructure\Banking\ImportBatchRepository;
@@ -417,6 +418,7 @@ final class BankStatementImportServiceIntegrationTest extends TestCase
         return new BankStatementImportService(
             $connection,
             new CsvBankStatementParser,
+            new XlsxBankStatementParser,
             new ImportBatchRepository($connection),
             new BankTransactionRepository($connection),
         );

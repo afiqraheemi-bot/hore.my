@@ -23,7 +23,7 @@ final class AsOfDateRequest extends FormRequest
     {
         return [
             'as_of' => ['required', 'date_format:Y-m-d'],
-            'format' => ['sometimes', 'string', 'in:json,csv'],
+            'format' => ['sometimes', 'string', 'in:json,csv,xlsx'],
         ];
     }
 }

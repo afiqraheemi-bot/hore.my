@@ -15,10 +15,14 @@ use Illuminate\Support\Str;
 /**
  * The application service that makes bank statement import (M17) an
  * atomic, idempotent operation over the already-parsed
- * {@see CsvBankStatementParser} output — the only class in the Banking
- * domain that opens a database transaction, mirroring every
- * Transactions-domain Recording Service's own "one orchestrator, every
- * other collaborator storage-free" shape.
+ * {@see CsvBankStatementParser}/{@see XlsxBankStatementParser} output
+ * (Import & Export, AETS-008 §5.1, added 2026-09-16) — the only class
+ * in the Banking domain that opens a database transaction, mirroring
+ * every Transactions-domain Recording Service's own "one orchestrator,
+ * every other collaborator storage-free" shape. `$format` selects
+ * which parser runs; every downstream step (idempotency, persistence)
+ * is identical regardless of which file format produced the same
+ * {@see BankStatementRow} list.
  *
  * **BNK-004's two-layer idempotency, both enforced here.**
  *
@@ -58,7 +62,8 @@ final class BankStatementImportService
 {
     public function __construct(
         private readonly ConnectionInterface $connection,
-        private readonly CsvBankStatementParser $parser,
+        private readonly CsvBankStatementParser $csvParser,
+        private readonly XlsxBankStatementParser $xlsxParser,
         private readonly ImportBatchRepository $importBatchRepository,
         private readonly BankTransactionRepository $bankTransactionRepository,
     ) {}
@@ -69,6 +74,7 @@ final class BankStatementImportService
         string $originalFilename,
         string $fileContent,
         Currency $currency,
+        BankStatementFileFormat $format = BankStatementFileFormat::Csv,
     ): BankStatementImportResult {
         $fileHash = hash('sha256', $fileContent);
 
@@ -78,7 +84,10 @@ final class BankStatementImportService
             return BankStatementImportResult::replayed($existingBatch);
         }
 
-        $rows = $this->parser->parse($fileContent, $currency);
+        $rows = match ($format) {
+            BankStatementFileFormat::Csv => $this->csvParser->parse($fileContent, $currency),
+            BankStatementFileFormat::Xlsx => $this->xlsxParser->parse($fileContent, $currency),
+        };
 
         return $this->connection->transaction(function () use ($tenantId, $bankAccountId, $originalFilename, $fileHash, $rows): BankStatementImportResult {
             $duplicateCount = 0;

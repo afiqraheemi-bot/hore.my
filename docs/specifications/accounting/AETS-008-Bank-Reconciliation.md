@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.3.0
+- Version: 0.4.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the workflow decisions in §12 — **the Founder explicitly delegated §12's decisions to the CTO on 2026-09-16, in lieu of deciding each individually**; a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness (distinct from the product/workflow judgment calls §12 required) remains outstanding and is still required before Activation (§13)
@@ -74,6 +74,10 @@ The current implementation:
 - creates no Journal and has no posting permission.
 
 The database-level proof that concurrent identical imports never duplicate exists (`f7f05c9`); §12.6 now ratifies deterministic replay as the caller-visible contract this must also satisfy at the service/HTTP boundary, which is not yet separately proven.
+
+### 5.1 Import format: XLSX added (2026-09-16)
+
+`BankStatementFileFormat::Xlsx` is a second accepted file format for the **identical** fixed v1 schema §5 already describes — never a second, divergent schema, and never SRS BNK-002's own still-deferred guided mapping of an *unrecognized* format (§12.5 unchanged, `BNK-T053` still deferred). `XlsxBankStatementParser` and the original `CsvBankStatementParser` both delegate header validation and row parsing to one shared `BankStatementRowParser`, so a CSV upload and an XLSX upload of "the same statement" always validate and normalize identically. Two cell-type quirks a plain-text CSV cannot exercise are normalized before that shared validation ever runs: a native Excel serial-date cell is converted to the identical `Y-m-d` string a text cell would already carry, and a native numeric amount/balance cell is reformatted to the Tenant Currency's own exact decimal scale. Format is resolved from the uploaded file's own extension at the HTTP boundary (`BankStatementImportController`), never sniffed from file content.
 
 ## 6. Matching contract already evidenced
 
@@ -226,6 +230,7 @@ Overdraft and negative statement/running/closing balances are out of scope for t
 
 ## Changelog
 
+- **0.4.0 (2026-09-16):** Adds §5.1: XLSX is now a second accepted file format for the identical fixed v1 import schema §5 already describes (never a second schema, and never SRS BNK-002's own still-deferred guided mapping — `BNK-T053` unchanged). `CsvBankStatementParser` and the new `XlsxBankStatementParser` both delegate to one shared `BankStatementRowParser`, so the two formats can never validate a statement differently; two spreadsheet-only cell-type quirks (a native Excel date, a native numeric amount) are normalized before that shared validation runs. Resolves the Founder's own "Import" instruction (paired with AETS-009 §20/AETS-017's "Eksport PDF/XLSX"). No `BNK-NNN` invariant's meaning changed. Classified **MINOR**.
 - **0.3.0 (2026-09-16):** Records that `BNK-014`–`BNK-020` (every §12 decision) is now implemented and proven against real PostgreSQL, not merely decided — see §11 and §13. No policy changed from v0.2.0; this only updates implementation status.
 - **0.2.0 (2026-09-16):** Resolves every §12 decision group under explicit Founder delegation to the CTO ("aku serahkan keputusan ini pada kau, decide yang paling terbaik untuk release dan jangka panjang") and adds `BNK-014`–`BNK-020` to §9 as the resulting candidate invariants. This records accepted policy; none of it is implemented in code yet — §11 and §13 updated accordingly. A qualified Accounting Domain Reviewer's independent sign-off on accounting correctness remains outstanding and unaffected by this delegation.
 - **0.1.3 (2026-09-16):** Records the implemented authenticated HTTP boundary and deterministic malformed/missing identifier semantics across every Banking route. No workflow or accounting policy changed.

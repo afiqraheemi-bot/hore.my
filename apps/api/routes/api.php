@@ -75,6 +75,7 @@ Route::prefix('v1')->group(function (): void {
             Route::put('/invoices/{invoiceId}', [InvoiceController::class, 'update']);
             Route::delete('/invoices/{invoiceId}', [InvoiceController::class, 'destroy']);
             Route::post('/invoices/{invoiceId}/issue', [InvoiceController::class, 'issue']);
+            Route::get('/invoices/{invoiceId}/pdf', [InvoiceController::class, 'pdf']);
             Route::get('/outstanding-invoices', [AllocationController::class, 'outstandingInvoices']);
 
             Route::get('/quotations', [QuotationController::class, 'index']);
@@ -86,6 +87,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/quotations/{quotationId}/accept', [QuotationController::class, 'accept']);
             Route::post('/quotations/{quotationId}/reject', [QuotationController::class, 'reject']);
             Route::post('/quotations/{quotationId}/convert-to-invoice', [QuotationController::class, 'convert']);
+            Route::get('/quotations/{quotationId}/pdf', [QuotationController::class, 'pdf']);
 
             Route::get('/payments', [PaymentController::class, 'index']);
             Route::post('/payments', [PaymentController::class, 'store']);

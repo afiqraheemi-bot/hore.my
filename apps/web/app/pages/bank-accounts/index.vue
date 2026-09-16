@@ -275,12 +275,16 @@ async function onImport() {
       body: formData,
     })
 
-    importSummary.value = result.is_new_import
+    const summary = result.is_new_import
       ? `Imported ${result.inserted_count} new row(s), skipped ${result.duplicate_count} duplicate(s).`
       : 'This exact file was already imported — nothing new to add.'
     importFile.value = null
 
+    // `selectBankAccount()` itself resets `importSummary` (its own
+    // stale-message-clearing behaviour when switching accounts) — so
+    // the just-computed summary is re-applied after it, not before.
     await selectBankAccount(selectedBankAccountId.value)
+    importSummary.value = summary
   } catch {
     importError.value =
       'Import failed — check the CSV header is exactly "date,description,amount,direction,balance,reference".'
@@ -363,8 +367,8 @@ onMounted(loadAll)
             <div class="flex-1">
               <AppDropzone
                 v-model="importFile"
-                accept=".csv,text/csv"
-                hint="CSV: date,description,amount,direction,balance,reference"
+                accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                hint="CSV or XLSX: date,description,amount,direction,balance,reference"
               />
             </div>
             <AppButton variant="primary" :disabled="importing || !importFile" @click="onImport">

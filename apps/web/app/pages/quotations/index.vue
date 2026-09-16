@@ -52,6 +52,16 @@ const statusTone: Record<
 
 const { request } = useApi()
 
+/**
+ * AETS-017: a direct link to the Quotation's own PDF endpoint —
+ * mirrors `invoices/index.vue`'s own identical `pdfUrl()` helper.
+ */
+function pdfUrl(quotationId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/quotations/${quotationId}/pdf`
+}
+
 const quotations = ref<Quotation[]>([])
 const customers = ref<Customer[]>([])
 const accounts = ref<Account[]>([])
@@ -374,6 +384,12 @@ onMounted(async () => {
                 View invoice
               </NuxtLink>
             </template>
+
+            <a :href="pdfUrl(quotation.id)" target="_blank" rel="noopener">
+              <AppButton size="sm" variant="ghost">
+                <AppIcon name="download" :size="14" /> PDF
+              </AppButton>
+            </a>
           </div>
         </div>
 

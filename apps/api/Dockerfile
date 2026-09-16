@@ -18,15 +18,23 @@ FROM php:8.5.10-cli
 # CSV reports into one downloadable archive — not present in the base
 # php:8.5-cli image, hence `libzip-dev` (build-time) and the
 # `docker-php-ext-install ... zip` below.
+#
+# `gd` is a hard `composer.json` platform requirement of
+# `phpoffice/phpspreadsheet` (Import & Export: XLSX bank statement
+# import, XLSX report export) — hence `libpng-dev`/`libjpeg-dev`
+# (build-time) and `docker-php-ext-install ... gd` below.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpq-dev \
         libonig-dev \
         libzip-dev \
+        libpng-dev \
+        libjpeg-dev \
         unzip \
         curl \
         $PHPIZE_DEPS \
-    && docker-php-ext-install pdo_pgsql mbstring pcntl posix zip \
+    && docker-php-ext-configure gd --with-jpeg \
+    && docker-php-ext-install pdo_pgsql mbstring pcntl posix zip gd \
     && pecl install redis \
     && docker-php-ext-enable redis \
     && apt-get purge -y --auto-remove $PHPIZE_DEPS \

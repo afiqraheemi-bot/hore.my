@@ -1,7 +1,7 @@
 # AETS-016: Quotation
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.2.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer (outstanding — same honest gap [AETS-008](AETS-008-Bank-Reconciliation.md)/[AETS-012](AETS-012-Proof-of-Accuracy.md)/[AETS-015](AETS-015-Evidence-Storage.md) each record); Founder / Product Owner (scope approval obtained 2026-09-16 — see §3)
@@ -26,7 +26,7 @@
 
 - Any ledger effect of a Quotation itself. A Quotation is never translated into a Posting Command and never appears in any Accounting Core report — this is the one structural fact separating it from `Invoice`.
 - A "quotation expiring automatically" state transition. No scheduler/cron infrastructure exists in this codebase to drive one honestly; this document instead exposes the validity date on every read so a caller can compute staleness itself, rather than inventing a state transition nothing actually triggers.
-- PDF quotation documents, letterhead/branding, and email delivery to the Customer — each is a Founder-level product/branding decision (mirrors [AETS-009 §2.2](AETS-009-Financial-Reporting.md#22-out-of-scope)'s own identical deferral for Invoice/report PDF export), not an engineering default to guess.
+- Letterhead/branding (company logo, configurable color scheme) and email delivery to the Customer — each remains a Founder-level product/branding decision, not an engineering default to guess. **A minimal, functional PDF export itself is resolved** — see [AETS-017](AETS-017-Document-PDF-Export.md), added 2026-09-16 under the identical Founder approval this section's own deferral had been waiting on.
 - Editing or re-sending an already-`Sent` Quotation. A rejected or stale Quotation is superseded by issuing a new one, never edited in place — mirroring `Invoice`'s own "only Draft is editable" rule and this project's append-only convention generally.
 - MyInvois / e-invoice submission of any kind — a Quotation is pre-sale and outside MyInvois' scope entirely.
 
@@ -77,9 +77,10 @@ A dedicated ATS-016 companion document is deferred for this initial slice, mirro
 ## 8. Deferred decisions
 
 - Automatic expiry of a stale `Sent` Quotation (§2.2) — no scheduler exists to drive it honestly.
-- PDF/branded Quotation documents and Customer email delivery (§2.2) — Founder-level product decisions.
+- Branded Quotation documents (logo, color scheme) and Customer email delivery (§2.2) — Founder-level product decisions; a minimal/functional PDF itself is resolved, see [AETS-017](AETS-017-Document-PDF-Export.md).
 - Rich Quotation revision history (a superseded-Quotation linking mechanism, mirroring [WTS-001](../workspace/WTS-001-Task-Proposal-State-Model.md) `TSK-014`'s own correction link) — not built here; a rejected or stale Quotation today is simply replaced by issuing a new, unlinked one.
 
 ## Changelog
 
+- **0.2.0 (2026-09-16):** Same-day follow-up: a minimal, functional Quotation PDF export is now resolved by the new [AETS-017](AETS-017-Document-PDF-Export.md), under the identical Founder approval this document's own §2.2 PDF deferral had been waiting on. §2.2 and §8 reworded to state precisely what remains deferred (branding/letterhead, email delivery) versus what is now built (the PDF itself). No `QUO-NNN` invariant changed. Classified **MINOR**.
 - **0.1.0 (2026-09-16):** Initial Draft. Resolves AETS-001's own named "Quotation" terminology deferral with a real, tenant-scoped Quotation aggregate, a five-state lifecycle producing zero ledger effect, and an atomic, concurrency-safe conversion path into a Draft Invoice. Founder scope approval obtained ("jalankan #6"); Accounting Domain Reviewer sign-off outstanding.

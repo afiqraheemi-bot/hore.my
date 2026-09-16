@@ -36,6 +36,19 @@ interface Account {
 
 const { request } = useApi()
 
+/**
+ * AETS-017: a direct link to the Invoice's own PDF endpoint — a plain
+ * top-level `<a>` navigation carries the Sanctum SPA session cookie
+ * exactly like any other same-site GET (SameSite=Lax), so no blob/
+ * fetch plumbing is needed here, mirroring `useApi()`'s own API-origin
+ * derivation (window's own hostname, only the port configurable).
+ */
+function pdfUrl(invoiceId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/invoices/${invoiceId}/pdf`
+}
+
 const invoices = ref<Invoice[]>([])
 const customers = ref<Customer[]>([])
 const accounts = ref<Account[]>([])
@@ -283,6 +296,11 @@ onMounted(async () => {
                 <AppIcon name="trash" :size="14" />
               </AppButton>
             </template>
+            <a :href="pdfUrl(invoice.id)" target="_blank" rel="noopener">
+              <AppButton size="sm" variant="ghost">
+                <AppIcon name="download" :size="14" /> PDF
+              </AppButton>
+            </a>
           </div>
         </div>
         <ul

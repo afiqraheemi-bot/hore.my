@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Http\Api;
 
+use App\Domain\Banking\XlsxBankStatementParser;
 use App\Http\Controllers\Api\ExpenseController;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
@@ -12,6 +13,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 /**
@@ -500,6 +505,59 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->getJson("/api/v1/invoices/{$invoiceId}")->assertStatus(404);
     }
 
+    /**
+     * AETS-017: a minimal PDF renders for both a Draft (a preview,
+     * labelled "DRAFT") and an Issued Invoice.
+     */
+    public function test_an_invoice_pdf_can_be_downloaded_for_a_draft_and_an_issued_invoice(): void
+    {
+        $this->registerAndReturnCredentials('invoice-pdf@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [['description' => 'Consulting', 'quantity' => 2, 'unit_price' => '150.00']],
+        ]);
+        $invoiceId = $draft->json('id');
+
+        $draftPdf = $this->get("/api/v1/invoices/{$invoiceId}/pdf");
+        $draftPdf->assertStatus(200);
+        $draftPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $draftPdf->getContent());
+
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()], ['Idempotency-Key' => 'key-invoice-pdf-issue'])
+            ->assertStatus(201);
+
+        $issuedPdf = $this->get("/api/v1/invoices/{$invoiceId}/pdf");
+        $issuedPdf->assertStatus(200);
+        $this->assertStringContainsString('attachment; filename="INV-000001.pdf"', $issuedPdf->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF-', (string) $issuedPdf->getContent());
+    }
+
+    public function test_an_invoice_pdf_is_not_downloadable_by_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('invoice-pdf-tenant-a@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Tenant A Customer');
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+        ]);
+        $invoiceId = $draft->json('id');
+        $this->logout();
+
+        $this->registerAndReturnCredentials('invoice-pdf-tenant-b@example.my');
+        $this->get("/api/v1/invoices/{$invoiceId}/pdf")->assertStatus(404);
+    }
+
     public function test_a_tenants_invoices_are_never_visible_to_another_tenant(): void
     {
         $this->registerAndReturnCredentials('invoice-tenant-a@example.my');
@@ -657,6 +715,50 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $this->deleteJson("/api/v1/quotations/{$quotationId}")->assertStatus(204);
         $this->getJson("/api/v1/quotations/{$quotationId}")->assertStatus(404);
+    }
+
+    /**
+     * AETS-017: a minimal PDF renders for both a Draft (labelled
+     * "DRAFT") and a Sent Quotation.
+     */
+    public function test_a_quotation_pdf_can_be_downloaded_for_a_draft_and_a_sent_quotation(): void
+    {
+        $this->registerAndReturnCredentials('quotation-pdf@example.my');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+            'lines' => [['description' => 'Consulting', 'quantity' => 2, 'unit_price' => '150.00']],
+        ]);
+        $quotationId = $draft->json('id');
+
+        $draftPdf = $this->get("/api/v1/quotations/{$quotationId}/pdf");
+        $draftPdf->assertStatus(200);
+        $draftPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $draftPdf->getContent());
+
+        $this->postJson("/api/v1/quotations/{$quotationId}/send", ['issue_date' => now()->toDateString()])->assertStatus(200);
+
+        $sentPdf = $this->get("/api/v1/quotations/{$quotationId}/pdf");
+        $sentPdf->assertStatus(200);
+        $this->assertStringContainsString('attachment; filename="QUO-000001.pdf"', $sentPdf->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF-', (string) $sentPdf->getContent());
+    }
+
+    public function test_a_quotation_pdf_is_not_downloadable_by_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('quotation-pdf-tenant-a@example.my');
+        $customerId = $this->createCustomer('Tenant A Customer');
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+        ]);
+        $quotationId = $draft->json('id');
+        $this->logout();
+
+        $this->registerAndReturnCredentials('quotation-pdf-tenant-b@example.my');
+        $this->get("/api/v1/quotations/{$quotationId}/pdf")->assertStatus(404);
     }
 
     public function test_a_tenants_quotations_are_never_visible_to_another_tenant(): void
@@ -961,6 +1063,48 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $zip->close();
         unlink($tempPath);
+    }
+
+    /**
+     * AETS-009 §20: the same Trial Balance data, resolved via
+     * `?format=xlsx` instead of `?format=csv` — proves the real HTTP
+     * boundary returns a genuinely valid XLSX file, not just that
+     * `XlsxResponseBuilder` itself is correct (already proven at the
+     * unit level).
+     */
+    public function test_the_trial_balance_can_be_exported_as_xlsx(): void
+    {
+        $this->registerAndReturnCredentials('xlsx-trial-balance@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '100.00',
+            'transaction_date' => '2026-09-08',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Sales',
+        ], ['Idempotency-Key' => 'key-xlsx-income'])->assertStatus(201);
+
+        $response = $this->get('/api/v1/reports/trial-balance?as_of=2026-09-08&format=xlsx');
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $this->assertStringContainsString('attachment; filename="trial-balance-2026-09-08.xlsx"', $response->headers->get('Content-Disposition'));
+
+        $tempPath = tempnam(sys_get_temp_dir(), 'xlsx-http-test-');
+        file_put_contents($tempPath, $response->getContent());
+        $sheet = IOFactory::load($tempPath)->getActiveSheet();
+        unlink($tempPath);
+
+        $values = [];
+        foreach ($sheet->getRowIterator() as $row) {
+            foreach ($row->getCellIterator() as $cell) {
+                $values[] = (string) $cell->getValue();
+            }
+        }
+
+        $this->assertContains($cashId, $values);
+        $this->assertContains($revenueId, $values);
     }
 
     public function test_an_invalid_export_format_is_rejected(): void
@@ -1628,6 +1772,58 @@ final class IdentityAndAccountingApiTest extends TestCase
             ."2026-08-01,Salary credit,3000.00,IN,3000.00,REF001\n"
             ."2026-08-02,Rent payment,1200.00,OUT,1800.00,REF002\n";
         $file = UploadedFile::fake()->createWithContent('statement.csv', $csv);
+
+        $import = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", ['statement' => $file]);
+
+        $import->assertStatus(201);
+        $import->assertJsonPath('row_count', 2);
+        $import->assertJsonPath('inserted_count', 2);
+        $import->assertJsonPath('duplicate_count', 0);
+        $import->assertJsonPath('is_new_import', true);
+
+        $transactions = $this->getJson("/api/v1/bank-accounts/{$registeredBankAccountId}/transactions");
+        $transactions->assertStatus(200);
+        $transactions->assertJsonCount(2, 'data');
+        $transactions->assertJsonPath('data.0.description', 'Salary credit');
+        $transactions->assertJsonPath('data.0.direction', 'MoneyIn');
+    }
+
+    /**
+     * Import & Export (AETS-008 §5.1): the identical end-to-end import
+     * flow, resolved via a real XLSX workbook instead of CSV —
+     * `BankStatementImportController` picks
+     * {@see XlsxBankStatementParser} from the
+     * uploaded file's own `.xlsx` extension.
+     */
+    public function test_registering_a_bank_account_and_importing_an_xlsx_statement_end_to_end(): void
+    {
+        $this->registerAndReturnCredentials('bank-import-xlsx@example.my');
+        $bankAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $registeredBankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankAccountId,
+            'bank_name' => 'Maybank',
+            'account_number_last4' => '1234',
+        ])->json('id');
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $rows = [
+            ['date', 'description', 'amount', 'direction', 'balance', 'reference'],
+            ['2026-08-01', 'Salary credit', '3000.00', 'IN', '3000.00', 'REF001'],
+            ['2026-08-02', 'Rent payment', '1200.00', 'OUT', '1800.00', 'REF002'],
+        ];
+        foreach ($rows as $rowIndex => $row) {
+            foreach ($row as $columnIndex => $value) {
+                $sheet->setCellValueExplicit([$columnIndex + 1, $rowIndex + 1], $value, DataType::TYPE_STRING);
+            }
+        }
+        $tempPath = tempnam(sys_get_temp_dir(), 'bank-import-http-test-');
+        (new Xlsx($spreadsheet))->save($tempPath);
+        $xlsxBytes = file_get_contents($tempPath);
+        unlink($tempPath);
+
+        $file = UploadedFile::fake()->createWithContent('statement.xlsx', (string) $xlsxBytes);
 
         $import = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", ['statement' => $file]);
 

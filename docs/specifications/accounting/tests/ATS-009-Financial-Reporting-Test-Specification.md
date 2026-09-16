@@ -1,7 +1,7 @@
 # ATS-009: Financial Reporting Test Specification
 
 - Status: Active
-- Version: 1.5.0
+- Version: 1.6.0
 - Effective date: 2026-09-07
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T049`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
+This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T050`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](ATS-010-Audit-Trail-Test-Specification.md), this document was authored alongside — immediately after — AETS-009's implementation (M10), not before it: every test ID below traces to a concrete, already-passing test in the current suite, not a future target. The traceability matrix in §5 can therefore be verified directly against the repository rather than taken on faith.
 
@@ -22,6 +22,7 @@ Like [ATS-010](ATS-010-Audit-Trail-Test-Specification.md), this document was aut
 - Golden-dataset reconciliation against real Expense (M7) and Income (M9) postings, Draft-exclusion, tenant isolation, `financialDate`-vs-`postedAt`, M5 correction-chain robustness, General Ledger traceability, Evidence Index accuracy, and a no-write architecture proof — the exact list AETS-009 §13 requires.
 - **As of v1.1.0:** Aging completeness and bucket determinism proof, per AETS-009 §13's own new bullet.
 - **As of v1.5.0:** Compliance Pack fidelity proof, per AETS-009 §13's own new bullet — unlike CSV export (§2.2 below), the ZIP-bundling code path itself (`ZipResponseBuilder`, `ReportingController::compliancePack()`) is genuinely new and untested elsewhere, so it is given real coverage here rather than treated as a zero-new-code-path reshaping.
+- **As of v1.6.0:** XLSX/CSV content parity proof, per AETS-009 §13's own new bullet — for the identical reason as Compliance Pack above, `XlsxResponseBuilder` is genuinely new code and given real coverage, unlike the zero-new-code-path CSV reshaping itself.
 
 ### 2.2 Out of scope
 
@@ -62,6 +63,7 @@ This document is subordinate to [AETS-009](../AETS-009-Financial-Reporting.md) a
 | RPT-013 | RPT-T033, RPT-T034, RPT-T037, RPT-T038 |
 | RPT-014 | RPT-T046, RPT-T047 |
 | RPT-015 | RPT-T049 |
+| RPT-016 | RPT-T050 |
 
 ## 6. Test cases
 
@@ -157,6 +159,7 @@ Domain-level tests (`AgingBucket`, `AgingReport`) construct their inputs directl
 | RPT-T047 | A not-yet-allocated Invoice's Aging report for a historical as-of date (fully outstanding) is identical before and after a late allocation is made against an earlier-dated Payment; the current-day as-of date correctly reflects the allocation instead — proves `AgingReportQuery`'s `created_at`-vs-as-of-date comparison, the exact scenario an external audit demonstrated (AETS-009 v1.4.0) (`RPT-014`). | Integration |
 | RPT-T048 | Two Tenants sharing the identical MYR amount and dates (Invoice, Payment, Allocation) but distinct Account/Customer/Invoice/Payment IDs never leak into each other's Aging Report or outstanding balance (`RPT-002`, closing the gap AETS-009 §15 named until 2026-09-11). | Integration |
 | RPT-T049 | Downloading `/reports/compliance-pack` for a period with real posted activity returns a valid ZIP (real HTTP round trip) containing exactly five named CSV entries; the Trial Balance and Profit & Loss entries are checked directly for the same Account IDs their own `?format=csv` output would contain, and the remaining three entries are checked present and non-empty (`RPT-015`, §19). | HTTP |
+| RPT-T050 | Downloading Trial Balance via `?format=xlsx` for a period with real posted activity returns a valid XLSX workbook (real HTTP round trip); every Account ID that report's own `?format=csv` output would contain is checked present among the workbook's own cell values (`RPT-016`, §20). | HTTP |
 
 ## 7. RPT-003 — not independently tested by a runtime test
 
@@ -176,6 +179,7 @@ Domain-level tests (`AgingBucket`, `AgingReport`) construct their inputs directl
 
 ## Changelog
 
+- **1.6.0 (2026-09-16):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.6.0 (§20, XLSX report export). Adds `RPT-T050`, a real-HTTP proof that Trial Balance's `?format=xlsx` output opens as a valid workbook whose cell values match its own `?format=csv` output for the same parameters. Adds a new `RPT-016` traceability row (§5). No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.
 - **1.5.0 (2026-09-16):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.5.0 (§19, Compliance Pack export). Adds `RPT-T049`, a real-HTTP proof that `/reports/compliance-pack` returns a valid ZIP with exactly five named CSV entries, checked for fidelity against the Trial Balance/Profit & Loss reports' own already-tested output. Adds a new `RPT-015` traceability row (§5) and a §2.2 scope note distinguishing this from the CSV-export precedent (the ZIP-bundling code path is genuinely new, unlike CSV's zero-new-code-path reshaping). No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.
 - **1.4.0 (2026-09-11):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.4.0. Adds `RPT-T047` (the creation-side boundary an external audit found v1.3.0's own fix still missing) to `RPT-014`'s traceability row, and `RPT-T048` (a dedicated two-Tenant Aging isolation test) to `RPT-002`'s. Closes both remaining §2.2/§8 coverage gaps this document had explicitly named since v1.1.0. No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.
 - **1.3.0 (2026-09-11):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.3.0 (P1-4: full resolution of the Aging Report historical-reproducibility limitation). Adds `RPT-T046`, proving `AgingReportQuery`'s new `deleted_at`-vs-as-of-date comparison: a historical as-of date's result is identical before and after a later deallocation, while a same-day-or-later as-of date correctly reflects it. Adds `RPT-T046` to a new `RPT-014` traceability row (§5). No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.

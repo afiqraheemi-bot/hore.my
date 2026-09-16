@@ -32,12 +32,16 @@ use App\Http\Requests\Quotations\SendQuotationRequest;
 use App\Http\Requests\Quotations\StoreQuotationRequest;
 use App\Http\Requests\Quotations\UpdateQuotationRequest;
 use App\Http\Support\CurrentTenant;
+use App\Http\Support\DocumentPartyFormatter;
+use App\Http\Support\DocumentPdfBuilder;
 use App\Infrastructure\Customers\CustomerRepository;
 use App\Infrastructure\Quotations\QuotationNumberGenerator;
 use App\Infrastructure\Quotations\QuotationRepository;
+use App\Models\BusinessProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Creates, edits, deletes, lists, sends, accepts, rejects, and
@@ -46,6 +50,9 @@ use Illuminate\Support\Str;
  * by creating a new Draft Invoice; nothing here ever posts a Journal.
  * Mirrors {@see InvoiceController}'s own HTTP shape wherever the two
  * concepts are structurally parallel.
+ *
+ * **{@see pdf()} (AETS-017, added 2026-09-16)** renders a minimal,
+ * functional PDF of this Quotation, in any state.
  */
 final class QuotationController extends Controller
 {
@@ -210,6 +217,46 @@ final class QuotationController extends Controller
         }
 
         return response()->json($this->invoiceToArray($invoice), 201);
+    }
+
+    /**
+     * AETS-017: a minimal, functional PDF rendering of this Quotation
+     * — available in any state, since a Quotation is meant to be sent
+     * or previewed exactly as composed.
+     */
+    public function pdf(CurrentTenant $currentTenant, string $quotationId): Response|JsonResponse
+    {
+        $quotation = $this->quotationRepository->findById($currentTenant->id(), QuotationId::of($quotationId));
+
+        if ($quotation === null) {
+            return response()->json(['message' => 'Quotation not found.'], 404);
+        }
+
+        $customer = $this->customerRepository->findById($currentTenant->id(), $quotation->customerId());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+
+        return DocumentPdfBuilder::build(
+            sprintf('%s.pdf', $quotation->quotationNumber() ?? 'quotation-draft-'.substr($quotation->id()->toString(), 0, 8)),
+            'pdf.document',
+            [
+                'documentTypeLabel' => 'QUOTATION',
+                'documentNumber' => $quotation->quotationNumber(),
+                'statusLabel' => $quotation->status()->name,
+                'issueDate' => $quotation->issueDate()?->format('Y-m-d'),
+                'secondaryDateLabel' => 'Valid Until',
+                'secondaryDate' => $quotation->validUntil()->format('Y-m-d'),
+                'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+                'buyer' => DocumentPartyFormatter::buyerFromCustomer($customer),
+                'lines' => array_map(static fn (QuotationLine $line): array => [
+                    'description' => $line->description(),
+                    'quantity' => $line->quantity(),
+                    'unit_price' => $line->unitPrice()->toDecimalString(),
+                    'line_amount' => $line->lineAmount()->toDecimalString(),
+                ], $quotation->lines()),
+                'totalAmount' => $quotation->totalAmount()->toDecimalString(),
+                'currency' => $quotation->totalAmount()->currency()->identifier(),
+            ],
+        );
     }
 
     /**

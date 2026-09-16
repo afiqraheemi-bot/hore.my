@@ -25,7 +25,7 @@ final class PeriodRequest extends FormRequest
         return [
             'period_start' => ['required', 'date_format:Y-m-d'],
             'period_end' => ['required', 'date_format:Y-m-d', 'after_or_equal:period_start'],
-            'format' => ['sometimes', 'string', 'in:json,csv'],
+            'format' => ['sometimes', 'string', 'in:json,csv,xlsx'],
         ];
     }
 }

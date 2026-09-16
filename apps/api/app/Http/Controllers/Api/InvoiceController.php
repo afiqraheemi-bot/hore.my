@@ -35,11 +35,15 @@ use App\Http\Requests\Invoicing\StoreInvoiceRequest;
 use App\Http\Requests\Invoicing\UpdateInvoiceRequest;
 use App\Http\Support\CurrentTenant;
 use App\Http\Support\DeterministicIdempotentId;
+use App\Http\Support\DocumentPartyFormatter;
+use App\Http\Support\DocumentPdfBuilder;
 use App\Infrastructure\Customers\CustomerRepository;
 use App\Infrastructure\Invoicing\InvoiceRepository;
+use App\Models\BusinessProfile;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Creates, edits, deletes, lists, and issues a Tenant's own Invoices
@@ -47,6 +51,9 @@ use Illuminate\Support\Str;
  * only {@see issue()} does, via {@see InvoiceIssuingService}, mirroring
  * every other Transactions module's own HTTP contract (an
  * `Idempotency-Key` header required on the one endpoint that posts).
+ *
+ * **{@see pdf()} (AETS-017, added 2026-09-16)** renders a minimal,
+ * functional PDF of this Invoice, Draft or Issued alike.
  */
 final class InvoiceController extends Controller
 {
@@ -207,6 +214,47 @@ final class InvoiceController extends Controller
         $invoice = $result->invoice();
 
         return response()->json($this->toArray($invoice), $result->isNewlyIssued() ? 201 : 200);
+    }
+
+    /**
+     * AETS-017: a minimal, functional PDF rendering of this Invoice —
+     * available for a Draft (labelled "DRAFT," a preview) or an Issued
+     * Invoice alike, since a Tenant composing a Draft may reasonably
+     * want to preview it before issuing.
+     */
+    public function pdf(CurrentTenant $currentTenant, string $invoiceId): Response|JsonResponse
+    {
+        $invoice = $this->invoiceRepository->findById($currentTenant->id(), InvoiceId::of($invoiceId));
+
+        if ($invoice === null) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $customer = $this->customerRepository->findById($currentTenant->id(), $invoice->customerId());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+
+        return DocumentPdfBuilder::build(
+            sprintf('%s.pdf', $invoice->invoiceNumber() ?? 'invoice-draft-'.substr($invoice->id()->toString(), 0, 8)),
+            'pdf.document',
+            [
+                'documentTypeLabel' => 'INVOICE',
+                'documentNumber' => $invoice->invoiceNumber(),
+                'statusLabel' => $invoice->status()->name,
+                'issueDate' => $invoice->issueDate()?->format('Y-m-d'),
+                'secondaryDateLabel' => 'Due Date',
+                'secondaryDate' => $invoice->dueDate()->format('Y-m-d'),
+                'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+                'buyer' => DocumentPartyFormatter::buyerFromCustomer($customer),
+                'lines' => array_map(static fn (InvoiceLine $line): array => [
+                    'description' => $line->description(),
+                    'quantity' => $line->quantity(),
+                    'unit_price' => $line->unitPrice()->toDecimalString(),
+                    'line_amount' => $line->lineAmount()->toDecimalString(),
+                ], $invoice->lines()),
+                'totalAmount' => $invoice->totalAmount()->toDecimalString(),
+                'currency' => $invoice->totalAmount()->currency()->identifier(),
+            ],
+        );
     }
 
     /**
