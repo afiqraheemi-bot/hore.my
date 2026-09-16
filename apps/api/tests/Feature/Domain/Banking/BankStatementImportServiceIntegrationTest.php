@@ -252,11 +252,164 @@ final class BankStatementImportServiceIntegrationTest extends TestCase
         $this->assertSame(0, DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE)->count());
     }
 
+    /**
+     * The caller-visible loser outcome remains deliberately unspecified,
+     * but the database result is non-negotiable: a genuine two-process
+     * race over byte-identical input leaves exactly one complete batch and
+     * one normalized source row, never duplicate or partial persistence.
+     */
+    public function test_concurrent_identical_imports_remain_atomic_and_duplicate_free(): void
+    {
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Concurrent salary,3000.00,IN,,CONCURRENT-SAME\n";
+
+        [$resultA, $resultB] = $this->raceImportWorkers($csv, $csv);
+        $successful = array_filter(
+            [$resultA, $resultB],
+            static fn (array $result): bool => ($result['status'] ?? null) === 'success',
+        );
+
+        $this->assertNotEmpty($successful, 'At least one concurrent identical import must commit.');
+        $this->assertSame(1, DB::connection('pgsql')->table(self::IMPORT_BATCH_TABLE)->count());
+        $this->assertSame(1, DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE)->count());
+        $this->assertPersistedImportCountsAreExact();
+    }
+
+    /**
+     * Two different statement exports overlap on one source row and each
+     * carry one unique row. Depending on serialization, PostgreSQL may
+     * commit only the winner or the winner followed by a clean duplicate-
+     * aware import. Both outcomes are safe; duplicate or partially-owned
+     * rows are not.
+     */
+    public function test_concurrent_overlapping_reexports_cannot_create_duplicates_or_partial_batches(): void
+    {
+        $csvA = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Shared row,100.00,IN,,CONCURRENT-SHARED\n"
+            ."2026-08-02,Only in A,25.00,OUT,,CONCURRENT-A\n";
+        $csvB = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Shared row,100.00,IN,,CONCURRENT-SHARED\n"
+            ."2026-08-03,Only in B,30.00,OUT,,CONCURRENT-B\n";
+
+        [$resultA, $resultB] = $this->raceImportWorkers($csvA, $csvB);
+        $successful = array_filter(
+            [$resultA, $resultB],
+            static fn (array $result): bool => ($result['status'] ?? null) === 'success',
+        );
+
+        $this->assertNotEmpty($successful, 'At least one concurrent overlapping import must commit.');
+        $this->assertContains(DB::connection('pgsql')->table(self::IMPORT_BATCH_TABLE)->count(), [1, 2]);
+        $this->assertContains(DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE)->count(), [2, 3]);
+        $this->assertSame(1, DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE)
+            ->where('reference', 'CONCURRENT-SHARED')
+            ->count());
+        $this->assertPersistedImportCountsAreExact();
+
+        $orphanCount = DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE.' as transaction')
+            ->leftJoin(self::IMPORT_BATCH_TABLE.' as batch', 'batch.id', '=', 'transaction.import_batch_id')
+            ->whereNull('batch.id')
+            ->count();
+
+        $this->assertSame(0, $orphanCount);
+    }
+
     // --- Fixtures and helpers ------------------------------------------
 
     private function bankTransactionRepository(): BankTransactionRepository
     {
         return new BankTransactionRepository(DB::connection('pgsql'));
+    }
+
+    private function assertPersistedImportCountsAreExact(): void
+    {
+        $batches = DB::connection('pgsql')->table(self::IMPORT_BATCH_TABLE)
+            ->get(['row_count', 'inserted_count', 'duplicate_count']);
+
+        foreach ($batches as $batch) {
+            $this->assertSame(
+                (int) $batch->row_count,
+                (int) $batch->inserted_count + (int) $batch->duplicate_count,
+            );
+        }
+    }
+
+    /**
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function raceImportWorkers(string $csvA, string $csvB): array
+    {
+        $temporaryDirectory = sys_get_temp_dir();
+        $readyA = tempnam($temporaryDirectory, 'import_ready_a_');
+        $readyB = tempnam($temporaryDirectory, 'import_ready_b_');
+        $goFile = tempnam($temporaryDirectory, 'import_go_');
+        $resultA = tempnam($temporaryDirectory, 'import_result_a_');
+        $resultB = tempnam($temporaryDirectory, 'import_result_b_');
+
+        foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+            unlink($file);
+        }
+
+        $workerScript = base_path('tests/bin/concurrent_bank_import_worker.php');
+        $commonArguments = [$this->tenantA->toString(), $this->bankAccountA->toString()];
+
+        $processA = proc_open(
+            ['php', $workerScript, ...$commonArguments, 'statement-a.csv', base64_encode($csvA), $readyA, $goFile, $resultA],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesA,
+        );
+        $processB = proc_open(
+            ['php', $workerScript, ...$commonArguments, 'statement-b.csv', base64_encode($csvB), $readyB, $goFile, $resultB],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipesB,
+        );
+
+        $this->assertIsResource($processA);
+        $this->assertIsResource($processB);
+
+        try {
+            $deadline = microtime(true) + 5.0;
+            while (! (file_exists($readyA) && file_exists($readyB))) {
+                if (microtime(true) > $deadline) {
+                    $this->fail('Timed out waiting for both Bank Import workers to signal ready.');
+                }
+
+                usleep(2000);
+            }
+
+            touch($goFile);
+
+            foreach ([$processA, $processB] as $process) {
+                proc_close($process);
+            }
+
+            $deadline = microtime(true) + 5.0;
+            while (! (file_exists($resultA) && file_exists($resultB))) {
+                if (microtime(true) > $deadline) {
+                    $this->fail('Timed out waiting for both Bank Import worker results.');
+                }
+
+                usleep(2000);
+            }
+
+            /** @var array<string, mixed> $resultAData */
+            $resultAData = json_decode((string) file_get_contents($resultA), true, flags: JSON_THROW_ON_ERROR);
+            /** @var array<string, mixed> $resultBData */
+            $resultBData = json_decode((string) file_get_contents($resultB), true, flags: JSON_THROW_ON_ERROR);
+
+            return [$resultAData, $resultBData];
+        } finally {
+            foreach ([$pipesA ?? [], $pipesB ?? []] as $pipes) {
+                foreach ($pipes as $pipe) {
+                    if (is_resource($pipe)) {
+                        fclose($pipe);
+                    }
+                }
+            }
+
+            foreach ([$readyA, $readyB, $goFile, $resultA, $resultB] as $file) {
+                @unlink($file);
+            }
+        }
     }
 
     private function buildService(ConnectionInterface $connection): BankStatementImportService
