@@ -286,6 +286,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         $response->assertJsonCount(1, 'data');
         $response->assertJsonPath('data.0.account_code', '1000');
         $response->assertJsonPath('data.0.account_type', 'Asset');
+        $response->assertJsonPath('data.0.account_origin', 'UserCreated');
     }
 
     public function test_a_duplicate_account_code_within_the_same_tenant_is_rejected(): void

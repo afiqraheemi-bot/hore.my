@@ -82,13 +82,13 @@ interface AccountRule {
  */
 const accountRules: Record<string, AccountRule> = {
   Expense: {
-    primaryLabel: 'Expense account',
+    primaryLabel: 'Category',
     primaryTypes: ['Expense'],
     secondaryLabel: 'Paid from',
     secondaryTypes: ['Asset'],
   },
   Income: {
-    primaryLabel: 'Income account',
+    primaryLabel: 'Category',
     primaryTypes: ['Revenue'],
     secondaryLabel: 'Deposited to',
     secondaryTypes: ['Asset'],
@@ -102,13 +102,13 @@ const accountRules: Record<string, AccountRule> = {
   CapitalContribution: {
     primaryLabel: 'Cash account',
     primaryTypes: ['Asset'],
-    secondaryLabel: 'Equity account',
+    secondaryLabel: "Owner's capital account",
     secondaryTypes: ['Equity'],
   },
   OwnerDrawing: {
     primaryLabel: 'Cash account',
     primaryTypes: ['Asset'],
-    secondaryLabel: 'Equity account',
+    secondaryLabel: "Owner's capital account",
     secondaryTypes: ['Equity'],
   },
 }
@@ -165,13 +165,13 @@ const cancellableStates = ['Received', 'Processing', 'NeedsInformation', 'NeedsR
 
 function accountLabel(id: string): string {
   const account = accounts.value.find((a) => a.id === id)
-  return account ? `${account.account_code} — ${account.account_name}` : id.slice(0, 8)
+  return account ? account.account_name : id.slice(0, 8)
 }
 
 function accountOptions(types: string[]): { value: string; label: string }[] {
   return accounts.value
     .filter((a) => types.includes(a.account_type))
-    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` }))
+    .map((a) => ({ value: a.id, label: a.account_name }))
 }
 
 function ruleFor(commandType: string): AccountRule {
@@ -384,7 +384,11 @@ onMounted(load)
             <AppSelect
               v-model="provideInfoPrimaryAccountId"
               :options="accountOptions(ruleFor(task.draft.command_type).primaryTypes)"
-              placeholder="Select an account"
+              :placeholder="
+                ruleFor(task.draft.command_type).primaryLabel === 'Category'
+                  ? 'Select a category'
+                  : 'Select an account'
+              "
               required
             />
           </AppField>
@@ -471,7 +475,7 @@ onMounted(load)
       <AppCard v-if="task.state === 'Completed'">
         <div class="flex items-center gap-2 text-success">
           <AppIcon name="check" :size="16" />
-          <p class="text-sm font-medium">Posted a balanced Journal.</p>
+          <p class="text-sm font-medium">Recorded to your books.</p>
         </div>
         <p class="mt-1 font-mono text-xs text-ink-tertiary">{{ task.result_journal_id }}</p>
       </AppCard>
@@ -544,7 +548,11 @@ onMounted(load)
             <AppSelect
               v-model="editPrimaryAccountId"
               :options="accountOptions(ruleFor(task.proposal.command_type).primaryTypes)"
-              placeholder="Select an account"
+              :placeholder="
+                ruleFor(task.proposal.command_type).primaryLabel === 'Category'
+                  ? 'Select a category'
+                  : 'Select an account'
+              "
               required
             />
           </AppField>

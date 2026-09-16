@@ -13,6 +13,7 @@ const props = defineProps<{
     | 'moon'
     | 'system'
     | 'home'
+    | 'dashboard'
     | 'receipt'
     | 'bank'
     | 'chart'
@@ -74,6 +75,12 @@ const size = props.size ?? 20
     <template v-else-if="name === 'home'">
       <path d="M3 11.5L12 4l9 7.5" />
       <path d="M5 10v9a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1v-9" />
+    </template>
+    <template v-else-if="name === 'dashboard'">
+      <rect x="3" y="3" width="8" height="8" rx="1.5" />
+      <rect x="13" y="3" width="8" height="5" rx="1.5" />
+      <rect x="13" y="10" width="8" height="11" rx="1.5" />
+      <rect x="3" y="13" width="8" height="8" rx="1.5" />
     </template>
     <template v-else-if="name === 'receipt'">
       <path d="M6 3h12v18l-2.5-1.5L13 21l-2.5-1.5L8 21l-2-1.5V3z" />

@@ -13,6 +13,7 @@ interface NavItem {
 }
 
 const primaryNav: NavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { to: '/', label: 'Work Queue', icon: 'tasks' },
   { to: '/manual-entry', label: 'Manual Entry', icon: 'home' },
   { to: '/quotations', label: 'Quotations', icon: 'send' },

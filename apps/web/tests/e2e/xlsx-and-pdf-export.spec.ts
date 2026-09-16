@@ -44,8 +44,8 @@ test.describe('XLSX and PDF export/import', () => {
     await page.getByRole('button', { name: /new invoice/i }).click()
     await page.locator('form select').first().selectOption({ label: 'Kedai Runcit Aminah' })
     await page.locator('input[type="date"]').first().fill('2026-12-31')
-    await page.locator('form select').nth(1).selectOption({ label: '1100 — Accounts Receivable' })
-    await page.locator('form select').nth(2).selectOption({ label: '4100 — Service Revenue' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Accounts Receivable' })
+    await page.locator('form select').nth(2).selectOption({ label: 'Service Revenue' })
     await page.getByPlaceholder('Description').fill('Consulting')
     await page.getByPlaceholder('Qty').fill('1')
     await page.getByPlaceholder('Unit price').fill('250.00')
@@ -107,7 +107,7 @@ test.describe('XLSX and PDF export/import', () => {
 
     await page.goto('/bank-accounts')
     await page.getByRole('button', { name: /register bank account/i }).click()
-    await page.locator('form select').first().selectOption({ label: '1000 — Cash (Asset)' })
+    await page.locator('form select').first().selectOption({ label: 'Cash' })
     await page.getByPlaceholder('Maybank').fill('Maybank')
     await Promise.all([
       page.waitForResponse(

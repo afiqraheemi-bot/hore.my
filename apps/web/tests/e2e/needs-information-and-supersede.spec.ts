@@ -36,8 +36,8 @@ test.describe('NeedsInformation and edit/supersede', () => {
     await expect(page.getByRole('heading', { name: 'Needs more information' })).toBeVisible()
     await expect(page.getByText('RM30.00')).toBeVisible()
 
-    await page.locator('form select').nth(0).selectOption({ label: '5000 — Office Supplies' })
-    await page.locator('form select').nth(1).selectOption({ label: '1000 — Cash' })
+    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
 
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/provide-information')),
@@ -58,8 +58,8 @@ test.describe('NeedsInformation and edit/supersede', () => {
   async function submitExpenseTask(page: import('@playwright/test').Page, description: string) {
     await page.goto('/')
     await page.locator('input[inputmode="decimal"]').fill('40.00')
-    await page.locator('form select').nth(0).selectOption({ label: '5000 — Office Supplies' })
-    await page.locator('form select').nth(1).selectOption({ label: '1000 — Cash' })
+    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
     await page.getByPlaceholder('What was this for?').fill(description)
 
     await Promise.all([
@@ -82,7 +82,7 @@ test.describe('NeedsInformation and edit/supersede', () => {
 
     await page.getByRole('button', { name: /^edit$/i }).click()
     await page.locator('input[inputmode="decimal"]').fill('45.00')
-    await page.locator('form select').nth(1).selectOption({ label: '1010 — Savings' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Savings' })
 
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/supersede')),

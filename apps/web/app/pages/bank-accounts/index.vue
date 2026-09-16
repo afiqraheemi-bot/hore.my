@@ -70,7 +70,7 @@ const registerError = ref<string | null>(null)
 const linkedAccountOptions = computed(() =>
   accounts.value.map((a) => ({
     value: a.id,
-    label: `${a.account_code} — ${a.account_name} (${a.account_type})`,
+    label: a.account_name,
   })),
 )
 

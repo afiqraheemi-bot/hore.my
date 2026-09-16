@@ -32,7 +32,7 @@ function describeSource(source: string): {
   icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart'
 } {
   const prefix = source.split(':')[0] ?? ''
-  return SOURCE_LABELS[prefix] ?? { label: prefix || 'Journal', icon: 'chart' }
+  return SOURCE_LABELS[prefix] ?? { label: prefix || 'Record', icon: 'chart' }
 }
 
 function formatRelativeDate(dateString: string): string {

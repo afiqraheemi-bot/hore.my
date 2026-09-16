@@ -91,12 +91,12 @@ const customerOptions = computed(() => customers.value.map((c) => ({ value: c.id
 const receivableAccountOptions = computed(() =>
   accounts.value
     .filter((a) => a.account_type === 'Asset')
-    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+    .map((a) => ({ value: a.id, label: a.account_name })),
 )
 const revenueAccountOptions = computed(() =>
   accounts.value
     .filter((a) => a.account_type === 'Revenue')
-    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+    .map((a) => ({ value: a.id, label: a.account_name })),
 )
 
 function issueDateFor(quotationId: string): string {

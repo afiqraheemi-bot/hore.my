@@ -24,8 +24,8 @@ test.describe('Work Queue and Human Confirmation', () => {
   async function submitExpenseTask(page: import('@playwright/test').Page, description: string) {
     await page.goto('/tasks')
     await page.locator('input[inputmode="decimal"]').fill('88.50')
-    await page.locator('form select').nth(0).selectOption({ label: '5000 — Office Supplies' })
-    await page.locator('form select').nth(1).selectOption({ label: '1000 — Cash' })
+    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
     await page.getByPlaceholder('What was this for?').fill(description)
 
     await Promise.all([
@@ -70,7 +70,7 @@ test.describe('Work Queue and Human Confirmation', () => {
     ])
 
     await expect(page.getByText('Completed', { exact: true })).toBeVisible()
-    await expect(page.getByText('Posted a balanced Journal.')).toBeVisible()
+    await expect(page.getByText('Recorded to your books.')).toBeVisible()
     await expect(page.getByText('Received → Processing')).toBeVisible()
     await expect(page.getByText('NeedsReview → Approved')).toBeVisible()
     await expect(page.getByText('Executing → Completed')).toBeVisible()

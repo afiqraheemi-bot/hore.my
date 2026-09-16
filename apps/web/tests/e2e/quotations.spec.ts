@@ -53,11 +53,8 @@ test.describe('Quotations', () => {
     await page.getByRole('button', { name: /convert to invoice/i }).click()
     // The convert panel's own two account selects and due-date input.
     const convertPanel = page.locator('div').filter({ hasText: 'Invoice due date' }).last()
-    await convertPanel
-      .locator('select')
-      .nth(0)
-      .selectOption({ label: '1100 — Accounts Receivable' })
-    await convertPanel.locator('select').nth(1).selectOption({ label: '4100 — Service Revenue' })
+    await convertPanel.locator('select').nth(0).selectOption({ label: 'Accounts Receivable' })
+    await convertPanel.locator('select').nth(1).selectOption({ label: 'Service Revenue' })
 
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/convert-to-invoice')),

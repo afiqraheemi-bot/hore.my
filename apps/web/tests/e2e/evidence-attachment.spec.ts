@@ -19,8 +19,8 @@ test.describe('Evidence attachment', () => {
 
     await page.getByRole('button', { name: 'Expense' }).click()
     await page.locator('input[inputmode="decimal"]').fill('42.50')
-    await page.locator('form select').nth(0).selectOption({ label: '5000 — Office Supplies' })
-    await page.locator('form select').nth(1).selectOption({ label: '1000 — Cash' })
+    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
     await page.getByPlaceholder('What was this for?').fill('Receipt attachment E2E proof')
 
     // A real, minimal 1x1 transparent PNG — Laravel's MIME validation

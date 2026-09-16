@@ -47,7 +47,7 @@ const types: TaskType[] = [
     label: 'Expense',
     icon: 'receipt',
     commandType: 'Expense',
-    primaryAccountLabel: 'Expense account',
+    primaryAccountLabel: 'Category',
     primaryAccountTypes: ['Expense'],
     secondaryAccountLabel: 'Paid from',
     secondaryAccountTypes: ['Asset'],
@@ -57,7 +57,7 @@ const types: TaskType[] = [
     label: 'Income',
     icon: 'wallet',
     commandType: 'Income',
-    primaryAccountLabel: 'Income account',
+    primaryAccountLabel: 'Category',
     primaryAccountTypes: ['Revenue'],
     secondaryAccountLabel: 'Deposited to',
     secondaryAccountTypes: ['Asset'],
@@ -79,7 +79,7 @@ const types: TaskType[] = [
     commandType: 'CapitalContribution',
     primaryAccountLabel: 'Cash account',
     primaryAccountTypes: ['Asset'],
-    secondaryAccountLabel: 'Equity account',
+    secondaryAccountLabel: "Owner's capital account",
     secondaryAccountTypes: ['Equity'],
   },
   {
@@ -89,7 +89,7 @@ const types: TaskType[] = [
     commandType: 'OwnerDrawing',
     primaryAccountLabel: 'Cash account',
     primaryAccountTypes: ['Asset'],
-    secondaryAccountLabel: 'Equity account',
+    secondaryAccountLabel: "Owner's capital account",
     secondaryAccountTypes: ['Equity'],
   },
 ]
@@ -170,7 +170,7 @@ const primaryAccountOptions = computed(() =>
     .filter((account) => activeType.value.primaryAccountTypes.includes(account.account_type))
     .map((account) => ({
       value: account.id,
-      label: `${account.account_code} — ${account.account_name}`,
+      label: account.account_name,
     })),
 )
 
@@ -179,7 +179,7 @@ const secondaryAccountOptions = computed(() =>
     .filter((account) => activeType.value.secondaryAccountTypes.includes(account.account_type))
     .map((account) => ({
       value: account.id,
-      label: `${account.account_code} — ${account.account_name}`,
+      label: account.account_name,
     })),
 )
 
@@ -334,7 +334,11 @@ onMounted(async () => {
               <AppSelect
                 v-model="primaryAccountId"
                 :options="primaryAccountOptions"
-                placeholder="Select an account"
+                :placeholder="
+                  activeType.primaryAccountLabel === 'Category'
+                    ? 'Select a category'
+                    : 'Select an account'
+                "
                 required
               />
             </AppField>

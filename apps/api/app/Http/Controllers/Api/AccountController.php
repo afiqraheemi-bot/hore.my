@@ -38,13 +38,14 @@ final class AccountController extends Controller
         $rows = DB::connection('pgsql')->table('accounts')
             ->where('tenant_id', $currentTenant->id()->toString())
             ->orderBy('account_code')
-            ->get(['account_id', 'account_code', 'account_name', 'account_type', 'active', 'posting_eligible']);
+            ->get(['account_id', 'account_code', 'account_name', 'account_type', 'account_origin', 'active', 'posting_eligible']);
 
         return response()->json(['data' => $rows->map(static fn ($row): array => [
             'id' => $row->account_id,
             'account_code' => $row->account_code,
             'account_name' => $row->account_name,
             'account_type' => $row->account_type,
+            'account_origin' => $row->account_origin,
             'active' => (bool) $row->active,
             'posting_eligible' => (bool) $row->posting_eligible,
         ])->all()]);

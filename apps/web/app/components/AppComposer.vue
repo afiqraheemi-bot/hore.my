@@ -68,7 +68,7 @@ const types: TransactionType[] = [
     label: 'Expense',
     icon: 'receipt',
     endpoint: '/api/v1/expenses',
-    primaryAccountLabel: 'Expense account',
+    primaryAccountLabel: 'Category',
     primaryAccountKey: 'expense_account_id',
     primaryAccountTypes: ['Expense'],
     secondaryAccountLabel: 'Paid from',
@@ -81,7 +81,7 @@ const types: TransactionType[] = [
     label: 'Income',
     icon: 'wallet',
     endpoint: '/api/v1/incomes',
-    primaryAccountLabel: 'Income account',
+    primaryAccountLabel: 'Category',
     primaryAccountKey: 'income_account_id',
     primaryAccountTypes: ['Revenue'],
     secondaryAccountLabel: 'Deposited to',
@@ -110,7 +110,7 @@ const types: TransactionType[] = [
     primaryAccountLabel: 'Cash account',
     primaryAccountKey: 'cash_account_id',
     primaryAccountTypes: ['Asset'],
-    secondaryAccountLabel: 'Equity account',
+    secondaryAccountLabel: "Owner's capital account",
     secondaryAccountKey: 'equity_account_id',
     secondaryAccountTypes: ['Equity'],
   },
@@ -123,7 +123,7 @@ const types: TransactionType[] = [
     primaryAccountLabel: 'Cash account',
     primaryAccountKey: 'cash_account_id',
     primaryAccountTypes: ['Asset'],
-    secondaryAccountLabel: 'Equity account',
+    secondaryAccountLabel: "Owner's capital account",
     secondaryAccountKey: 'equity_account_id',
     secondaryAccountTypes: ['Equity'],
   },
@@ -150,12 +150,12 @@ const justCreated = ref(false)
 const primaryAccountOptions = computed(() =>
   accounts.value
     .filter((a) => activeType.value.primaryAccountTypes.includes(a.account_type))
-    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+    .map((a) => ({ value: a.id, label: a.account_name })),
 )
 const secondaryAccountOptions = computed(() =>
   accounts.value
     .filter((a) => activeType.value.secondaryAccountTypes.includes(a.account_type))
-    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` })),
+    .map((a) => ({ value: a.id, label: a.account_name })),
 )
 
 async function loadAccounts() {
@@ -294,7 +294,11 @@ onMounted(loadAccounts)
           <AppSelect
             v-model="primaryAccountId"
             :options="primaryAccountOptions"
-            placeholder="Select an account"
+            :placeholder="
+              activeType.primaryAccountLabel === 'Category'
+                ? 'Select a category'
+                : 'Select an account'
+            "
             required
           />
         </AppField>
@@ -331,7 +335,7 @@ onMounted(loadAccounts)
         class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"
       >
         <p class="text-xs leading-5 text-ink-tertiary">
-          Posts a balanced double-entry Journal immediately.
+          Recorded immediately — accurate and traceable.
         </p>
         <AppButton type="submit" variant="primary" :disabled="submitting" class="justify-center">
           <AppIcon name="send" :size="15" />
