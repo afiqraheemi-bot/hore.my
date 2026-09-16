@@ -13,6 +13,7 @@ use App\Domain\Banking\Exception\InvalidReconciliationIdException;
 use App\Domain\Banking\Exception\InvalidReconciliationPeriodException;
 use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
+use App\Domain\Banking\Exception\ReconciliationHasUnmatchedTransactionsException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationNotFoundException;
 use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
@@ -154,7 +155,7 @@ final class ReconciliationController extends Controller
     {
         try {
             $reconciliation = $action();
-        } catch (InvalidReconciliationIdException|InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException $e) {
+        } catch (InvalidReconciliationIdException|InvalidReconciliationStateTransitionException|ReconciliationNotBalancedException|ReconciliationComputationExceedsSupportedRangeException|ReconciliationHasUnmatchedTransactionsException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (ReconciliationNotFoundException $e) {
             return response()->json(['message' => $e->getMessage()], 404);

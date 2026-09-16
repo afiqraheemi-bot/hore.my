@@ -5,26 +5,62 @@ declare(strict_types=1);
 namespace Tests\Feature\Domain\Banking;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
+use App\Domain\Accounting\Journal\JournalId;
 use App\Domain\Accounting\Money\Currency;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
+use App\Domain\Accounting\Posting\DraftJournalAssembler;
+use App\Domain\Accounting\Posting\IdempotencyKey;
+use App\Domain\Accounting\Posting\PostingCommandAccountValidator;
+use App\Domain\Accounting\Posting\PostingCommandExistingDraftLineValidator;
+use App\Domain\Accounting\Posting\PostingCommandIdempotencyResolver;
+use App\Domain\Accounting\Posting\PostingCommandJournalExecutor;
+use App\Domain\Accounting\Posting\PostingCommandJournalStateResolver;
+use App\Domain\Accounting\Posting\PostingCommandLogicalEquivalence;
+use App\Domain\Accounting\Posting\PostingCommandPeriodLockValidator;
+use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Banking\BankAccount;
 use App\Domain\Banking\BankAccountId;
 use App\Domain\Banking\BankStatementImportService;
+use App\Domain\Banking\BankTransactionMatchSuggester;
 use App\Domain\Banking\CsvBankStatementParser;
 use App\Domain\Banking\Exception\InvalidReconciliationStateTransitionException;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
+use App\Domain\Banking\Exception\ReconciliationHasUnmatchedTransactionsException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
+use App\Domain\Banking\MatchingService;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Banking\ReconciliationService;
 use App\Domain\Banking\ReconciliationState;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Domain\Transactions\Expense\ExpenseAccountTypeValidator;
+use App\Domain\Transactions\Expense\ExpenseId;
+use App\Domain\Transactions\Expense\ExpenseRecordingService;
+use App\Domain\Transactions\Expense\ExpenseToPostingCommandTranslator;
+use App\Domain\Transactions\Expense\RecordExpenseCommand;
+use App\Domain\Transactions\Income\IncomeAccountTypeValidator;
+use App\Domain\Transactions\Income\IncomeId;
+use App\Domain\Transactions\Income\IncomeRecordingService;
+use App\Domain\Transactions\Income\IncomeToPostingCommandTranslator;
+use App\Domain\Transactions\Income\RecordIncomeCommand;
+use App\Infrastructure\Accounting\Audit\AuditEventRepository;
+use App\Infrastructure\Accounting\ChartOfAccounts\AccountRepository;
+use App\Infrastructure\Accounting\Journal\JournalRepository;
+use App\Infrastructure\Accounting\Period\PeriodClosureRepository;
+use App\Infrastructure\Accounting\Posting\JournalEvidenceLinkRepository;
+use App\Infrastructure\Accounting\Posting\PostingIdempotencyRepository;
 use App\Infrastructure\Banking\BankAccountRepository;
 use App\Infrastructure\Banking\BankTransactionRepository;
 use App\Infrastructure\Banking\ImportBatchRepository;
+use App\Infrastructure\Banking\MatchRepository;
 use App\Infrastructure\Banking\ReconciliationRepository;
+use App\Infrastructure\Transactions\Expense\ExpenseRepository;
+use App\Infrastructure\Transactions\Income\IncomeRepository;
+use App\Infrastructure\Transactions\OwnerEquity\OwnerEquityTransactionRepository;
+use App\Infrastructure\Transactions\Transfer\TransferRepository;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -87,6 +123,18 @@ final class ReconciliationServiceIntegrationTest extends TestCase
             self::forceCleanMigration('database/migrations/2026_09_07_140000_create_reconciliation_reopenings_table.php', []);
         }
 
+        if (! Schema::connection('pgsql')->hasTable('matches')) {
+            self::forceCleanMigration('database/migrations/2026_09_07_120000_create_matches_table.php', []);
+        }
+
+        if (! Schema::connection('pgsql')->hasTable('expenses')) {
+            self::forceCleanMigration('database/migrations/2026_09_06_220000_create_expenses_table.php', []);
+        }
+
+        if (! Schema::connection('pgsql')->hasTable('incomes')) {
+            self::forceCleanMigration('database/migrations/2026_09_06_235000_create_incomes_table.php', []);
+        }
+
         self::cleanSharedAccountingTables();
 
         $connection = DB::connection('pgsql');
@@ -106,6 +154,7 @@ final class ReconciliationServiceIntegrationTest extends TestCase
             $connection,
             new BankTransactionRepository($connection),
             new ReconciliationRepository($connection),
+            new MatchRepository($connection),
         );
 
         $bankAccount = BankAccount::register(BankAccountId::of('bank-account-0001'), $this->tenant, AccountId::of('account-bank'), 'Maybank', null);
@@ -360,9 +409,11 @@ final class ReconciliationServiceIntegrationTest extends TestCase
 
     public function test_full_happy_path_lifecycle_end_to_end(): void
     {
-        $this->importStatement("2026-08-01,Deposit,500.00,IN,,\n");
-
-        $reconciliation = $this->open('1000.00', '1500.00');
+        // No imported activity in-period: an empty period is trivially
+        // both zero-difference (BNK-009) and fully matched (BNK-016,
+        // vacuously — there is nothing to match). Matched completion is
+        // separately proven by test_completion_succeeds_once_every_in_period_transaction_is_matched().
+        $reconciliation = $this->open('1000.00', '1000.00');
 
         $reconciliation = $this->reconciliationService->startReview($this->tenant, $reconciliation->id());
         $this->assertSame(ReconciliationState::InReview, $reconciliation->state());
@@ -373,6 +424,101 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $reconciliation = $this->reconciliationService->complete($this->tenant, $reconciliation->id());
         $this->assertSame(ReconciliationState::Completed, $reconciliation->state());
         $this->assertNotNull($reconciliation->completedAt());
+    }
+
+    /**
+     * BNK-016 (AETS-008 §12.1): a zero arithmetic difference alone is
+     * not enough — an unmatched in-period BankTransaction blocks
+     * completion even though the imported activity nets to exactly the
+     * stated closing balance.
+     */
+    public function test_completion_is_rejected_while_any_in_period_transaction_is_unmatched(): void
+    {
+        $this->importStatement("2026-08-01,Deposit,500.00,IN,,\n2026-08-15,Withdrawal,200.00,OUT,,\n");
+
+        $reconciliation = $this->open('1000.00', '1300.00');
+        $this->reconciliationService->startReview($this->tenant, $reconciliation->id());
+        $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
+
+        $this->expectException(ReconciliationHasUnmatchedTransactionsException::class);
+
+        $this->reconciliationService->complete($this->tenant, $reconciliation->id());
+    }
+
+    /**
+     * BNK-016 (AETS-008 §12.1): once every in-period BankTransaction has
+     * a confirmed Match, completion succeeds — proving the check is not
+     * simply an unconditional block.
+     */
+    public function test_completion_succeeds_once_every_in_period_transaction_is_matched(): void
+    {
+        $connection = DB::connection('pgsql');
+        $this->insertAccount('account-office-supplies', 'Expense');
+
+        $expenseService = $this->buildExpenseServiceForMatching($connection);
+        $matchingService = $this->buildMatchingServiceForReconciliation($connection);
+
+        $expenseResult = $expenseService->record(new RecordExpenseCommand(
+            ExpenseId::of('expense-recon-0001'),
+            JournalId::of('journal-recon-expense-0001'),
+            IdempotencyKey::of('key-recon-expense-0001'),
+            $this->tenant,
+            ActorReference::of('actor-0001'),
+            Money::fromDecimalString('200.00', $this->myr),
+            new \DateTimeImmutable('2026-08-15'),
+            AccountId::of('account-office-supplies'),
+            AccountId::of('account-bank'),
+            'Office supplies',
+            null,
+        ));
+
+        $this->importStatement("2026-08-01,Deposit,500.00,IN,,\n2026-08-15,Withdrawal,200.00,OUT,,\n");
+
+        $reconciliation = $this->open('1000.00', '1300.00');
+
+        $candidates = $matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+        foreach ($candidates as $candidate) {
+            if ($candidate->journalId()->equals($expenseResult->expense()->journalId())) {
+                $matchingService->confirm($this->tenant, $candidate->bankTransactionId(), $candidate->journalId(), ActorReference::of('actor-0001'));
+            }
+        }
+
+        // The $500 Deposit still has no matching Income posted, so
+        // completion must still be rejected.
+        $this->reconciliationService->startReview($this->tenant, $reconciliation->id());
+        $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
+
+        try {
+            $this->reconciliationService->complete($this->tenant, $reconciliation->id());
+            $this->fail('Expected completion to still be rejected while the Deposit remains unmatched.');
+        } catch (ReconciliationHasUnmatchedTransactionsException) {
+            // expected
+        }
+
+        $this->insertAccount('account-revenue', 'Revenue');
+
+        $incomeResult = $this->buildIncomeServiceForMatching($connection)->record(new RecordIncomeCommand(
+            IncomeId::of('income-recon-0001'),
+            JournalId::of('journal-recon-income-0001'),
+            IdempotencyKey::of('key-recon-income-0001'),
+            $this->tenant,
+            ActorReference::of('actor-0001'),
+            Money::fromDecimalString('500.00', $this->myr),
+            new \DateTimeImmutable('2026-08-01'),
+            AccountId::of('account-revenue'),
+            AccountId::of('account-bank'),
+            'Consulting revenue',
+            null,
+        ));
+
+        foreach ($matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001')) as $candidate) {
+            if ($candidate->journalId()->equals($incomeResult->income()->journalId())) {
+                $matchingService->confirm($this->tenant, $candidate->bankTransactionId(), $candidate->journalId(), ActorReference::of('actor-0001'));
+            }
+        }
+
+        $completed = $this->reconciliationService->complete($this->tenant, $reconciliation->id());
+        $this->assertSame(ReconciliationState::Completed, $completed->state());
     }
 
     public function test_marking_balanced_with_a_nonzero_difference_is_rejected(): void
@@ -645,6 +791,82 @@ final class ReconciliationServiceIntegrationTest extends TestCase
             new \DateTimeImmutable($periodEnd),
             Money::fromDecimalString($opening, $this->myr),
             Money::fromDecimalString($closing, $this->myr),
+        );
+    }
+
+    private function buildExpenseServiceForMatching(ConnectionInterface $connection): ExpenseRecordingService
+    {
+        $postingExecutor = $this->buildPostingExecutorForMatching($connection);
+
+        return new ExpenseRecordingService(
+            $connection,
+            new ExpenseAccountTypeValidator(new AccountRepository($connection)),
+            new ExpenseToPostingCommandTranslator,
+            $postingExecutor,
+            new ExpenseRepository($connection),
+        );
+    }
+
+    private function buildIncomeServiceForMatching(ConnectionInterface $connection): IncomeRecordingService
+    {
+        $postingExecutor = $this->buildPostingExecutorForMatching($connection);
+
+        return new IncomeRecordingService(
+            $connection,
+            new IncomeAccountTypeValidator(new AccountRepository($connection)),
+            new IncomeToPostingCommandTranslator,
+            $postingExecutor,
+            new IncomeRepository($connection),
+        );
+    }
+
+    private function buildPostingExecutorForMatching(ConnectionInterface $connection): PostingCommandTransactionalExecutor
+    {
+        $journalRepository = new JournalRepository($connection);
+        $accountRepository = new AccountRepository($connection);
+        $idempotencyRepository = new PostingIdempotencyRepository($connection);
+
+        $journalExecutor = new PostingCommandJournalExecutor(
+            new PostingCommandJournalStateResolver($journalRepository),
+            new PostingCommandAccountValidator($accountRepository),
+            new PostingCommandPeriodLockValidator(new PeriodClosureRepository($connection)),
+            new PostingCommandExistingDraftLineValidator,
+            new DraftJournalAssembler,
+            $journalRepository,
+        );
+
+        $idempotencyResolver = new PostingCommandIdempotencyResolver(
+            $idempotencyRepository,
+            $journalRepository,
+            new PostingCommandLogicalEquivalence,
+        );
+
+        return new PostingCommandTransactionalExecutor(
+            $connection,
+            $idempotencyResolver,
+            $journalExecutor,
+            $idempotencyRepository,
+            new AuditEventRepository($connection),
+            new JournalEvidenceLinkRepository($connection),
+        );
+    }
+
+    private function buildMatchingServiceForReconciliation(ConnectionInterface $connection): MatchingService
+    {
+        $suggester = new BankTransactionMatchSuggester(
+            $connection,
+            new ExpenseRepository($connection),
+            new IncomeRepository($connection),
+            new TransferRepository($connection),
+            new OwnerEquityTransactionRepository($connection),
+        );
+
+        return new MatchingService(
+            $connection,
+            new BankAccountRepository($connection),
+            new BankTransactionRepository($connection),
+            $suggester,
+            new MatchRepository($connection),
         );
     }
 

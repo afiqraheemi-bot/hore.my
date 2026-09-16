@@ -9,11 +9,13 @@ use App\Domain\Accounting\Money\MinorUnits;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\Exception\ReconciliationComputationExceedsSupportedRangeException;
+use App\Domain\Banking\Exception\ReconciliationHasUnmatchedTransactionsException;
 use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Banking\BankTransactionRepository;
+use App\Infrastructure\Banking\MatchRepository;
 use App\Infrastructure\Banking\ReconciliationRepository;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
@@ -31,6 +33,7 @@ final class ReconciliationService
         private readonly ConnectionInterface $connection,
         private readonly BankTransactionRepository $bankTransactionRepository,
         private readonly ReconciliationRepository $reconciliationRepository,
+        private readonly MatchRepository $matchRepository,
     ) {}
 
     /**
@@ -170,6 +173,15 @@ final class ReconciliationService
      * @throws ReconciliationNotBalancedException if the current live
      *                                            difference is not zero.
      */
+    /**
+     * @throws ReconciliationNotBalancedException if the live difference
+     *                                            is not zero.
+     * @throws ReconciliationHasUnmatchedTransactionsException if any
+     *                                                         in-period BankTransaction has no confirmed Match
+     *                                                         (`BNK-016`) — checked even when the difference is
+     *                                                         already exact zero, since zero arithmetic difference
+     *                                                         alone does not prove every line is explained.
+     */
     public function complete(TenantId $tenantId, ReconciliationId $id): Reconciliation
     {
         return $this->connection->transaction(function () use ($tenantId, $id): Reconciliation {
@@ -180,11 +192,38 @@ final class ReconciliationService
                 throw ReconciliationNotBalancedException::forDifference($id, $difference);
             }
 
+            $unmatchedCount = $this->countUnmatchedInPeriodTransactions($tenantId, $current);
+
+            if ($unmatchedCount > 0) {
+                throw ReconciliationHasUnmatchedTransactionsException::forReconciliation($id, $unmatchedCount);
+            }
+
             $reconciliation = $current->complete(new \DateTimeImmutable);
             $this->reconciliationRepository->updateState($reconciliation);
 
             return $reconciliation;
         });
+    }
+
+    private function countUnmatchedInPeriodTransactions(TenantId $tenantId, Reconciliation $reconciliation): int
+    {
+        $inPeriodIds = [];
+
+        foreach ($this->bankTransactionRepository->findByBankAccount($tenantId, $reconciliation->bankAccountId()) as $bankTransaction) {
+            if ($bankTransaction->transactionDate() < $reconciliation->periodStart() || $bankTransaction->transactionDate() > $reconciliation->periodEnd()) {
+                continue;
+            }
+
+            $inPeriodIds[] = $bankTransaction->id();
+        }
+
+        if ($inPeriodIds === []) {
+            return 0;
+        }
+
+        $matchedIds = $this->matchRepository->matchedBankTransactionIds($tenantId, $inPeriodIds);
+
+        return count($inPeriodIds) - count($matchedIds);
     }
 
     /**

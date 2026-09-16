@@ -1514,6 +1514,15 @@ final class IdentityAndAccountingApiTest extends TestCase
     {
         $this->registerAndReturnCredentials('reconciliation-lifecycle@example.my');
         $bankLinkedAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Consulting Revenue', 'Revenue');
+
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '500.00',
+            'transaction_date' => '2026-08-01',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $bankLinkedAccountId,
+            'description' => 'Consulting revenue',
+        ], ['Idempotency-Key' => 'key-reconciliation-lifecycle-income-0001'])->assertStatus(201);
 
         $bankAccountId = $this->postJson('/api/v1/bank-accounts', [
             'linked_account_id' => $bankLinkedAccountId,
@@ -1524,6 +1533,14 @@ final class IdentityAndAccountingApiTest extends TestCase
             ."2026-08-01,Deposit,500.00,IN,,\n";
         $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
             'statement' => UploadedFile::fake()->createWithContent('statement.csv', $csv),
+        ])->assertStatus(201);
+
+        // BNK-016 (AETS-008 §12.1): completion requires every in-period
+        // BankTransaction to hold a confirmed Match, not only a zero
+        // arithmetic difference.
+        $suggestion = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->json('data.0');
+        $this->postJson("/api/v1/bank-transactions/{$suggestion['bank_transaction_id']}/confirm-match", [
+            'journal_id' => $suggestion['journal_id'],
         ])->assertStatus(201);
 
         $open = $this->postJson("/api/v1/bank-accounts/{$bankAccountId}/reconciliations", [
