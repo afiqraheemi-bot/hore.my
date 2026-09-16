@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.2.0
+- Version: 0.3.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the workflow decisions in §12 — **the Founder explicitly delegated §12's decisions to the CTO on 2026-09-16, in lieu of deciding each individually**; a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness (distinct from the product/workflow judgment calls §12 required) remains outstanding and is still required before Activation (§13)
@@ -171,7 +171,7 @@ These eight join `BNK-001`–`BNK-013` as candidate invariants pending the same 
 - Explicit tenant-isolation proof at repository, service, HTTP, and schema boundaries.
 - A connected bank-statement segment in the approved Proof of Accuracy golden dataset when AETS-012 is activated.
 - Accounting Domain Reviewer confirmation of difference sign semantics, lifecycle prerequisites, and transfer matching cardinality.
-- Implementation and real-PostgreSQL proof of `BNK-014`–`BNK-020` (§12's decisions): two-leg Transfer matching, period-overlap rejection, full-matching completion prerequisite, the immutable completion snapshot, replay/conflict concurrency contracts for both import and match confirmation, the discrete `Exact` confidence value, and fail-closed negative-balance validation at import time. None of these seven exists in code yet; §12 records policy, not implementation status.
+- Implementation and real-PostgreSQL proof of `BNK-014`–`BNK-020` — done as of 2026-09-16 (`e1e4ae5`, `3d83477`, `b25590b`, `d0c98b1`, `084b2e7`): two-leg Transfer matching, period-overlap rejection, full-matching completion prerequisite, the immutable completion snapshot (with its own migration/FK proof), replay/conflict concurrency contracts for both import and match confirmation (each with a genuine two-process race proof), the discrete `Exact` confidence value (with its own migration/CHECK-constraint proof), and fail-closed negative-balance validation. Full regression suite run four consecutive times clean and deterministic after the last of these landed. Remaining before Activation: Accounting Domain Reviewer sign-off (still outstanding, see §13) and the connected Proof of Accuracy golden-dataset segment (blocked on AETS-012).
 
 ## 12. Founder/Product decisions (2026-09-16)
 
@@ -219,13 +219,14 @@ Overdraft and negative statement/running/closing balances are out of scope for t
 - [ ] Accounting Domain Reviewer approval recorded — outstanding; distinct from the Founder-delegated CTO decisions in §12, and still required for accounting correctness sign-off.
 - [x] Founder / Product decisions in §12 recorded where required — recorded 2026-09-16 under explicit Founder delegation to the CTO.
 - [x] Every accepted decision converted into normative MUST-level language — see §12 and `BNK-014`–`BNK-020`.
-- [ ] `BNK-014`–`BNK-020` implemented in code and proven against real PostgreSQL (§11).
+- [x] `BNK-014`–`BNK-020` implemented in code and proven against real PostgreSQL (§11) — done 2026-09-16.
 - [ ] ATS-008 updated from evidence inventory to complete normative traceability.
-- [ ] All required tests pass against real PostgreSQL with zero skips.
-- [ ] AETS/ATS indexes and versions updated.
+- [x] All required tests pass against real PostgreSQL with zero skips — 1707 tests, run four consecutive times clean and deterministic (2026-09-16).
+- [x] AETS/ATS indexes and versions updated — done 2026-09-16.
 
 ## Changelog
 
+- **0.3.0 (2026-09-16):** Records that `BNK-014`–`BNK-020` (every §12 decision) is now implemented and proven against real PostgreSQL, not merely decided — see §11 and §13. No policy changed from v0.2.0; this only updates implementation status.
 - **0.2.0 (2026-09-16):** Resolves every §12 decision group under explicit Founder delegation to the CTO ("aku serahkan keputusan ini pada kau, decide yang paling terbaik untuk release dan jangka panjang") and adds `BNK-014`–`BNK-020` to §9 as the resulting candidate invariants. This records accepted policy; none of it is implemented in code yet — §11 and §13 updated accordingly. A qualified Accounting Domain Reviewer's independent sign-off on accounting correctness remains outstanding and unaffected by this delegation.
 - **0.1.3 (2026-09-16):** Records the implemented authenticated HTTP boundary and deterministic malformed/missing identifier semantics across every Banking route. No workflow or accounting policy changed.
 - **0.1.2 (2026-09-16):** Records the executable two-process concurrency proof for every fixed Reconciliation lifecycle edge, including atomic reopening history. No caller-visible API policy or unresolved workflow decision changed.

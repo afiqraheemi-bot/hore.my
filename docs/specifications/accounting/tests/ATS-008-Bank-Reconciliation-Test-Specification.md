@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.3.0
+- Version: 0.4.0
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -93,22 +93,29 @@ All integration and schema tests require real PostgreSQL and must run with skip/
 
 The existing Bank Account and Bank Transaction migration test classes additionally prove table shape, canonical direction, file-hash/natural-key uniqueness, basic foreign keys, exact valid inserts, and their original migration rollback paths.
 
+### 2.7 Policy-resolved assurance (2026-09-16, `BNK-014`–`BNK-020`)
+
+| ID | State | Proof | Executable suffix (`test_…`) |
+| --- | --- | --- | --- |
+| BNK-T045 | Existing | Two concurrent identical file imports produce one deterministic result. | `test_concurrent_identical_imports_remain_atomic_and_duplicate_free` |
+| BNK-T046 | Existing | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | `test_concurrent_overlapping_reexports_cannot_create_duplicates_or_partial_batches` |
+| BNK-T047 | Existing | Concurrent confirmations for one Bank Transaction: identical replays, differing gets an explicit conflict, exactly one Match persists. | `test_reconfirming_the_same_pair_replays_the_existing_match`; `test_confirming_a_different_journal_for_an_already_matched_bank_transaction_conflicts`; `test_concurrent_confirmation_of_the_same_bank_transaction_against_different_journals_conflicts` |
+| BNK-T049 | Existing | A Completed Reconciliation's snapshot never changes after a later in-period import; it surfaces separately and only `reopen()` incorporates it. | `test_a_late_import_after_completion_never_silently_alters_the_completed_result`; `test_reopen_clears_the_snapshot_and_a_later_completion_gets_a_fresh_one` |
+| BNK-T050 | Existing | Completion is rejected while any in-period Bank Transaction lacks a confirmed Match, even at exact zero arithmetic difference. | `test_completion_is_rejected_while_any_in_period_transaction_is_unmatched`; `test_completion_succeeds_once_every_in_period_transaction_is_matched` |
+| BNK-T051 | Existing | A Transfer Journal accepts exactly two confirmed Matches, one per leg; every other Journal type still accepts at most one. | `test_a_transfer_journal_accepts_two_matches_one_per_leg`; `test_a_non_transfer_journal_still_accepts_only_one_match`; `test_concurrent_confirmation_of_both_transfer_legs_both_succeed` |
+| BNK-T052 | Existing | Opening a Reconciliation whose period overlaps any existing Reconciliation for the same Bank Account — in any lifecycle state — is rejected at both the application and schema boundary. | `test_opening_an_overlapping_period_is_rejected` (6-case matrix); `test_opening_an_adjacent_non_overlapping_period_is_allowed`; `test_opening_a_period_overlapping_a_completed_reconciliation_is_rejected`; `test_concurrent_opening_of_overlapping_periods_lets_only_one_succeed` |
+| BNK-T054 | Existing | Every Match persists confidence as the discrete value `Exact`; a noncanonical value is rejected at the schema boundary. | `test_a_bank_transaction_is_suggested_against_a_matching_expense`; `test_confirming_a_suggested_match_persists_it`; `MatchesConfidenceMigrationTest`'s four migration proofs |
+| BNK-T058 | Existing | Importing or reconciling a Bank Account/period with a negative balance fails closed with an explicit validation error. | `test_negative_balance_is_rejected`; `test_an_implied_overdraft_fails_closed_instead_of_computing_a_wrong_difference`; `test_opening_a_reconciliation_with_a_negative_balance_is_rejected_via_the_api` |
+
+The new `reconciliation_completion_snapshots` table (`BNK-017`, `BNK-T049`) has its own dedicated migration test class (`ReconciliationCompletionSnapshotsTableMigrationTest`) proving foreign-key integrity, tenant isolation, uniqueness, and reversibility.
+
 ## 3. Required evidence not yet satisfied
 
 | ID | State | Required proof | Invariant/reference |
 | --- | --- | --- | --- |
-| BNK-T045 | Required | Two concurrent identical file imports return the same `ImportBatch` result (deterministic replay), never an error. | `BNK-018`, AETS-008 §12.6 |
-| BNK-T046 | Required | Concurrent overlapping exports cannot produce duplicate natural-key rows or partial batches. | `BNK-018`, AETS-008 §12.6 |
-| BNK-T047 | Required | Two concurrent confirmations for one Bank Transaction: an identical candidate replays the confirmed Match, a differing candidate receives an explicit typed conflict, and exactly one Match persists. | `BNK-018`, AETS-008 §12.6 |
-| BNK-T049 | Required | A Completed Reconciliation's snapshot never changes after a later import inside its period; the late transaction surfaces separately and only `reopen()` can incorporate it. | `BNK-017`, AETS-008 §12.3 |
-| BNK-T050 | Required | Completion is rejected while any in-period Bank Transaction lacks a confirmed Match, even at exact zero arithmetic difference. | `BNK-016`, AETS-008 §12.1 |
-| BNK-T051 | Required | A Transfer Journal accepts exactly two confirmed Matches, one per leg, each on the correct Bank Account; every other Journal type still accepts at most one. | `BNK-014`, AETS-008 §12.2 |
-| BNK-T052 | Required | Opening a Reconciliation whose period overlaps any existing Reconciliation for the same Bank Account — in any lifecycle state — is rejected at both the application and schema boundary. | `BNK-015`, AETS-008 §12.4 |
 | BNK-T053 | Deferred | Guided mapping of noncanonical statement formats. Out of this Draft's Active-version scope; does not gate Activation. | AETS-008 §12.5 |
-| BNK-T054 | Required | Every Match persists confidence as the discrete value `Exact`; no numeric or calibrated score is ever produced or claimed. | `BNK-019`, AETS-008 §12.7 |
 | BNK-T055 | Required | Matching candidates cover every currently supported source type (Expense, Income, Transfer, Owner Equity) and independently reject wrong date, direction, Account, state, Tenant, and currency. | §6; Invoice/document targets remain out of scope per §12.8 |
 | BNK-T057 | Required | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. | AETS-012 Draft; cannot claim yet |
-| BNK-T058 | Required | Importing or reconciling a Bank Account/period with a negative opening, closing, or running balance fails closed with an explicit validation error raised at import time. | `BNK-020`, AETS-008 §12.9 |
 
 ## 4. Activation gate
 
@@ -122,6 +129,7 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.4.0 (2026-09-16):** Moves `BNK-T045`–`BNK-T054` and `BNK-T058` (nine of the ten `BNK-014`–`BNK-020` proof items) to `Existing` with real executable evidence, following AETS-008 v0.3.0's implementation of every §12 decision. `BNK-T053` stays `Deferred` (out of scope, §12.5); `BNK-T055` and `BNK-T057` remain `Required` — the former is broader pre-existing matching-coverage work this round didn't touch, the latter blocked on AETS-012.
 - **0.3.0 (2026-09-16):** Follows AETS-008 v0.2.0's resolution of every §12 decision: retitles §3's required proofs against the now-decided `BNK-014`–`BNK-020` invariants instead of an unresolved policy, adds `BNK-T058` for the negative-balance fail-closed proof, and reclassifies `BNK-T053` (guided mapping) as `Deferred` since §12.5 places it out of this Draft's Active-version scope. No test in this document is newly `Existing`; all decided invariants remain unimplemented until their own proof lands.
 - **0.2.2 (2026-09-16):** Moves BNK-T056 to Existing with authentication, request-validation, malformed/missing identifier, no-persistence, and cross-Tenant HTTP proofs covering the Banking route surface. Eleven broader or policy-dependent assurance items remain required.
 - **0.2.1 (2026-09-16):** Moves BNK-T048 to Existing with a genuine two-process proof across every fixed lifecycle edge and reopening-history atomicity. Twelve policy-dependent or broader assurance items remain required.
