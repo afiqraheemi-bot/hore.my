@@ -64,6 +64,7 @@ final class ChartOfAccountsPresetProvisioner
         ['code' => '3100', 'name' => "Owner's Drawings", 'type' => AccountType::Equity],
         ['code' => '4000', 'name' => 'Sales Revenue', 'type' => AccountType::Revenue],
         ['code' => '5000', 'name' => 'Cost of Goods Sold', 'type' => AccountType::Expense],
+        ['code' => '5050', 'name' => 'Raw Materials & Supplies', 'type' => AccountType::Expense],
         ['code' => '5100', 'name' => 'Rent Expense', 'type' => AccountType::Expense],
         ['code' => '5200', 'name' => 'Utilities Expense', 'type' => AccountType::Expense],
         ['code' => '5300', 'name' => 'Salaries and Wages', 'type' => AccountType::Expense],

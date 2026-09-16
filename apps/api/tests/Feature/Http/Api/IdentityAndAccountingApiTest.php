@@ -817,6 +817,51 @@ final class IdentityAndAccountingApiTest extends TestCase
         $outstanding->assertJsonCount(0, 'data');
     }
 
+    public function test_a_payment_receipt_pdf_can_be_downloaded(): void
+    {
+        $this->registerAndReturnCredentials('payment-pdf@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '150.00',
+            'payment_date' => '2026-09-17',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+            'reference' => 'REF-RECEIPT-001',
+        ], ['Idempotency-Key' => 'key-payment-pdf-0001']);
+        $paymentResponse->assertStatus(201);
+        $paymentId = $paymentResponse->json('id');
+
+        $pdf = $this->get("/api/v1/payments/{$paymentId}/pdf");
+        $pdf->assertStatus(200);
+        $pdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $pdf->getContent());
+    }
+
+    public function test_a_payment_receipt_pdf_is_not_downloadable_by_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('payment-pdf-tenant-a@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $customerId = $this->createCustomer('Tenant A Customer');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '75.00',
+            'payment_date' => '2026-09-17',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+        ], ['Idempotency-Key' => 'key-payment-pdf-tenant-a']);
+        $paymentId = $paymentResponse->json('id');
+        $this->logout();
+
+        $this->registerAndReturnCredentials('payment-pdf-tenant-b@example.my');
+        $this->get("/api/v1/payments/{$paymentId}/pdf")->assertStatus(404);
+    }
+
     public function test_listing_allocations_for_a_nonexistent_payment_returns_404(): void
     {
         $this->registerAndReturnCredentials('payment-allocations-404@example.my');
@@ -2403,6 +2448,14 @@ final class IdentityAndAccountingApiTest extends TestCase
             DB::connection('pgsql')->table('accounts')->where('account_origin', 'System')->count(),
             'Every auto-provisioned preset Account must carry AccountOrigin::System.',
         );
+
+        // The preset explicitly names every category Master Context §7
+        // requires an expense be trackable by — bahan mentah, sewa,
+        // utiliti, gaji.
+        $presetNames = DB::connection('pgsql')->table('accounts')->pluck('account_name')->all();
+        foreach (['Raw Materials & Supplies', 'Rent Expense', 'Utilities Expense', 'Salaries and Wages'] as $expected) {
+            $this->assertContains($expected, $presetNames);
+        }
     }
 
     public function test_saving_a_partial_business_profile_is_accepted_but_not_marked_complete(): void

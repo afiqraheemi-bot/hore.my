@@ -92,6 +92,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/payments', [PaymentController::class, 'index']);
             Route::post('/payments', [PaymentController::class, 'store']);
             Route::get('/payments/{paymentId}', [PaymentController::class, 'show']);
+            Route::get('/payments/{paymentId}/pdf', [PaymentController::class, 'pdf']);
             Route::get('/payments/{paymentId}/allocations', [AllocationController::class, 'index']);
             Route::post('/payments/{paymentId}/allocations', [AllocationController::class, 'store']);
             Route::delete('/payment-allocations/{allocationId}', [AllocationController::class, 'destroy']);

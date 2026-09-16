@@ -101,6 +101,39 @@ test.describe('XLSX and PDF export/import', () => {
     expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
   })
 
+  test('downloading a Payment receipt produces a real PDF file', async ({ page }) => {
+    await registerNewUser(page)
+    await createCustomer(page, 'Kedai Runcit Aminah')
+    await createAccount(page, '1000', 'Bank', 'Asset')
+    await createAccount(page, '1100', 'Accounts Receivable', 'Asset')
+
+    await page.goto('/payments')
+    await page.getByRole('button', { name: /record payment/i }).click()
+    await page.locator('form select').nth(0).selectOption({ label: 'Kedai Runcit Aminah' })
+    await page.getByPlaceholder('300.00').fill('150.00')
+    await page.locator('input[type="date"]').fill('2026-09-17')
+    await page.locator('form select').nth(1).selectOption({ label: 'Bank' })
+    await page.locator('form select').nth(2).selectOption({ label: 'Accounts Receivable' })
+
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/payments') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^record$/i }).click(),
+    ])
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('link', { name: /receipt/i }).click(),
+    ])
+
+    const downloadPath = await download.path()
+    expect(downloadPath).not.toBeNull()
+
+    const bytes = await fs.readFile(downloadPath as string)
+    expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  })
+
   test('importing an XLSX bank statement records real transactions', async ({ page }) => {
     await registerNewUser(page)
     await createAccount(page, '1000', 'Cash', 'Asset')

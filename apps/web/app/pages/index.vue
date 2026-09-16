@@ -33,7 +33,7 @@ type QueueFilter = 'attention' | 'progress' | 'completed' | 'all'
 interface TaskType {
   key: string
   label: string
-  icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart'
+  icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart' | 'download' | 'send'
   commandType: string
   primaryAccountLabel: string
   primaryAccountTypes: string[]
@@ -71,6 +71,26 @@ const types: TaskType[] = [
     primaryAccountTypes: ['Asset', 'Liability'],
     secondaryAccountLabel: 'To account',
     secondaryAccountTypes: ['Asset', 'Liability'],
+  },
+  {
+    key: 'loan-received',
+    label: 'Loan received',
+    icon: 'download',
+    commandType: 'Transfer',
+    primaryAccountLabel: 'Loan account',
+    primaryAccountTypes: ['Liability'],
+    secondaryAccountLabel: 'Deposited to',
+    secondaryAccountTypes: ['Asset'],
+  },
+  {
+    key: 'loan-repayment',
+    label: 'Loan repayment',
+    icon: 'send',
+    commandType: 'Transfer',
+    primaryAccountLabel: 'Paid from',
+    primaryAccountTypes: ['Asset'],
+    secondaryAccountLabel: 'Loan account',
+    secondaryAccountTypes: ['Liability'],
   },
   {
     key: 'capital',

@@ -51,7 +51,7 @@ interface Account {
 interface TransactionType {
   key: string
   label: string
-  icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart'
+  icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart' | 'download' | 'send'
   endpoint: string
   primaryAccountLabel: string
   primaryAccountKey: string
@@ -100,6 +100,35 @@ const types: TransactionType[] = [
     secondaryAccountLabel: 'To account',
     secondaryAccountKey: 'destination_account_id',
     secondaryAccountTypes: ['Asset', 'Liability'],
+  },
+  // Loan received: Credit primary (Loan/Liability, source), Debit secondary (Cash, destination) — the same
+  // TransferToPostingCommandTranslator as 'transfer' above, under a friendlier label: a loan received IS a
+  // transfer from a Liability account into an Asset account, never a distinct Posting Command of its own.
+  {
+    key: 'loan-received',
+    label: 'Loan received',
+    icon: 'download',
+    endpoint: '/api/v1/transfers',
+    primaryAccountLabel: 'Loan account',
+    primaryAccountKey: 'source_account_id',
+    primaryAccountTypes: ['Liability'],
+    secondaryAccountLabel: 'Deposited to',
+    secondaryAccountKey: 'destination_account_id',
+    secondaryAccountTypes: ['Asset'],
+  },
+  // Loan repayment: Credit primary (Cash, source), Debit secondary (Loan/Liability, destination) — the reverse
+  // of 'loan-received', same underlying Transfer.
+  {
+    key: 'loan-repayment',
+    label: 'Loan repayment',
+    icon: 'send',
+    endpoint: '/api/v1/transfers',
+    primaryAccountLabel: 'Paid from',
+    primaryAccountKey: 'source_account_id',
+    primaryAccountTypes: ['Asset'],
+    secondaryAccountLabel: 'Loan account',
+    secondaryAccountKey: 'destination_account_id',
+    secondaryAccountTypes: ['Liability'],
   },
   // Capital contribution: Debit primary (Cash), Credit secondary (Equity) — see OwnerEquityTransactionToPostingCommandTranslator (Contribution).
   {

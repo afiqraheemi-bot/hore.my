@@ -43,6 +43,16 @@ interface OutstandingInvoice {
 
 const { request } = useApi()
 
+/**
+ * AETS-017: a direct link to the Payment's own receipt PDF endpoint —
+ * mirrors `invoices/index.vue`'s own identical `pdfUrl()` helper.
+ */
+function pdfUrl(paymentId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/payments/${paymentId}/pdf`
+}
+
 const payments = ref<Payment[]>([])
 const customers = ref<Customer[]>([])
 const accounts = ref<Account[]>([])
@@ -268,14 +278,21 @@ onMounted(async () => {
               <template v-if="payment.reference"> · {{ payment.reference }}</template>
             </p>
           </div>
-          <AppButton
-            v-if="payment.unallocated_amount !== '0.00'"
-            size="sm"
-            variant="primary"
-            @click="startAllocate(payment.id)"
-          >
-            Allocate
-          </AppButton>
+          <div class="flex items-center gap-2">
+            <a :href="pdfUrl(payment.id)" target="_blank" rel="noopener">
+              <AppButton size="sm" variant="ghost">
+                <AppIcon name="download" :size="14" /> Receipt
+              </AppButton>
+            </a>
+            <AppButton
+              v-if="payment.unallocated_amount !== '0.00'"
+              size="sm"
+              variant="primary"
+              @click="startAllocate(payment.id)"
+            >
+              Allocate
+            </AppButton>
+          </div>
         </div>
 
         <ul
