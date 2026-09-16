@@ -1,7 +1,7 @@
 # AETS-012: Proof of Accuracy
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.2.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -117,6 +117,8 @@ Every record MUST include a unique ID and UTC time; Git hash and tree status; da
 
 [ATS-012](tests/ATS-012-Proof-of-Accuracy-Test-Specification.md) defines the required tests. Neither it nor test code may mark this Draft certified.
 
+As of 2026-09-16, the certification harness's own domain-agnostic mechanism — Golden Dataset manifest parsing and digest-integrity verification, and the fail-closed `CertificationRecord` aggregation gate implementing `POA-012` — is implemented and proven with synthetic, explicitly-not-a-real-oracle fixtures (see [ATS-012 §5.1](tests/ATS-012-Proof-of-Accuracy-Test-Specification.md#51-certification-harness-infrastructure-only--no-dataset-no-certification)). This is infrastructure only: it does not create, approve, or imply a Golden Dataset, run any certification scenario, or move this Draft any closer to Active. Every §11 deferred decision remains exactly as deferred.
+
 ## 11. Deferred decisions
 
 - First dataset accounting oracle and source artifacts, pending Accounting Domain Reviewer approval.
@@ -126,4 +128,5 @@ Every record MUST include a unique ID and UTC time; Git hash and tree status; da
 
 ## 12. Changelog
 
+- **0.2.0 (2026-09-16):** Records that the certification harness's own domain-agnostic mechanism (manifest/integrity verification, fail-closed aggregation gate) is implemented and proven — see §10. No dataset, scenario, or certification claim is introduced; no §11 deferred decision is resolved.
 - **0.1.0 (2026-09-13):** Initial Draft. Defines connected coverage, exact acceptance criteria, PostgreSQL/repeatability requirements, certification evidence, and the explicit review gate. No implementation or certification claim is introduced.

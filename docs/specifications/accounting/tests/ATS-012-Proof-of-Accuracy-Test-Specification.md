@@ -1,7 +1,7 @@
 # ATS-012: Proof of Accuracy Test Specification
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.2.0
 - Effective date: Not effective — pending AETS-012 activation and required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -72,6 +72,19 @@ ATS-003, ATS-004/ATS-007, ATS-009, and ATS-010 provide reusable Money, posting, 
 
 The existing two-posting ATS-009 dataset does **not** satisfy AETS-012 §5.2 because it does not connect all seven mandatory artifact categories.
 
+### 5.1 Certification harness (infrastructure only — no dataset, no certification)
+
+As of 2026-09-16, the certification **mechanism** these tests will eventually drive exists and is directly proven, entirely independent of any dataset content — nothing here approves an oracle, runs a real scenario, or claims any `POA-NNN` criterion is satisfied for this product:
+
+| Test ID | Mechanism-level coverage | Executable class |
+| --- | --- | --- |
+| POA-T001 (partial) | Manifest structural parsing (`dataset_id`/`version`/`artifacts` presence, per-entry category/path/digest validity, duplicate-path rejection) is proven. Confirming "every required category" per an *approved* dataset's §5.2 coverage is not — there is no approved dataset yet. | `GoldenDatasetManifestLoaderTest` |
+| POA-T002 | Digest verification against real files — matching digests pass, a missing file is a violation, a tampered file is a violation, and every violation (not just the first) is reported — is proven with synthetic, explicitly-not-a-real-oracle fixtures. | `GoldenDatasetIntegrityVerifierTest` |
+| POA-T022 | Each individual failure mode (a test failure, an error, a skip, incomplete, risky) independently flips the aggregate gate to failing, proven directly against `CertificationRecord::isCertifiedPassing()`. | `CertificationRecordTest` |
+| POA-T024 | A missing Accounting Domain Reviewer approval, a blank CTO review, a recorded deviation, a failed criterion, and a non-zero-exit command each independently fail the aggregate gate — including the load-bearing case that a record with *no* reviewer approval (the real, current state of this product) is never certified passing no matter how clean everything else is. | `CertificationRecordTest` |
+
+Every other `POA-TNNN` remains exactly as prospective as before — none of this exercises real services, a real scenario, or produces a certification record for anything but test fixtures.
+
 ## 6. Required fixture layout
 
 After AETS-012 activation and dataset approval, implementation should use this logical layout (exact filenames may be finalized in review):
@@ -99,4 +112,5 @@ No fixture directory is created by this Draft because the accounting oracle and 
 
 ## 8. Changelog
 
+- **0.2.0 (2026-09-16):** Adds §5.1: the certification harness's own domain-agnostic mechanism (manifest parsing/integrity verification, and the fail-closed `CertificationRecord` aggregation gate) is now implemented and directly proven with synthetic fixtures, closing mechanism-level gaps in `POA-T001` (partial), `POA-T002`, `POA-T022`, and `POA-T024`. This is infrastructure only: no Golden Dataset exists, no certification scenario has run, and no `POA-NNN` criterion is claimed satisfied for this product. §7's activation blockers are unchanged.
 - **0.1.0 (2026-09-13):** Initial Draft with 24 prospective tests tracing every AETS-012 criterion; no implementation or passing-certification claim.
