@@ -107,6 +107,18 @@ final class BankAccountsTableMigrationTest extends TestCase
     {
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::TABLE));
 
+        // Every table (transitively) foreign-keyed onto bank_accounts,
+        // dropped first — not recreated here; each has its own test
+        // class responsible for re-migrating itself — so PostgreSQL
+        // never refuses this rollback with "dependent objects still
+        // exist." May have been recreated by another test class
+        // between this class's own setUp() and this specific test
+        // method running; PHPUnit's test *class* execution order is
+        // not guaranteed.
+        foreach (['reconciliation_completion_snapshots', 'matches', 'reconciliation_reopenings', 'bank_transactions', 'reconciliations', 'bank_statement_import_batches'] as $dependentTable) {
+            Schema::connection('pgsql')->dropIfExists($dependentTable);
+        }
+
         Artisan::call('migrate:rollback', ['--database' => 'pgsql', '--path' => self::MIGRATION_PATH, '--realpath' => false, '--force' => true]);
         $this->assertFalse(Schema::connection('pgsql')->hasTable(self::TABLE));
 
@@ -172,6 +184,7 @@ final class BankAccountsTableMigrationTest extends TestCase
         // concern; not recreated here, mirroring the identical
         // treatment this codebase already gives every other dependent
         // table in this position.
+        Schema::connection('pgsql')->dropIfExists('reconciliation_completion_snapshots');
         Schema::connection('pgsql')->dropIfExists('reconciliation_reopenings');
         Schema::connection('pgsql')->dropIfExists('matches');
         Schema::connection('pgsql')->dropIfExists('bank_transactions');

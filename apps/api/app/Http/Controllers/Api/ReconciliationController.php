@@ -178,6 +178,8 @@ final class ReconciliationController extends Controller
             // itself; the difference is simply not computable yet.
         }
 
+        $lateUnreconciledTransactionIds = $this->reconciliationService->findLateUnreconciledTransactionIds($currentTenant->id(), $reconciliation);
+
         return [
             'id' => $reconciliation->id()->toString(),
             'bank_account_id' => $reconciliation->bankAccountId()->toString(),
@@ -192,6 +194,14 @@ final class ReconciliationController extends Controller
                 'sign' => $difference->sign()?->name,
                 'is_zero' => $difference->isZero(),
             ],
+            // BNK-017 (AETS-008 §12.3): non-empty only for a Completed
+            // Reconciliation with a late import inside its period that
+            // its own completion snapshot never verified — reopen() is
+            // the only way to incorporate it.
+            'late_unreconciled_transaction_ids' => array_map(
+                static fn ($id): string => $id->toString(),
+                $lateUnreconciledTransactionIds,
+            ),
         ];
     }
 }

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Banking;
 
 use App\Domain\Accounting\Posting\ActorReference;
 use App\Domain\Banking\BankAccountId;
+use App\Domain\Banking\BankTransactionId;
 use App\Domain\Banking\Exception\ReconciliationNotFoundException;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Banking\ReconciliationId;
@@ -14,6 +15,7 @@ use App\Domain\Banking\ReconciliationState;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Infrastructure\Accounting\Money\MoneyPersistenceAdapter;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 
 /**
  * The persistence boundary for the Reconciliation aggregate and its
@@ -25,6 +27,8 @@ final class ReconciliationRepository
     private const TABLE = 'reconciliations';
 
     private const REOPENING_TABLE = 'reconciliation_reopenings';
+
+    private const SNAPSHOT_TABLE = 'reconciliation_completion_snapshots';
 
     private readonly MoneyPersistenceAdapter $money;
 
@@ -168,6 +172,62 @@ final class ReconciliationRepository
             ActorReference::of($row->reopened_by),
             new \DateTimeImmutable($row->reopened_at),
         ), $rows);
+    }
+
+    /**
+     * Durably records the exact set of BankTransactions `complete()`
+     * verified this time (AETS-008 §12.3, `BNK-017`). No-op for an
+     * empty set — an empty period has nothing to snapshot.
+     *
+     * @param  list<BankTransactionId>  $bankTransactionIds
+     */
+    public function recordCompletionSnapshot(TenantId $tenantId, ReconciliationId $reconciliationId, array $bankTransactionIds, \DateTimeImmutable $completedAt): void
+    {
+        if ($bankTransactionIds === []) {
+            return;
+        }
+
+        $this->connection->table(self::SNAPSHOT_TABLE)->insert(array_map(
+            static fn (BankTransactionId $bankTransactionId): array => [
+                'id' => (string) Str::uuid(),
+                'tenant_id' => $tenantId->toString(),
+                'reconciliation_id' => $reconciliationId->toString(),
+                'bank_transaction_id' => $bankTransactionId->toString(),
+                'completed_at' => $completedAt->format('Y-m-d H:i:s'),
+            ],
+            $bankTransactionIds,
+        ));
+    }
+
+    /**
+     * Clears a Reconciliation's completion snapshot (AETS-008 §12.3,
+     * `BNK-017`) — called on `reopen()`, mirroring how `completed_at`
+     * itself is already cleared there. The permanent audit trail of why
+     * and when lives in `reconciliation_reopenings`; this table only
+     * ever represents the *current* completion's scope, so a later
+     * `complete()` gets a fresh snapshot rather than an accumulated one.
+     */
+    public function clearCompletionSnapshot(TenantId $tenantId, ReconciliationId $reconciliationId): void
+    {
+        $this->connection->table(self::SNAPSHOT_TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->where('reconciliation_id', $reconciliationId->toString())
+            ->delete();
+    }
+
+    /**
+     * @return list<BankTransactionId>
+     */
+    public function completionSnapshotBankTransactionIds(TenantId $tenantId, ReconciliationId $reconciliationId): array
+    {
+        /** @var list<string> $ids */
+        $ids = $this->connection->table(self::SNAPSHOT_TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->where('reconciliation_id', $reconciliationId->toString())
+            ->pluck('bank_transaction_id')
+            ->all();
+
+        return array_map(static fn (string $id): BankTransactionId => BankTransactionId::of($id), $ids);
     }
 
     /**

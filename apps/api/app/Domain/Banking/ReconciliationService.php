@@ -192,38 +192,76 @@ final class ReconciliationService
                 throw ReconciliationNotBalancedException::forDifference($id, $difference);
             }
 
-            $unmatchedCount = $this->countUnmatchedInPeriodTransactions($tenantId, $current);
+            $inPeriodIds = $this->inPeriodBankTransactionIds($tenantId, $current);
+            $matchedIds = $inPeriodIds === [] ? [] : $this->matchRepository->matchedBankTransactionIds($tenantId, $inPeriodIds);
+            $unmatchedCount = count($inPeriodIds) - count($matchedIds);
 
             if ($unmatchedCount > 0) {
                 throw ReconciliationHasUnmatchedTransactionsException::forReconciliation($id, $unmatchedCount);
             }
 
-            $reconciliation = $current->complete(new \DateTimeImmutable);
+            $completedAt = new \DateTimeImmutable;
+            $reconciliation = $current->complete($completedAt);
             $this->reconciliationRepository->updateState($reconciliation);
+
+            // Durably records exactly what was verified (BNK-017): a
+            // BankTransaction imported afterward — even dated inside
+            // this period — is never silently absorbed into this
+            // result. See findLateUnreconciledTransactionIds().
+            $this->reconciliationRepository->recordCompletionSnapshot($tenantId, $id, $inPeriodIds, $completedAt);
 
             return $reconciliation;
         });
     }
 
-    private function countUnmatchedInPeriodTransactions(TenantId $tenantId, Reconciliation $reconciliation): int
+    /**
+     * The BankTransactions imported after this `Completed` Reconciliation's
+     * last completion snapshot, but whose Transaction Date still falls
+     * inside its period (AETS-008 §12.3, `BNK-017`) — never silently
+     * folded into the already-recorded result. Reusing `reopen()`
+     * (§7) followed by a new `complete()` is the only way to
+     * incorporate them. Returns an empty list for a Reconciliation that
+     * is not (or no longer) `Completed`.
+     *
+     * @return list<BankTransactionId>
+     */
+    public function findLateUnreconciledTransactionIds(TenantId $tenantId, Reconciliation $reconciliation): array
     {
-        $inPeriodIds = [];
+        if ($reconciliation->state() !== ReconciliationState::Completed) {
+            return [];
+        }
+
+        $inPeriodIds = $this->inPeriodBankTransactionIds($tenantId, $reconciliation);
+
+        if ($inPeriodIds === []) {
+            return [];
+        }
+
+        $snapshotIds = $this->reconciliationRepository->completionSnapshotBankTransactionIds($tenantId, $reconciliation->id());
+        $snapshotIdStrings = array_map(static fn (BankTransactionId $id): string => $id->toString(), $snapshotIds);
+
+        return array_values(array_filter(
+            $inPeriodIds,
+            static fn (BankTransactionId $id): bool => ! in_array($id->toString(), $snapshotIdStrings, true),
+        ));
+    }
+
+    /**
+     * @return list<BankTransactionId>
+     */
+    private function inPeriodBankTransactionIds(TenantId $tenantId, Reconciliation $reconciliation): array
+    {
+        $ids = [];
 
         foreach ($this->bankTransactionRepository->findByBankAccount($tenantId, $reconciliation->bankAccountId()) as $bankTransaction) {
             if ($bankTransaction->transactionDate() < $reconciliation->periodStart() || $bankTransaction->transactionDate() > $reconciliation->periodEnd()) {
                 continue;
             }
 
-            $inPeriodIds[] = $bankTransaction->id();
+            $ids[] = $bankTransaction->id();
         }
 
-        if ($inPeriodIds === []) {
-            return 0;
-        }
-
-        $matchedIds = $this->matchRepository->matchedBankTransactionIds($tenantId, $inPeriodIds);
-
-        return count($inPeriodIds) - count($matchedIds);
+        return $ids;
     }
 
     /**
@@ -248,6 +286,13 @@ final class ReconciliationService
                 $actor,
                 new \DateTimeImmutable,
             ));
+
+            // Clears the invalidated completion snapshot (BNK-017) —
+            // mirrors reopen() already clearing completed_at itself.
+            // The permanent audit trail of why/when lives in the
+            // reopening row just recorded above; a later complete()
+            // gets a fresh snapshot rather than an accumulated one.
+            $this->reconciliationRepository->clearCompletionSnapshot($tenantId, $id);
 
             return $reconciliation;
         });

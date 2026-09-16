@@ -41,6 +41,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         'task_transitions',
         'proposals',
         'tasks',
+        'reconciliation_completion_snapshots',
         'reconciliation_reopenings',
         'matches',
         'bank_transactions',
@@ -1563,14 +1564,29 @@ final class IdentityAndAccountingApiTest extends TestCase
         $complete = $this->postJson("/api/v1/reconciliations/{$reconciliationId}/complete");
         $complete->assertStatus(200);
         $complete->assertJsonPath('state', 'Completed');
+        $complete->assertJsonPath('late_unreconciled_transaction_ids', []);
         $this->assertNotNull($complete->json('completed_at'));
+
+        // BNK-017 (AETS-008 §12.3): a late import inside the already-
+        // Completed period surfaces via late_unreconciled_transaction_ids
+        // without silently altering the Completed state above.
+        $this->post("/api/v1/bank-accounts/{$bankAccountId}/import", [
+            'statement' => UploadedFile::fake()->createWithContent('late-statement.csv', "date,description,amount,direction,balance,reference\n2026-08-20,Late bank fee,15.00,OUT,,\n"),
+        ])->assertStatus(201);
+        $lateBankTransactionId = DB::connection('pgsql')->table('bank_transactions')->where('description', 'Late bank fee')->value('id');
+
+        $afterLateImport = $this->getJson("/api/v1/reconciliations/{$reconciliationId}");
+        $afterLateImport->assertJsonPath('state', 'Completed');
+        $afterLateImport->assertJsonPath('late_unreconciled_transaction_ids', [$lateBankTransactionId]);
 
         $reopen = $this->postJson("/api/v1/reconciliations/{$reconciliationId}/reopen", [
             'reason' => 'Found a missing bank fee',
         ]);
         $reopen->assertStatus(200);
         $reopen->assertJsonPath('state', 'Draft');
+        $reopen->assertJsonPath('late_unreconciled_transaction_ids', []);
         $this->assertSame(1, DB::connection('pgsql')->table('reconciliation_reopenings')->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliation_completion_snapshots')->count());
     }
 
     /**

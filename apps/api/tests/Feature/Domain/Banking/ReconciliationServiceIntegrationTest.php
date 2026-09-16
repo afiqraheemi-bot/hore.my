@@ -61,6 +61,7 @@ use App\Infrastructure\Transactions\Income\IncomeRepository;
 use App\Infrastructure\Transactions\OwnerEquity\OwnerEquityTransactionRepository;
 use App\Infrastructure\Transactions\Transfer\TransferRepository;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -129,6 +130,12 @@ final class ReconciliationServiceIntegrationTest extends TestCase
 
         if (! Schema::connection('pgsql')->hasColumn('matches', 'confidence')) {
             self::forceCleanMigration('database/migrations/2026_09_16_010000_add_confidence_to_matches_table.php', []);
+        }
+
+        self::ensureReconciliationsTenantIdUniqueConstraint();
+
+        if (! Schema::connection('pgsql')->hasTable('reconciliation_completion_snapshots')) {
+            self::forceCleanMigration('database/migrations/2026_09_16_020000_create_reconciliation_completion_snapshots_table.php', []);
         }
 
         if (! Schema::connection('pgsql')->hasTable('expenses')) {
@@ -525,6 +532,66 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $this->assertSame(ReconciliationState::Completed, $completed->state());
     }
 
+    /**
+     * BNK-017 (AETS-008 §12.3): a BankTransaction imported after
+     * completion — even one dated inside the already-Completed
+     * period — never silently changes what completion already
+     * verified. It surfaces separately via
+     * findLateUnreconciledTransactionIds(), and the Reconciliation's
+     * own recorded state is untouched.
+     */
+    public function test_a_late_import_after_completion_never_silently_alters_the_completed_result(): void
+    {
+        $completed = $this->openMatchedAndCompletedReconciliation();
+
+        $this->assertSame([], $this->reconciliationService->findLateUnreconciledTransactionIds($this->tenant, $completed));
+
+        // A late statement row, dated inside the already-Completed
+        // period, arrives after completion.
+        $this->importStatement("2026-08-20,Late bank fee,15.00,OUT,,\n");
+        $lateBankTransaction = DB::connection('pgsql')->table('bank_transactions')
+            ->where('description', 'Late bank fee')->first();
+
+        $reloaded = (new ReconciliationRepository(DB::connection('pgsql')))->getById($this->tenant, $completed->id());
+        $this->assertSame(ReconciliationState::Completed, $reloaded->state());
+        $this->assertSame($completed->completedAt()->format('Y-m-d H:i:s'), $reloaded->completedAt()->format('Y-m-d H:i:s'));
+
+        $late = $this->reconciliationService->findLateUnreconciledTransactionIds($this->tenant, $reloaded);
+        $this->assertCount(1, $late);
+        $this->assertSame($lateBankTransaction->id, $late[0]->toString());
+
+        // The live difference now reflects the late row too — this
+        // Reconciliation genuinely has drifted — but that alone never
+        // reopens it or changes what complete() already recorded.
+        $liveDifference = $this->reconciliationService->computeDifference($this->tenant, $reloaded);
+        $this->assertFalse($liveDifference->isZero());
+    }
+
+    /**
+     * BNK-017 (AETS-008 §12.3): reopen() clears the invalidated
+     * snapshot; a later complete() produces a fresh one rather than an
+     * accumulated one, and a transaction that was late relative to the
+     * first completion is no longer late once genuinely reconciled.
+     */
+    public function test_reopen_clears_the_snapshot_and_a_later_completion_gets_a_fresh_one(): void
+    {
+        $completed = $this->openMatchedAndCompletedReconciliation();
+        $this->assertSame(1, DB::connection('pgsql')->table('reconciliation_completion_snapshots')->count());
+
+        $reopened = $this->reconciliationService->reopen($this->tenant, $completed->id(), 'Double-checking before final sign-off', ActorReference::of('actor-0001'));
+        $this->assertSame(ReconciliationState::Draft, $reopened->state());
+        $this->assertSame(0, DB::connection('pgsql')->table('reconciliation_completion_snapshots')->count());
+
+        $this->reconciliationService->startReview($this->tenant, $reopened->id());
+        $this->reconciliationService->markBalanced($this->tenant, $reopened->id());
+        $recompleted = $this->reconciliationService->complete($this->tenant, $reopened->id());
+
+        // A fresh snapshot, not an accumulation of two: still exactly
+        // one row for the one BankTransaction in period, not two.
+        $this->assertSame([], $this->reconciliationService->findLateUnreconciledTransactionIds($this->tenant, $recompleted));
+        $this->assertSame(1, DB::connection('pgsql')->table('reconciliation_completion_snapshots')->count());
+    }
+
     public function test_marking_balanced_with_a_nonzero_difference_is_rejected(): void
     {
         $this->importStatement("2026-08-01,Deposit,500.00,IN,,\n");
@@ -786,6 +853,48 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
     }
 
+    /**
+     * A Reconciliation over one $500.00 Deposit, genuinely matched to a
+     * real posted Income entry (BNK-016 requires this before
+     * completion) and completed — the shared starting point for the
+     * BNK-017 snapshot tests.
+     */
+    private function openMatchedAndCompletedReconciliation(): Reconciliation
+    {
+        $connection = DB::connection('pgsql');
+        $this->insertAccount('account-revenue', 'Revenue');
+
+        $incomeResult = $this->buildIncomeServiceForMatching($connection)->record(new RecordIncomeCommand(
+            IncomeId::of('income-recon-snapshot-0001'),
+            JournalId::of('journal-recon-snapshot-income-0001'),
+            IdempotencyKey::of('key-recon-snapshot-income-0001'),
+            $this->tenant,
+            ActorReference::of('actor-0001'),
+            Money::fromDecimalString('500.00', $this->myr),
+            new \DateTimeImmutable('2026-08-01'),
+            AccountId::of('account-revenue'),
+            AccountId::of('account-bank'),
+            'Consulting revenue',
+            null,
+        ));
+
+        $this->importStatement("2026-08-01,Deposit,500.00,IN,,\n");
+
+        $reconciliation = $this->open('1000.00', '1500.00');
+
+        $matchingService = $this->buildMatchingServiceForReconciliation($connection);
+        foreach ($matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001')) as $candidate) {
+            if ($candidate->journalId()->equals($incomeResult->income()->journalId())) {
+                $matchingService->confirm($this->tenant, $candidate->bankTransactionId(), $candidate->journalId(), ActorReference::of('actor-0001'));
+            }
+        }
+
+        $this->reconciliationService->startReview($this->tenant, $reconciliation->id());
+        $this->reconciliationService->markBalanced($this->tenant, $reconciliation->id());
+
+        return $this->reconciliationService->complete($this->tenant, $reconciliation->id());
+    }
+
     private function open(string $opening, string $closing, string $periodStart = '2026-08-01', string $periodEnd = '2026-08-31'): Reconciliation
     {
         return $this->reconciliationService->open(
@@ -951,5 +1060,35 @@ final class ReconciliationServiceIntegrationTest extends TestCase
         }
 
         Artisan::call('migrate', ['--database' => 'pgsql', '--path' => $migrationPath, '--realpath' => false, '--force' => true]);
+    }
+
+    /**
+     * The reconciliation_completion_snapshots migration's foreign key
+     * onto `(tenant_id, id)` on `reconciliations` requires
+     * `reconciliations_tenant_id_id_unique` — added by the *separate*
+     * `2026_09_15_000000_harden_banking_tenant_isolation` migration.
+     * Recreating `reconciliations` from just its own base migration
+     * (via `forceCleanMigration` above, in either this method or
+     * `setUp()`'s own re-check) does not restore that later,
+     * independently-tracked constraint — re-running the whole hardening
+     * migration here is not safe, since it also touches
+     * `bank_accounts`/`bank_transactions`/`matches` unconditionally and
+     * would collide with their own already-applied constraints. Adding
+     * just this one piece directly, only when it is actually missing,
+     * is the narrowest correct repair.
+     */
+    private static function ensureReconciliationsTenantIdUniqueConstraint(): void
+    {
+        $exists = (bool) DB::connection('pgsql')->selectOne(
+            "select 1 from pg_constraint where conname = 'reconciliations_tenant_id_id_unique'",
+        );
+
+        if ($exists) {
+            return;
+        }
+
+        Schema::connection('pgsql')->table(self::RECONCILIATION_TABLE, function (Blueprint $table): void {
+            $table->unique(['tenant_id', 'id'], 'reconciliations_tenant_id_id_unique');
+        });
     }
 }

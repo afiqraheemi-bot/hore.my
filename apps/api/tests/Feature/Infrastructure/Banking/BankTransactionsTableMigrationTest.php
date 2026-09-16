@@ -165,6 +165,16 @@ final class BankTransactionsTableMigrationTest extends TestCase
     {
         $this->assertTrue(Schema::connection('pgsql')->hasTable(self::TABLE));
 
+        // `matches` and `reconciliation_completion_snapshots` both carry
+        // a real foreign key onto `bank_transactions` and may have been
+        // recreated by another test class between this class's own
+        // ensureMigrated() and this specific test method running —
+        // PHPUnit's test *class* execution order is not guaranteed.
+        // Dropped immediately before rollback so PostgreSQL never
+        // refuses it with "dependent objects still exist."
+        Schema::connection('pgsql')->dropIfExists('matches');
+        Schema::connection('pgsql')->dropIfExists('reconciliation_completion_snapshots');
+
         Artisan::call('migrate:rollback', ['--database' => 'pgsql', '--path' => self::MIGRATION_PATH, '--realpath' => false, '--force' => true]);
         $this->assertFalse(Schema::connection('pgsql')->hasTable(self::TABLE));
 
@@ -263,7 +273,12 @@ final class BankTransactionsTableMigrationTest extends TestCase
             self::forceCleanMigration(self::IMPORT_BATCH_MIGRATION_PATH, [self::IMPORT_BATCH_TABLE]);
         }
 
-        self::forceCleanMigration(self::MIGRATION_PATH, [self::TABLE]);
+        // `matches` and `reconciliation_completion_snapshots` both carry
+        // a real foreign key onto `bank_transactions` — dropped first
+        // (not recreated here; each has its own test class responsible
+        // for re-migrating itself) so PostgreSQL never refuses this
+        // drop with "dependent objects still exist."
+        self::forceCleanMigration(self::MIGRATION_PATH, ['matches', 'reconciliation_completion_snapshots', self::TABLE]);
 
         self::$migrated = true;
     }
