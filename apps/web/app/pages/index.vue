@@ -28,6 +28,8 @@ interface Task {
   failure_reason: string | null
 }
 
+type QueueFilter = 'attention' | 'progress' | 'completed' | 'all'
+
 interface TaskType {
   key: string
   label: string
@@ -113,6 +115,7 @@ const tasks = ref<Task[]>([])
 const accounts = ref<Account[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const queueFilter = ref<QueueFilter>('attention')
 
 const expanded = ref(false)
 const activeType = ref<TaskType>(types[0]!)
@@ -131,6 +134,35 @@ const greeting = computed(() => {
   if (hour < 12) return 'Good morning'
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
+})
+
+const attentionStates = new Set(['NeedsInformation', 'NeedsReview', 'Failed'])
+const progressStates = new Set(['Received', 'Processing', 'Approved', 'Executing'])
+const completedStates = new Set(['Completed'])
+
+const queueFilters: { key: QueueFilter; label: string }[] = [
+  { key: 'attention', label: 'Needs attention' },
+  { key: 'progress', label: 'In progress' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'all', label: 'All tasks' },
+]
+
+function tasksForFilter(filter: QueueFilter): Task[] {
+  if (filter === 'attention') return tasks.value.filter((task) => attentionStates.has(task.state))
+  if (filter === 'progress') return tasks.value.filter((task) => progressStates.has(task.state))
+  if (filter === 'completed') return tasks.value.filter((task) => completedStates.has(task.state))
+  return tasks.value
+}
+
+const filteredTasks = computed(() => tasksForFilter(queueFilter.value))
+const selectedFilterLabel = computed(
+  () => queueFilters.find((filter) => filter.key === queueFilter.value)?.label ?? 'All tasks',
+)
+const emptyFilterTitle = computed(() => {
+  if (queueFilter.value === 'attention') return 'Nothing needs attention'
+  if (queueFilter.value === 'progress') return 'Nothing in progress'
+  if (queueFilter.value === 'completed') return 'Nothing completed yet'
+  return 'No Tasks yet'
 })
 
 const primaryAccountOptions = computed(() =>
@@ -368,52 +400,102 @@ onMounted(async () => {
       </form>
     </AppCard>
 
-    <div>
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <h2 class="text-sm font-medium text-ink-secondary">Work Queue</h2>
+    <section aria-labelledby="your-work-heading">
+      <div class="mb-4">
+        <h2 id="your-work-heading" class="text-xl font-semibold tracking-tight text-ink">
+          Your work
+        </h2>
+        <p class="mt-1 text-sm text-ink-tertiary">
+          Tasks are ordered by their latest submission time.
+        </p>
+      </div>
+
+      <div
+        class="mb-4 flex gap-1 overflow-x-auto rounded-2xl bg-surface-secondary p-1"
+        role="tablist"
+        aria-label="Filter work queue"
+      >
         <button
-          v-if="!loading && tasks.length > 0"
+          v-for="filter in queueFilters"
+          :key="filter.key"
           type="button"
-          class="text-xs font-medium text-ink-tertiary hover:text-ink"
-          @click="loadTasks"
+          role="tab"
+          :aria-selected="queueFilter === filter.key"
+          class="flex min-h-11 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-colors sm:min-w-0"
+          :class="
+            queueFilter === filter.key
+              ? 'bg-surface text-ink shadow-sm'
+              : 'text-ink-secondary hover:bg-surface-hover hover:text-ink'
+          "
+          @click="queueFilter = filter.key"
         >
-          Refresh
+          <span>{{ filter.label }}</span>
+          <span
+            class="inline-flex min-w-6 items-center justify-center rounded-full bg-surface-tertiary px-1.5 py-0.5 text-xs tabular-nums text-ink-secondary"
+          >
+            {{ tasksForFilter(filter.key).length }}
+          </span>
         </button>
       </div>
 
-      <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
-      <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
-      <EmptyState
-        v-else-if="tasks.length === 0"
-        :bordered="false"
-        title="No Tasks yet"
-        description="Submit one above. It will wait here for your review."
-      />
-      <ul v-else class="space-y-1.5">
-        <li v-for="task in tasks" :key="task.id">
-          <NuxtLink :to="`/tasks/${task.id}`" class="block rounded-2xl">
-            <AppCard :padded="false" hoverable>
-              <div class="flex items-center gap-3 px-4 py-3">
-                <span
-                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
-                >
-                  <AppIcon name="tasks" :size="16" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium text-ink">
-                    Task {{ task.id.slice(0, 8) }}
-                  </p>
-                  <p class="text-xs text-ink-tertiary">
-                    {{ new Date(task.created_at).toLocaleString() }}
-                  </p>
-                </div>
-                <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
-                <AppIcon name="chevron-left" :size="15" class="rotate-180 text-ink-tertiary" />
+      <div class="overflow-hidden rounded-[1.5rem] border border-border bg-surface">
+        <div
+          class="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-5"
+        >
+          <h3 class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-tertiary">
+            {{ selectedFilterLabel }}
+          </h3>
+          <button
+            v-if="!loading"
+            type="button"
+            class="text-sm font-medium text-ink-secondary hover:text-ink"
+            @click="loadTasks"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div v-if="loading" class="px-5 py-12 text-center text-sm text-ink-tertiary">Loading…</div>
+        <div v-else-if="error" class="px-5 py-12 text-center text-sm text-danger">
+          {{ error }}
+        </div>
+        <EmptyState
+          v-else-if="tasks.length === 0"
+          :bordered="false"
+          title="No Tasks yet"
+          description="Submit one above. It will wait here for your review."
+          class="min-h-48"
+        />
+        <EmptyState
+          v-else-if="filteredTasks.length === 0"
+          :bordered="false"
+          :title="emptyFilterTitle"
+          description="Choose another filter to see the rest of your tasks."
+          class="min-h-48"
+        />
+        <ul v-else class="divide-y divide-border">
+          <li v-for="task in filteredTasks" :key="task.id">
+            <NuxtLink
+              :to="`/tasks/${task.id}`"
+              class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
+            >
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
+              >
+                <AppIcon name="tasks" :size="16" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium text-ink">Task {{ task.id.slice(0, 8) }}</p>
+                <p class="text-xs text-ink-tertiary">
+                  {{ new Date(task.created_at).toLocaleString() }}
+                </p>
               </div>
-            </AppCard>
-          </NuxtLink>
-        </li>
-      </ul>
-    </div>
+              <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
+              <AppIcon name="chevron-left" :size="15" class="rotate-180 text-ink-tertiary" />
+            </NuxtLink>
+          </li>
+        </ul>
+      </div>
+    </section>
   </div>
 </template>

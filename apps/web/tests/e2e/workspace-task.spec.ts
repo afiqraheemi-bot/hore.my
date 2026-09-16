@@ -14,7 +14,7 @@ test.describe('Work Queue and Human Confirmation', () => {
   }) => {
     await page.goto('/')
     await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByRole('heading', { name: 'Work Queue' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your work' })).toBeVisible()
 
     await page.getByRole('link', { name: 'Manual Entry' }).click()
     await expect(page).toHaveURL(/\/manual-entry$/)
@@ -45,6 +45,10 @@ test.describe('Work Queue and Human Confirmation', () => {
   test('submitting a Task lands it in NeedsReview with its Proposal detail', async ({ page }) => {
     await submitExpenseTask(page, 'E2E: office supplies')
 
+    await expect(page.getByText('NeedsReview')).toBeVisible()
+    await page.getByRole('tab', { name: /in progress/i }).click()
+    await expect(page.getByText('Nothing in progress')).toBeVisible()
+    await page.getByRole('tab', { name: /all tasks/i }).click()
     await expect(page.getByText('NeedsReview')).toBeVisible()
 
     await page.locator('a[href^="/tasks/"]').first().click()
