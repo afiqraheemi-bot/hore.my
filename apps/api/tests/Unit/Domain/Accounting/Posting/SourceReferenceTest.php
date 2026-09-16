@@ -376,6 +376,7 @@ final class SourceReferenceTest extends TestCase
         $equalsParameterType = (new ReflectionClass(SourceReference::class))
             ->getMethod('equals')->getParameters()[0]->getType();
         $this->assertInstanceOf(ReflectionNamedType::class, $equalsParameterType);
-        $this->assertSame(SourceReference::class, $equalsParameterType->getName());
+        $resolvedTypeName = $equalsParameterType->getName() === 'self' ? SourceReference::class : $equalsParameterType->getName();
+        $this->assertSame(SourceReference::class, $resolvedTypeName);
     }
 }

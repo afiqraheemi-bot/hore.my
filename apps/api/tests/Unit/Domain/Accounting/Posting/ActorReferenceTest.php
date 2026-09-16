@@ -383,6 +383,7 @@ final class ActorReferenceTest extends TestCase
         $equalsParameterType = (new ReflectionClass(ActorReference::class))
             ->getMethod('equals')->getParameters()[0]->getType();
         $this->assertInstanceOf(ReflectionNamedType::class, $equalsParameterType);
-        $this->assertSame(ActorReference::class, $equalsParameterType->getName());
+        $resolvedTypeName = $equalsParameterType->getName() === 'self' ? ActorReference::class : $equalsParameterType->getName();
+        $this->assertSame(ActorReference::class, $resolvedTypeName);
     }
 }

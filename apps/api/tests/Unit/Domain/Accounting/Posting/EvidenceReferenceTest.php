@@ -219,6 +219,7 @@ final class EvidenceReferenceTest extends TestCase
         $equalsParameterType = (new ReflectionClass(EvidenceReference::class))
             ->getMethod('equals')->getParameters()[0]->getType();
         $this->assertInstanceOf(ReflectionNamedType::class, $equalsParameterType);
-        $this->assertSame(EvidenceReference::class, $equalsParameterType->getName());
+        $resolvedTypeName = $equalsParameterType->getName() === 'self' ? EvidenceReference::class : $equalsParameterType->getName();
+        $this->assertSame(EvidenceReference::class, $resolvedTypeName);
     }
 }

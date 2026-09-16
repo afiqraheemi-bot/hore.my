@@ -318,8 +318,9 @@ final class SourceFingerprintTest extends TestCase
 
         $equalsParameterType = $fingerprintReflection->getMethod('equals')->getParameters()[0]->getType();
         $this->assertInstanceOf(ReflectionNamedType::class, $equalsParameterType);
-        $this->assertSame(SourceFingerprint::class, $equalsParameterType->getName());
-        $this->assertNotSame(IdempotencyKey::class, $equalsParameterType->getName());
+        $resolvedTypeName = $equalsParameterType->getName() === 'self' ? SourceFingerprint::class : $equalsParameterType->getName();
+        $this->assertSame(SourceFingerprint::class, $resolvedTypeName);
+        $this->assertNotSame(IdempotencyKey::class, $resolvedTypeName);
     }
 
     /**
