@@ -73,6 +73,10 @@ final class JournalsAndJournalLinesTableMigrationTest extends TestCase
             DB::connection('pgsql')->table('payment_allocations')->delete();
             DB::connection('pgsql')->table('payments')->delete();
         }
+        if (Schema::connection('pgsql')->hasTable('quotations')) {
+            DB::connection('pgsql')->table('quotation_lines')->delete();
+            DB::connection('pgsql')->table('quotations')->delete();
+        }
         if (Schema::connection('pgsql')->hasTable('invoices')) {
             DB::connection('pgsql')->table('invoice_lines')->delete();
             DB::connection('pgsql')->table('invoices')->delete();

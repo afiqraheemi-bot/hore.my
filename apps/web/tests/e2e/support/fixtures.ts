@@ -54,6 +54,23 @@ export async function login(page: Page, email: string, password: string): Promis
  * the same real HTTP round trip a user creating a Chart of Accounts
  * entry performs, not a direct API call bypassing the UI.
  */
+/**
+ * Creates one Customer via the `/customers` page's own inline form —
+ * the same real HTTP round trip a user adding a Customer performs.
+ */
+export async function createCustomer(page: Page, name: string): Promise<void> {
+  await page.goto('/customers')
+  await page.getByRole('button', { name: /new customer/i }).click()
+  await page.getByPlaceholder('Kedai Runcit Aminah').fill(name)
+
+  await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/customers') && res.request().method() === 'POST',
+    ),
+    page.locator('form').getByRole('button', { name: /add/i }).click(),
+  ])
+}
+
 export async function createAccount(
   page: Page,
   code: string,

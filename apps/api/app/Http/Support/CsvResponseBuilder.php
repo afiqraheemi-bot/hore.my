@@ -30,6 +30,24 @@ final class CsvResponseBuilder
      */
     public static function build(string $filename, array $header, array $rows): Response
     {
+        return new Response(self::toCsvString($header, $rows), 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => sprintf('attachment; filename="%s"', $filename),
+        ]);
+    }
+
+    /**
+     * The pure CSV-string half of {@see build()}, extracted so
+     * `App\Http\Support\CompliancePackBuilder` (AETS-009 §19) can
+     * bundle the identical CSV bytes into a ZIP entry without an HTTP
+     * `Response` wrapper — the report data and formatting are
+     * unchanged either way.
+     *
+     * @param  list<string>  $header
+     * @param  list<list<string>>  $rows
+     */
+    public static function toCsvString(array $header, array $rows): string
+    {
         $stream = fopen('php://temp', 'r+');
 
         if ($stream === false) {
@@ -50,9 +68,6 @@ final class CsvResponseBuilder
             throw new \RuntimeException('Failed to read the generated CSV export back from its temporary stream.');
         }
 
-        return new Response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => sprintf('attachment; filename="%s"', $filename),
-        ]);
+        return $csv;
     }
 }

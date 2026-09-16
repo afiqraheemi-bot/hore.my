@@ -64,6 +64,8 @@ trait CleansSharedAccountingTables
         'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'quotation_lines',
+        'quotations',
         'invoice_lines',
         'invoices',
         'period_closures',

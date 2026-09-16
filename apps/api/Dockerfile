@@ -12,14 +12,21 @@ FROM php:8.5.10-cli
 # `Redis` class, which does not exist without it. $PHPIZE_DEPS (defined
 # by the official php image) provides the compiler toolchain pecl needs;
 # it is purged afterward since nothing else in this image needs it.
+#
+# AETS-009 §19 (Compliance Pack export): the `zip` extension provides
+# `ZipArchive`, which `CompliancePackBuilder` needs to bundle several
+# CSV reports into one downloadable archive — not present in the base
+# php:8.5-cli image, hence `libzip-dev` (build-time) and the
+# `docker-php-ext-install ... zip` below.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpq-dev \
         libonig-dev \
+        libzip-dev \
         unzip \
         curl \
         $PHPIZE_DEPS \
-    && docker-php-ext-install pdo_pgsql mbstring pcntl posix \
+    && docker-php-ext-install pdo_pgsql mbstring pcntl posix zip \
     && pecl install redis \
     && docker-php-ext-enable redis \
     && apt-get purge -y --auto-remove $PHPIZE_DEPS \

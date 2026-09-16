@@ -23,6 +23,7 @@ use App\Http\Requests\Reporting\GeneralLedgerRequest;
 use App\Http\Requests\Reporting\PeriodRequest;
 use App\Http\Support\CsvResponseBuilder;
 use App\Http\Support\CurrentTenant;
+use App\Http\Support\ZipResponseBuilder;
 use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
 use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
@@ -44,10 +45,16 @@ use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
  * reshaped into a downloadable CSV via {@see CsvResponseBuilder}
  * instead of JSON — no new Query-layer code, no new business logic,
  * purely an HTTP-layer presentation choice. PDF (Invoice) and XLSX
- * exports are each their own future milestone: PDF needs an invoice
+ * exports remain each their own future milestone, unchanged by this
+ * docblock's own 2026-09-16 update: PDF needs an invoice
  * layout/branding decision that is a Founder-level product call, not
  * an engineering default to guess, and XLSX would need a new
  * dependency for marginal gain over CSV at this stage.
+ *
+ * **{@see compliancePack()} (AETS-009 §19, added 2026-09-16)** bundles
+ * five of the reports above into one downloadable ZIP of CSVs —
+ * itself only a presentation-layer combination of already-proven CSV
+ * rows, never a new report or a new guarantee.
  */
 final class ReportingController extends Controller
 {
@@ -65,10 +72,12 @@ final class ReportingController extends Controller
         $trialBalance = $this->trialBalanceQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
 
         if ($this->wantsCsv($request)) {
+            [$header, $rows] = $this->trialBalanceCsvRows($trialBalance);
+
             return CsvResponseBuilder::build(
                 sprintf('trial-balance-%s.csv', $trialBalance->asOfDate()->format('Y-m-d')),
-                ['Account ID', 'Account Type', 'Total Debit', 'Total Credit', 'Net Balance Amount', 'Net Balance Direction'],
-                array_map($this->accountBalanceToCsvRow(...), $trialBalance->lines()),
+                $header,
+                $rows,
             );
         }
 
@@ -84,14 +93,11 @@ final class ReportingController extends Controller
         );
 
         if ($this->wantsCsv($request)) {
-            $rows = [
-                ...array_map(fn (AccountBalance $line): array => ['Revenue', ...$this->accountBalanceToCsvRow($line)], $statement->revenueLines()),
-                ...array_map(fn (AccountBalance $line): array => ['Expense', ...$this->accountBalanceToCsvRow($line)], $statement->expenseLines()),
-            ];
+            [$header, $rows] = $this->profitAndLossCsvRows($statement);
 
             return CsvResponseBuilder::build(
                 sprintf('profit-and-loss-%s-to-%s.csv', $statement->periodStart()->format('Y-m-d'), $statement->periodEnd()->format('Y-m-d')),
-                ['Section', 'Account ID', 'Account Type', 'Total Debit', 'Total Credit', 'Net Balance Amount', 'Net Balance Direction'],
+                $header,
                 $rows,
             );
         }
@@ -104,17 +110,11 @@ final class ReportingController extends Controller
         $balanceSheet = $this->balanceSheetQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
 
         if ($this->wantsCsv($request)) {
-            $netIncome = $balanceSheet->cumulativeNetIncome();
-            $rows = [
-                ...array_map(fn (AccountBalance $line): array => ['Asset', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->assetLines()),
-                ...array_map(fn (AccountBalance $line): array => ['Liability', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->liabilityLines()),
-                ...array_map(fn (AccountBalance $line): array => ['Equity', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->equityLines()),
-                ['Cumulative Net Income', '(Cumulative Net Income)', '', '', '', $netIncome->amount()->toDecimalString(), $netIncome->direction() === null ? '' : $netIncome->direction()->name],
-            ];
+            [$header, $rows] = $this->balanceSheetCsvRows($balanceSheet);
 
             return CsvResponseBuilder::build(
                 sprintf('balance-sheet-%s.csv', $balanceSheet->asOfDate()->format('Y-m-d')),
-                ['Section', 'Account ID', 'Account Type', 'Total Debit', 'Total Credit', 'Net Balance Amount', 'Net Balance Direction'],
+                $header,
                 $rows,
             );
         }
@@ -159,16 +159,12 @@ final class ReportingController extends Controller
         );
 
         if ($this->wantsCsv($request)) {
+            [$header, $rows] = $this->evidenceIndexCsvRows($index);
+
             return CsvResponseBuilder::build(
                 sprintf('evidence-index-%s-to-%s.csv', $index->periodStart()->format('Y-m-d'), $index->periodEnd()->format('Y-m-d')),
-                ['Journal ID', 'Financial Date', 'Source', 'Has Evidence', 'Evidence References'],
-                array_map(static fn (EvidenceIndexEntry $entry): array => [
-                    $entry->journalId()->toString(),
-                    $entry->financialDate()->format('Y-m-d'),
-                    $entry->source()->toString(),
-                    $entry->hasEvidence() ? 'Yes' : 'No',
-                    implode('; ', $entry->evidenceReferences()),
-                ], $index->entries()),
+                $header,
+                $rows,
             );
         }
 
@@ -180,26 +176,143 @@ final class ReportingController extends Controller
         $report = $this->agingReportQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
 
         if ($this->wantsCsv($request)) {
+            [$header, $rows] = $this->agingReportCsvRows($report);
+
             return CsvResponseBuilder::build(
                 sprintf('aging-report-%s.csv', $report->asOfDate()->format('Y-m-d')),
-                ['Invoice ID', 'Invoice Number', 'Customer ID', 'Due Date', 'Outstanding Balance', 'Bucket'],
-                array_map(static fn (AgingReportLine $line): array => [
-                    $line->invoiceId()->toString(),
-                    $line->invoiceNumber() ?? '',
-                    $line->customerId()->toString(),
-                    $line->dueDate()->format('Y-m-d'),
-                    $line->outstandingBalance()->toDecimalString(),
-                    $line->bucket()->name,
-                ], $report->lines()),
+                $header,
+                $rows,
             );
         }
 
         return response()->json($this->agingReportToArray($report));
     }
 
+    /**
+     * AETS-009 §19 (Compliance Pack export): bundles Trial Balance,
+     * Profit & Loss (the current Accounting Period), Balance Sheet,
+     * Aging, and Evidence Index (the current Accounting Period) — the
+     * five tenant-wide reports this controller already computes — as
+     * CSV entries inside one downloadable ZIP archive, reusing each
+     * report's own already-proven CSV row mapping unchanged (no new
+     * business logic, mirrors this controller's own established rule
+     * for `?format=csv`). General Ledger is not included: it requires
+     * a specific Account, not a tenant-wide view, so there is no
+     * single canonical CSV for it to bundle.
+     *
+     * **Not a compliance guarantee.** Per
+     * [`HORE_MY_MASTER_CONTEXT.md`](../../../../../../docs/product/reference/HORE_MY_MASTER_CONTEXT.md)
+     * §7's own definition: "compliance-ready" means organized,
+     * consistent, traceable, exportable records for professional
+     * review — never an automatic guarantee that an audit, tax filing,
+     * or submission will be accepted.
+     */
+    public function compliancePack(PeriodRequest $request, CurrentTenant $currentTenant): Response
+    {
+        $periodStart = new \DateTimeImmutable($request->string('period_start')->toString());
+        $periodEnd = new \DateTimeImmutable($request->string('period_end')->toString());
+
+        $trialBalance = $this->trialBalanceQuery->asOf($currentTenant->id(), $periodEnd);
+        $profitAndLoss = $this->profitAndLossQuery->forPeriod($currentTenant->id(), $periodStart, $periodEnd);
+        $balanceSheet = $this->balanceSheetQuery->asOf($currentTenant->id(), $periodEnd);
+        $agingReport = $this->agingReportQuery->asOf($currentTenant->id(), $periodEnd);
+        $evidenceIndex = $this->evidenceIndexQuery->forPeriod($currentTenant->id(), $periodStart, $periodEnd);
+
+        $entries = [
+            'trial-balance.csv' => CsvResponseBuilder::toCsvString(...$this->trialBalanceCsvRows($trialBalance)),
+            'profit-and-loss.csv' => CsvResponseBuilder::toCsvString(...$this->profitAndLossCsvRows($profitAndLoss)),
+            'balance-sheet.csv' => CsvResponseBuilder::toCsvString(...$this->balanceSheetCsvRows($balanceSheet)),
+            'aging-report.csv' => CsvResponseBuilder::toCsvString(...$this->agingReportCsvRows($agingReport)),
+            'evidence-index.csv' => CsvResponseBuilder::toCsvString(...$this->evidenceIndexCsvRows($evidenceIndex)),
+        ];
+
+        return ZipResponseBuilder::build(
+            sprintf('compliance-pack-%s-to-%s.zip', $periodStart->format('Y-m-d'), $periodEnd->format('Y-m-d')),
+            $entries,
+        );
+    }
+
     private function wantsCsv(AsOfDateRequest|PeriodRequest|GeneralLedgerRequest $request): bool
     {
         return $request->string('format')->toString() === 'csv';
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function trialBalanceCsvRows(TrialBalance $trialBalance): array
+    {
+        return [
+            ['Account ID', 'Account Type', 'Total Debit', 'Total Credit', 'Net Balance Amount', 'Net Balance Direction'],
+            array_map($this->accountBalanceToCsvRow(...), $trialBalance->lines()),
+        ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function profitAndLossCsvRows(ProfitAndLossStatement $statement): array
+    {
+        return [
+            ['Section', 'Account ID', 'Account Type', 'Total Debit', 'Total Credit', 'Net Balance Amount', 'Net Balance Direction'],
+            [
+                ...array_map(fn (AccountBalance $line): array => ['Revenue', ...$this->accountBalanceToCsvRow($line)], $statement->revenueLines()),
+                ...array_map(fn (AccountBalance $line): array => ['Expense', ...$this->accountBalanceToCsvRow($line)], $statement->expenseLines()),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function balanceSheetCsvRows(BalanceSheet $balanceSheet): array
+    {
+        $netIncome = $balanceSheet->cumulativeNetIncome();
+
+        return [
+            ['Section', 'Account ID', 'Account Type', 'Total Debit', 'Total Credit', 'Net Balance Amount', 'Net Balance Direction'],
+            [
+                ...array_map(fn (AccountBalance $line): array => ['Asset', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->assetLines()),
+                ...array_map(fn (AccountBalance $line): array => ['Liability', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->liabilityLines()),
+                ...array_map(fn (AccountBalance $line): array => ['Equity', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->equityLines()),
+                ['Cumulative Net Income', '(Cumulative Net Income)', '', '', '', $netIncome->amount()->toDecimalString(), $netIncome->direction() === null ? '' : $netIncome->direction()->name],
+            ],
+        ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function evidenceIndexCsvRows(EvidenceIndex $index): array
+    {
+        return [
+            ['Journal ID', 'Financial Date', 'Source', 'Has Evidence', 'Evidence References'],
+            array_map(static fn (EvidenceIndexEntry $entry): array => [
+                $entry->journalId()->toString(),
+                $entry->financialDate()->format('Y-m-d'),
+                $entry->source()->toString(),
+                $entry->hasEvidence() ? 'Yes' : 'No',
+                implode('; ', $entry->evidenceReferences()),
+            ], $index->entries()),
+        ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function agingReportCsvRows(AgingReport $report): array
+    {
+        return [
+            ['Invoice ID', 'Invoice Number', 'Customer ID', 'Due Date', 'Outstanding Balance', 'Bucket'],
+            array_map(static fn (AgingReportLine $line): array => [
+                $line->invoiceId()->toString(),
+                $line->invoiceNumber() ?? '',
+                $line->customerId()->toString(),
+                $line->dueDate()->format('Y-m-d'),
+                $line->outstandingBalance()->toDecimalString(),
+                $line->bucket()->name,
+            ], $report->lines()),
+        ];
     }
 
     /**

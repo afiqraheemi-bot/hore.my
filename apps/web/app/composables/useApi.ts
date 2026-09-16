@@ -11,6 +11,13 @@ interface RequestOptions {
   body?: Record<string, unknown> | FormData
   query?: Record<string, string>
   headers?: Record<string, string>
+  /**
+   * Defaults to ofetch's own content-type-based auto-parsing (JSON or
+   * text) — pass `'blob'` for a binary download (e.g. the Compliance
+   * Pack's ZIP), so the response bytes are never run through text
+   * decoding and corrupted.
+   */
+  responseType?: 'json' | 'text' | 'blob'
 }
 
 /**
@@ -64,6 +71,7 @@ export function useApi() {
       query: options.query,
       credentials: 'include',
       headers,
+      ...(options.responseType ? { responseType: options.responseType } : {}),
     })
   }
 

@@ -51,6 +51,9 @@ final class IdentityAndAccountingApiTest extends TestCase
         'reconciliations',
         'bank_statement_import_batches',
         'bank_accounts',
+        'quotation_lines',
+        'quotations',
+        'quotation_number_sequences',
         'invoice_lines',
         'invoices',
         'invoice_number_sequences',
@@ -518,6 +521,161 @@ final class IdentityAndAccountingApiTest extends TestCase
         $response->assertJsonCount(0, 'data');
     }
 
+    // --- Quotations (AETS-016) -------------------------------------------
+
+    public function test_a_tenant_can_draft_send_accept_and_convert_a_quotation_into_an_invoice_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('quotations@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+            'lines' => [
+                ['description' => 'Consulting', 'quantity' => 2, 'unit_price' => '150.00'],
+            ],
+        ]);
+        $draft->assertStatus(201);
+        $draft->assertJsonPath('status', 'Draft');
+        $draft->assertJsonPath('total_amount', '300.00');
+        $quotationId = $draft->json('id');
+
+        $sent = $this->postJson("/api/v1/quotations/{$quotationId}/send", ['issue_date' => now()->toDateString()]);
+        $sent->assertStatus(200);
+        $sent->assertJsonPath('status', 'Sent');
+        $sent->assertJsonPath('quotation_number', 'QUO-000001');
+
+        $accepted = $this->postJson("/api/v1/quotations/{$quotationId}/accept");
+        $accepted->assertStatus(200);
+        $accepted->assertJsonPath('status', 'Accepted');
+
+        $converted = $this->postJson("/api/v1/quotations/{$quotationId}/convert-to-invoice", [
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'due_date' => '2026-12-31',
+        ]);
+        $converted->assertStatus(201);
+        $converted->assertJsonPath('status', 'Draft');
+        $converted->assertJsonPath('total_amount', '300.00');
+        $invoiceId = $converted->json('id');
+        $this->assertNotNull($invoiceId);
+
+        $reloadedQuotation = $this->getJson("/api/v1/quotations/{$quotationId}");
+        $reloadedQuotation->assertJsonPath('status', 'Converted');
+        $reloadedQuotation->assertJsonPath('converted_invoice_id', $invoiceId);
+
+        // The resulting Invoice is fully ordinary from here on — it
+        // issues exactly like any other Invoice.
+        $issued = $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => now()->toDateString()], ['Idempotency-Key' => 'key-quotation-convert-issue']);
+        $issued->assertStatus(201);
+        $issued->assertJsonPath('status', 'Issued');
+    }
+
+    public function test_converting_a_quotation_that_has_not_been_accepted_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('quotation-not-accepted@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => '10.00']],
+        ]);
+        $quotationId = $draft->json('id');
+
+        $this->postJson("/api/v1/quotations/{$quotationId}/convert-to-invoice", [
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'due_date' => '2026-12-31',
+        ])->assertStatus(422);
+    }
+
+    public function test_sending_an_empty_quotation_is_rejected_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('quotation-empty@example.my');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+        ]);
+        $draft->assertStatus(201);
+        $quotationId = $draft->json('id');
+
+        $this->postJson("/api/v1/quotations/{$quotationId}/send", ['issue_date' => now()->toDateString()])
+            ->assertStatus(422);
+    }
+
+    public function test_rejecting_a_sent_quotation_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('quotation-reject@example.my');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => '10.00']],
+        ]);
+        $quotationId = $draft->json('id');
+        $this->postJson("/api/v1/quotations/{$quotationId}/send", ['issue_date' => now()->toDateString()])->assertStatus(200);
+
+        $rejected = $this->postJson("/api/v1/quotations/{$quotationId}/reject");
+        $rejected->assertStatus(200);
+        $rejected->assertJsonPath('status', 'Rejected');
+    }
+
+    public function test_deleting_a_sent_quotation_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('quotation-delete-sent@example.my');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+            'lines' => [['description' => 'Item', 'quantity' => 1, 'unit_price' => '10.00']],
+        ]);
+        $quotationId = $draft->json('id');
+        $this->postJson("/api/v1/quotations/{$quotationId}/send", ['issue_date' => now()->toDateString()])->assertStatus(200);
+
+        $this->deleteJson("/api/v1/quotations/{$quotationId}")->assertStatus(409);
+    }
+
+    public function test_a_draft_quotation_can_be_deleted(): void
+    {
+        $this->registerAndReturnCredentials('quotation-delete-draft@example.my');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerId,
+            'valid_until' => '2026-12-31',
+        ]);
+        $quotationId = $draft->json('id');
+
+        $this->deleteJson("/api/v1/quotations/{$quotationId}")->assertStatus(204);
+        $this->getJson("/api/v1/quotations/{$quotationId}")->assertStatus(404);
+    }
+
+    public function test_a_tenants_quotations_are_never_visible_to_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('quotation-tenant-a@example.my');
+        $customerAId = $this->createCustomer('Tenant A Customer');
+        $this->postJson('/api/v1/quotations', [
+            'customer_id' => $customerAId,
+            'valid_until' => '2026-12-31',
+        ])->assertStatus(201);
+        $this->logout();
+
+        $this->registerAndReturnCredentials('quotation-tenant-b@example.my');
+        $response = $this->getJson('/api/v1/quotations');
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(0, 'data');
+    }
+
     // --- Payments & Allocation (M21, Modul 7 phase 3) -------------------
 
     public function test_a_tenant_can_record_a_payment_and_allocate_it_to_an_issued_invoice(): void
@@ -761,6 +919,48 @@ final class IdentityAndAccountingApiTest extends TestCase
         $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
         $this->assertStringContainsString($invoiceId, $response->getContent());
         $this->assertStringContainsString('Bucket', $response->getContent());
+    }
+
+    /**
+     * AETS-009 §19: the Compliance Pack bundles Trial Balance,
+     * Profit & Loss, Balance Sheet, Aging, and Evidence Index as CSV
+     * entries inside one downloadable ZIP — this proves the real HTTP
+     * boundary end to end, not just that `ZipResponseBuilder` itself
+     * produces a valid archive (already proven at the unit level).
+     */
+    public function test_the_compliance_pack_can_be_downloaded_as_a_zip_of_csvs(): void
+    {
+        $this->registerAndReturnCredentials('compliance-pack@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '100.00',
+            'transaction_date' => '2026-09-08',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Sales',
+        ], ['Idempotency-Key' => 'key-compliance-pack-income'])->assertStatus(201);
+
+        $response = $this->get('/api/v1/reports/compliance-pack?period_start=2026-09-01&period_end=2026-09-30');
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'application/zip');
+        $this->assertStringContainsString('attachment; filename="compliance-pack-2026-09-01-to-2026-09-30.zip"', $response->headers->get('Content-Disposition'));
+
+        $tempPath = tempnam(sys_get_temp_dir(), 'compliance-pack-http-test-');
+        file_put_contents($tempPath, $response->getContent());
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($tempPath) === true);
+
+        $this->assertSame(5, $zip->numFiles);
+        $this->assertStringContainsString($cashId, (string) $zip->getFromName('trial-balance.csv'));
+        $this->assertStringContainsString($revenueId, (string) $zip->getFromName('profit-and-loss.csv'));
+        $this->assertNotFalse($zip->getFromName('balance-sheet.csv'));
+        $this->assertNotFalse($zip->getFromName('aging-report.csv'));
+        $this->assertNotFalse($zip->getFromName('evidence-index.csv'));
+
+        $zip->close();
+        unlink($tempPath);
     }
 
     public function test_an_invalid_export_format_is_rejected(): void

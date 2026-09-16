@@ -82,6 +82,36 @@ async function runReport() {
 }
 
 const exporting = ref(false)
+const exportingCompliancePack = ref(false)
+const compliancePackError = ref<string | null>(null)
+
+/**
+ * AETS-009 §19: a ZIP of Trial Balance / Profit & Loss / Balance
+ * Sheet / Aging / Evidence Index CSVs for the currently-set period —
+ * "compliance-ready" per Master Context §7's own definition
+ * (organized, consistent, traceable, exportable), never a guarantee
+ * that any audit, tax filing, or submission will be accepted.
+ */
+async function downloadCompliancePack() {
+  exportingCompliancePack.value = true
+  compliancePackError.value = null
+  try {
+    const blob = await request<Blob>('/api/v1/reports/compliance-pack', {
+      query: { period_start: periodStart.value, period_end: periodEnd.value },
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `compliance-pack-${periodStart.value}-to-${periodEnd.value}.zip`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    compliancePackError.value = 'Failed to export the Compliance Pack.'
+  } finally {
+    exportingCompliancePack.value = false
+  }
+}
 
 async function downloadCsv() {
   exporting.value = true
@@ -117,7 +147,15 @@ async function selectTab(tab: (typeof tabs)[number]) {
 
 <template>
   <div>
-    <PageHeader title="Reports" />
+    <PageHeader title="Reports">
+      <template #actions>
+        <AppButton :disabled="exportingCompliancePack" @click="downloadCompliancePack">
+          <AppIcon name="download" :size="14" />
+          {{ exportingCompliancePack ? 'Exporting…' : 'Compliance Pack' }}
+        </AppButton>
+      </template>
+    </PageHeader>
+    <p v-if="compliancePackError" class="mb-3 text-sm text-danger">{{ compliancePackError }}</p>
 
     <div class="mb-4 flex flex-wrap gap-1 border-b border-border">
       <button

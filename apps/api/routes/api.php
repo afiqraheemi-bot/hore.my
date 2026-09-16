@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\MatchController;
 use App\Http\Controllers\Api\OwnerDrawingController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PeriodController;
+use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\ReconciliationController;
 use App\Http\Controllers\Api\ReportingController;
 use App\Http\Controllers\Api\TaskController;
@@ -76,6 +77,16 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/invoices/{invoiceId}/issue', [InvoiceController::class, 'issue']);
             Route::get('/outstanding-invoices', [AllocationController::class, 'outstandingInvoices']);
 
+            Route::get('/quotations', [QuotationController::class, 'index']);
+            Route::post('/quotations', [QuotationController::class, 'store']);
+            Route::get('/quotations/{quotationId}', [QuotationController::class, 'show']);
+            Route::put('/quotations/{quotationId}', [QuotationController::class, 'update']);
+            Route::delete('/quotations/{quotationId}', [QuotationController::class, 'destroy']);
+            Route::post('/quotations/{quotationId}/send', [QuotationController::class, 'send']);
+            Route::post('/quotations/{quotationId}/accept', [QuotationController::class, 'accept']);
+            Route::post('/quotations/{quotationId}/reject', [QuotationController::class, 'reject']);
+            Route::post('/quotations/{quotationId}/convert-to-invoice', [QuotationController::class, 'convert']);
+
             Route::get('/payments', [PaymentController::class, 'index']);
             Route::post('/payments', [PaymentController::class, 'store']);
             Route::get('/payments/{paymentId}', [PaymentController::class, 'show']);
@@ -107,6 +118,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('/general-ledger', [ReportingController::class, 'generalLedger']);
                 Route::get('/evidence-index', [ReportingController::class, 'evidenceIndex']);
                 Route::get('/aging', [ReportingController::class, 'agingReport']);
+                Route::get('/compliance-pack', [ReportingController::class, 'compliancePack']);
             });
         });
     });

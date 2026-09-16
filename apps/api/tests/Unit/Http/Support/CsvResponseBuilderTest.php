@@ -51,4 +51,22 @@ final class CsvResponseBuilderTest extends TestCase
 
         $this->assertSame("Description\n\"Hello, world\"\n", (string) $response->getContent());
     }
+
+    /**
+     * `toCsvString()` (added AETS-009 §19, for
+     * `App\Http\Controllers\Api\ReportingController::compliancePack()`)
+     * must produce byte-identical output to `build()`'s own response
+     * body — it is the same formatting, just without the HTTP
+     * `Response` wrapper.
+     */
+    public function test_to_csv_string_matches_builds_own_response_body(): void
+    {
+        $header = ['Account ID', 'Amount'];
+        $rows = [['account-0001', '100.00'], ['account-0002', '200.00']];
+
+        $string = CsvResponseBuilder::toCsvString($header, $rows);
+        $response = CsvResponseBuilder::build('report.csv', $header, $rows);
+
+        $this->assertSame((string) $response->getContent(), $string);
+    }
 }

@@ -1,7 +1,7 @@
 # AETS-001: Accounting Terminology
 
 - Status: Active
-- Version: 1.2.0
+- Version: 1.3.0
 - Effective date: 2026-09-03
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -238,6 +238,13 @@ Terms are listed alphabetically. Each entry uses exactly: Term, Normative Defini
 - **Notes / Boundaries:** A Projection is never authoritative and must always be rebuildable from the Ledger; it cannot substitute for the Ledger as a source of truth ([AETS-002 §4](AETS-002-Accounting-Invariants.md#4-the-invariants), invariant 5).
 - **Related Terms:** Ledger, Balance, Trial Balance.
 
+### Quotation
+
+- **Term:** Quotation
+- **Normative Definition:** A pre-sale document a Tenant issues to a Customer, structurally parallel to an Invoice but producing no ledger effect of its own — no Posting Command, no Journal, no Account reference.
+- **Notes / Boundaries:** Full lifecycle, invariants, and the atomic conversion path into a Draft Invoice are defined by [AETS-016](AETS-016-Quotation.md), not here. A Quotation is never translated into a Posting Command and never appears in any Accounting Core report.
+- **Related Terms:** Invoice, Customer.
+
 ### Reconciliation
 
 - **Term:** Reconciliation
@@ -330,10 +337,11 @@ The following are explicitly **not** covered by this document and are left to la
 - **Posting Engine design** (journal/line schema, transaction and concurrency mechanics), deferred to AETS-004.
 - **Chart of Accounts design** (account taxonomy, numbering, ownership rules), deferred to AETS-005.
 - **Any accounting algorithm**, including allocation matching, reconciliation matching, rounding, idempotency-key derivation, and source-fingerprint derivation — each is named where relevant in §5 but not designed here.
-- **Terms referenced but not yet formally defined**, because they fall outside this task's required list and are not yet load-bearing for an existing AETS document: *Chart of Accounts*, *Payment*, *Invoice*, *Quotation*, *Customer*, *MyInvois Submission*, *Period* lifecycle states beyond Open/Closed, *Golden Dataset* / *Proof of Accuracy*. These should be added here (not redefined elsewhere) when the AETS document that first needs them is written, per §4, rule 6.
+- **Terms referenced but not yet formally defined**, because they fall outside this task's required list and are not yet load-bearing for an existing AETS document: *Chart of Accounts*, *Payment*, *Invoice*, *Customer*, *MyInvois Submission*, *Period* lifecycle states beyond Open/Closed, *Golden Dataset* / *Proof of Accuracy*. These should be added here (not redefined elsewhere) when the AETS document that first needs them is written, per §4, rule 6. *Quotation* was resolved this way by [AETS-016](AETS-016-Quotation.md).
 - **Non-accounting terminology** (Identity, Workspace/Task, Document Processing, general product vocabulary) — out of this document's scope per §2.2, and not part of the Accounting Core domain this glossary covers.
 
 ## Changelog
 
+- **1.3.0 (2026-09-16):** Adds the Quotation term, resolving §8's own deferred entry for it now that [AETS-016](AETS-016-Quotation.md) is the AETS document that needs it defined, per §4 rule 6. No existing term's meaning changed.
 - **1.2.0 (2026-09-03):** Added 8 new terms required by [AETS-003](AETS-003-Money-Specification.md): Canonical Decimal Representation, Currency, MinorUnits, Money Formatter, Money Parser, Persistence Adapter, Rounding Mode, Vendor Wrapper. Updated the Money term, §2.2 scope note, §6 Cross References, and §8 Deferred Topics to reflect that AETS-003 (not AETS-005) is the Money Specification, and corrected Chart of Accounts references from AETS-003 to AETS-005 throughout. No existing term's fundamental meaning changed.
 - **1.1.0 (2026-09-03):** Updated the Money term (§5), §2.2 scope note, and §8 deferred-topics entry to reflect [ADR-0007](../../adr/0007-money-representation-strategy.md)'s Founder-approved resolution of the canonical Money representation (integer minor units, PostgreSQL `BIGINT`). No term's fundamental meaning changed; references to an open two-way representation choice were updated to the now-settled fact.
