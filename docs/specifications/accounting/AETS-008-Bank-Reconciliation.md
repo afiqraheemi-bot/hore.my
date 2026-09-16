@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.1.1
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the unresolved workflow decisions in §12
@@ -121,6 +121,8 @@ The production migration chain now enforces tenant-coherent composite relationsh
 
 Invalid pre-existing cross-tenant rows make the hardening migration fail. It never rewrites, reassigns, or silently accepts ambiguous financial data.
 
+The migration chain also enforces the already-approved persistence facts that import counts are non-negative and reconcile exactly, Bank Transaction amounts are non-negative magnitudes, Banking currency is MYR, `Completed` and `completed_at` are mutually consistent, and reopening reasons are non-blank. These constraints do not decide whether statement or reconciliation *balances* may be negative; that separate overdraft/sign-policy question remains open (§12.9).
+
 ## 9. Candidate invariants for review
 
 The following IDs are proposed so the corresponding Draft ATS can trace current evidence. They do not become normative until this document is Active.
@@ -193,6 +195,10 @@ The SRS requires score and rationale. The current exact matcher persists rationa
 
 Invoice/document targets and the Reconciliation Report remain incomplete/deferred. Their contracts must be added without weakening the invariants above.
 
+### 12.9 Negative statement balances and overdrafts
+
+The active Money model is non-negative, while a real bank statement's running, opening, or closing balance may be negative for an overdraft. Current code cannot faithfully reconstruct such a balance and difference computation explicitly fails when it needs a negative intermediate value. The Accounting Domain Reviewer must define signed-balance semantics and their relationship to unsigned Money magnitudes before support is implemented; this Draft does not prohibit legitimate overdrafts by adding an arbitrary non-negative balance constraint.
+
 ## 13. Activation checklist
 
 - [ ] CTO / Technical Partner review recorded.
@@ -205,4 +211,5 @@ Invoice/document targets and the Reconciliation Report remain incomplete/deferre
 
 ## Changelog
 
+- **0.1.1 (2026-09-15):** Records database enforcement of approved exact-value/state facts and explicitly defers negative bank-balance/overdraft sign semantics. No unresolved policy was selected.
 - **0.1.0 (2026-09-15):** Initial Draft. Records locked requirements, current implementation evidence, schema tenant hardening, and eight unresolved decision groups. No new authority, MVP scope, or accuracy claim is introduced.
