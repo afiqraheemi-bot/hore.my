@@ -32,6 +32,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26.8.1'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # Installed natively, on the pristine checkout, before Docker ever
+      # touches this tree: docker-compose.yml's `web` service bind-mounts
+      # `./apps/web:/app` and layers a separate named volume at
+      # `/app/node_modules` (so the container's own npm-managed deps
+      # never leak onto the host). On native Linux Docker hosts (unlike
+      # Docker Desktop's macOS VM, where this was never observed locally)
+      # standing up that layered mount creates the `apps/web/node_modules`
+      # mount-point directory on the host as root before the container
+      # ever starts — so running `npm ci` after `docker compose up` here
+      # failed with EACCES on the very first package it tried to write.
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+
       # Boots the identical stack a developer runs locally
       # (docker-compose.yml) rather than a parallel CI-only
       # bootstrapping procedure — the same containers, the same
@@ -43,17 +64,6 @@ jobs:
 
       - name: Run database migrations
         run: docker compose exec -T api php artisan migrate --force
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '26.8.1'
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: apps/web
-        run: npm ci
 
       - name: Install Playwright browsers
         working-directory: apps/web
