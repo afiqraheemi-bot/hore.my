@@ -111,43 +111,55 @@ onMounted(loadDashboard)
 </script>
 
 <template>
-  <div>
-    <PageHeader title="Dashboard" />
+  <div class="mx-auto max-w-3xl space-y-8">
+    <div class="pt-2 text-center sm:pt-4">
+      <h1 class="text-2xl font-semibold tracking-tight text-ink">Dashboard</h1>
+      <p class="mt-1 text-sm text-ink-tertiary">A quick look at how your business is doing.</p>
+    </div>
 
-    <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
-    <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+    <p v-if="loading" class="text-center text-sm text-ink-tertiary">Loading…</p>
+    <p v-else-if="error" class="text-center text-sm text-danger">{{ error }}</p>
 
     <template v-else>
-      <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <AppCard>
-          <p class="text-xs font-medium text-ink-tertiary">Income this month</p>
-          <p class="mt-1 text-xl font-semibold text-success">
-            RM{{ formatMyr(currentMonth?.revenue ?? 0) }}
-          </p>
-        </AppCard>
-        <AppCard>
-          <p class="text-xs font-medium text-ink-tertiary">Expenses this month</p>
-          <p class="mt-1 text-xl font-semibold text-danger">
-            RM{{ formatMyr(currentMonth?.expense ?? 0) }}
-          </p>
-        </AppCard>
-        <AppCard>
-          <p class="text-xs font-medium text-ink-tertiary">Net this month</p>
-          <p
-            class="mt-1 text-xl font-semibold"
-            :class="(currentMonth?.net ?? 0) >= 0 ? 'text-success' : 'text-danger'"
-          >
-            RM{{ formatMyr(currentMonth?.net ?? 0) }}
-          </p>
-        </AppCard>
-        <AppCard>
-          <p class="text-xs font-medium text-ink-tertiary">Total assets today</p>
-          <p class="mt-1 text-xl font-semibold text-ink">RM{{ formatMyr(totalAssets ?? 0) }}</p>
-        </AppCard>
-      </div>
+      <AppCard
+        :padded="false"
+        class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+      >
+        <div class="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
+          <div class="p-5">
+            <p class="text-xs font-medium text-ink-tertiary">Income this month</p>
+            <p class="mt-1.5 text-2xl font-semibold tabular-nums text-success">
+              RM{{ formatMyr(currentMonth?.revenue ?? 0) }}
+            </p>
+          </div>
+          <div class="p-5">
+            <p class="text-xs font-medium text-ink-tertiary">Expenses this month</p>
+            <p class="mt-1.5 text-2xl font-semibold tabular-nums text-danger">
+              RM{{ formatMyr(currentMonth?.expense ?? 0) }}
+            </p>
+          </div>
+          <div class="p-5">
+            <p class="text-xs font-medium text-ink-tertiary">Net this month</p>
+            <p
+              class="mt-1.5 text-2xl font-semibold tabular-nums"
+              :class="(currentMonth?.net ?? 0) >= 0 ? 'text-success' : 'text-danger'"
+            >
+              RM{{ formatMyr(currentMonth?.net ?? 0) }}
+            </p>
+          </div>
+          <div class="p-5">
+            <p class="text-xs font-medium text-ink-tertiary">Total assets today</p>
+            <p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink">
+              RM{{ formatMyr(totalAssets ?? 0) }}
+            </p>
+          </div>
+        </div>
+      </AppCard>
 
-      <AppCard>
-        <div class="mb-4 flex items-center justify-between">
+      <AppCard
+        class="rounded-[1.5rem] border-border-strong p-6 shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+      >
+        <div class="mb-5 flex items-center justify-between">
           <h2 class="text-sm font-medium text-ink-secondary">
             Income vs. expenses — last 6 months
           </h2>
@@ -163,14 +175,15 @@ onMounted(loadDashboard)
 
         <EmptyState
           v-if="months.every((m) => m.revenue === 0 && m.expense === 0)"
+          :bordered="false"
           title="Nothing recorded in the last 6 months"
           description="Record an Expense or Income to see your trend here."
         />
-        <div v-else class="flex items-end gap-6 overflow-x-auto pb-1">
+        <div v-else class="flex items-end justify-between gap-2 overflow-x-auto px-2 pb-1 sm:gap-4">
           <div
             v-for="month in months"
             :key="month.key"
-            class="flex min-w-[56px] flex-col items-center gap-2"
+            class="flex min-w-[48px] flex-col items-center gap-2"
           >
             <div class="flex items-end gap-1" :style="{ height: `${BAR_AREA_HEIGHT}px` }">
               <div
