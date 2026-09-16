@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\BankStatementImportController;
 use App\Http\Controllers\Api\BusinessProfileController;
 use App\Http\Controllers\Api\CapitalContributionController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\EvidenceController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -44,6 +45,9 @@ Route::prefix('v1')->group(function (): void {
 
             Route::get('/accounts', [AccountController::class, 'index']);
             Route::post('/accounts', [AccountController::class, 'store']);
+
+            Route::post('/evidence', [EvidenceController::class, 'store']);
+            Route::get('/evidence/{evidenceId}', [EvidenceController::class, 'show']);
 
             Route::get('/bank-accounts', [BankAccountController::class, 'index']);
             Route::post('/bank-accounts', [BankAccountController::class, 'store']);

@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,7 @@ use Tests\TestCase;
 final class IdentityAndAccountingApiTest extends TestCase
 {
     private const TABLES_TO_CLEAN = [
+        'evidence',
         'payment_allocations',
         'payments',
         'period_closures',
@@ -79,6 +81,8 @@ final class IdentityAndAccountingApiTest extends TestCase
         foreach (self::TABLES_TO_CLEAN as $table) {
             DB::connection('pgsql')->table($table)->delete();
         }
+
+        Storage::fake('local');
 
         // Sanctum's SPA cookie authentication (ADR-0008) only attaches
         // session/CSRF middleware to a request it recognizes as coming
@@ -2166,6 +2170,73 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $backdated->assertStatus(422);
         $this->assertSame(1, DB::connection('pgsql')->table('expenses')->count());
+    }
+
+    // --- Evidence (AETS-015) --------------------------------------------
+
+    public function test_uploading_and_downloading_evidence_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('evidence-upload@example.my');
+
+        $contents = 'this is a test receipt fixture, not a real accounting oracle';
+        $upload = $this->post('/api/v1/evidence', [
+            'file' => UploadedFile::fake()->createWithContent('receipt.jpg', $contents),
+        ]);
+
+        $upload->assertStatus(201);
+        $upload->assertJsonPath('original_filename', 'receipt.jpg');
+        $upload->assertJsonPath('sha256_digest', hash('sha256', $contents));
+        $upload->assertJsonPath('byte_size', strlen($contents));
+
+        $evidenceId = $upload->json('id');
+
+        $download = $this->get("/api/v1/evidence/{$evidenceId}");
+        $download->assertStatus(200);
+        $download->assertHeader('Content-Type', 'image/jpeg');
+        $this->assertSame($contents, $download->getContent());
+    }
+
+    public function test_uploading_a_disallowed_file_type_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('evidence-bad-type@example.my');
+
+        $response = $this->post('/api/v1/evidence', [
+            'file' => UploadedFile::fake()->create('script.exe', 10, 'application/x-msdownload'),
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('evidence')->count());
+    }
+
+    public function test_uploading_an_oversized_file_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('evidence-too-big@example.my');
+
+        $response = $this->post('/api/v1/evidence', [
+            'file' => UploadedFile::fake()->create('receipt.jpg', 10241, 'image/jpeg'),
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, DB::connection('pgsql')->table('evidence')->count());
+    }
+
+    public function test_evidence_is_tenant_isolated_via_the_api(): void
+    {
+        $this->registerAndReturnCredentials('evidence-tenant-a@example.my');
+        $upload = $this->post('/api/v1/evidence', [
+            'file' => UploadedFile::fake()->createWithContent('receipt.jpg', 'tenant A receipt'),
+        ]);
+        $evidenceId = $upload->json('id');
+
+        $this->logout();
+        $this->registerAndReturnCredentials('evidence-tenant-b@example.my');
+
+        $this->getJson("/api/v1/evidence/{$evidenceId}")->assertStatus(404);
+    }
+
+    public function test_evidence_upload_requires_authentication(): void
+    {
+        $this->postJson('/api/v1/evidence', [])->assertStatus(401);
     }
 
     // --- Fixtures and helpers ------------------------------------------
