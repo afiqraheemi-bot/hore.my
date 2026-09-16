@@ -79,8 +79,8 @@ onMounted(loadActivity)
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-8">
-    <div class="pt-4 text-center">
+  <div class="mx-auto max-w-3xl space-y-10">
+    <div class="pt-8 text-center sm:pt-12">
       <h1 class="text-2xl font-semibold tracking-tight text-ink">
         {{ greeting }}<template v-if="user">, {{ user.name.split(' ')[0] }}</template>
       </h1>
@@ -95,6 +95,7 @@ onMounted(loadActivity)
       <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
       <EmptyState
         v-else-if="entries.length === 0"
+        :bordered="false"
         title="Nothing recorded in the last 60 days"
         description="Use the composer above to record your first expense, income, or transfer."
       />

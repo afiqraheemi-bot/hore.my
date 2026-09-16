@@ -235,15 +235,18 @@ onMounted(loadAccounts)
 </script>
 
 <template>
-  <AppCard :padded="false" class="overflow-hidden">
+  <AppCard
+    :padded="false"
+    class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+  >
     <div
-      class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/60 px-3 py-2"
+      class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/40 px-3 py-2.5"
     >
       <button
         v-for="type in types"
         :key="type.key"
         type="button"
-        class="flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+        class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
         :class="
           activeType.key === type.key
             ? 'bg-accent text-accent-contrast'
@@ -261,25 +264,32 @@ onMounted(loadAccounts)
       </button>
     </div>
 
-    <form class="space-y-3 p-4" @submit.prevent="onSubmit" @focusin="open">
-      <div class="flex items-center gap-3">
-        <span class="text-lg font-medium text-ink-tertiary">RM</span>
-        <input
-          v-model="amount"
-          placeholder="0.00"
-          required
-          inputmode="decimal"
-          class="w-full border-0 bg-transparent p-0 text-2xl font-semibold text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-0"
-        />
+    <form class="space-y-4 p-4 sm:p-5" @submit.prevent="onSubmit" @focusin="open">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="flex min-w-0 flex-1 items-center gap-3">
+          <span class="text-lg font-medium text-ink-tertiary">RM</span>
+          <input
+            v-model="amount"
+            aria-label="Amount"
+            placeholder="0.00"
+            required
+            inputmode="decimal"
+            class="min-w-0 flex-1 border-0 bg-transparent p-0 text-2xl font-semibold text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-0"
+          />
+        </div>
         <input
           v-model="transactionDate"
+          aria-label="Transaction date"
           type="date"
           required
-          class="h-9 shrink-0 rounded-lg border border-border bg-surface px-2 text-sm text-ink-secondary"
+          class="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink-secondary sm:w-auto"
         />
       </div>
 
-      <div v-if="expanded" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div
+        v-if="expanded"
+        class="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2"
+      >
         <AppField :label="activeType.primaryAccountLabel">
           <AppSelect
             v-model="primaryAccountId"
@@ -317,9 +327,13 @@ onMounted(loadAccounts)
         <AppIcon name="check" :size="14" /> Recorded.
       </p>
 
-      <div class="flex items-center justify-between">
-        <p class="text-xs text-ink-tertiary">Posts a balanced double-entry Journal immediately.</p>
-        <AppButton type="submit" variant="primary" :disabled="submitting">
+      <div
+        class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <p class="text-xs leading-5 text-ink-tertiary">
+          Posts a balanced double-entry Journal immediately.
+        </p>
+        <AppButton type="submit" variant="primary" :disabled="submitting" class="justify-center">
           <AppIcon name="send" :size="15" />
           {{ submitting ? 'Recording…' : 'Record' }}
         </AppButton>

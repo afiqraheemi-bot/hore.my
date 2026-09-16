@@ -239,17 +239,20 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-8">
-    <div class="pt-4 text-center">
+  <div class="mx-auto max-w-3xl space-y-10">
+    <div class="pt-8 text-center sm:pt-12">
       <h1 class="text-2xl font-semibold tracking-tight text-ink">
         {{ greeting }}<template v-if="user">, {{ user.name.split(' ')[0] }}</template>
       </h1>
       <p class="mt-1 text-sm text-ink-tertiary">What would you like to get done today?</p>
     </div>
 
-    <AppCard :padded="false" class="overflow-hidden">
+    <AppCard
+      :padded="false"
+      class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+    >
       <div
-        class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/60 px-3 py-2.5"
+        class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/40 px-3 py-2.5"
       >
         <button
           v-for="type in types"
@@ -382,6 +385,7 @@ onMounted(async () => {
       <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
       <EmptyState
         v-else-if="tasks.length === 0"
+        :bordered="false"
         title="No Tasks yet"
         description="Submit one above. It will wait here for your review."
       />
