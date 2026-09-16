@@ -1,10 +1,13 @@
 <script setup lang="ts">
 /**
  * Real drag-and-drop / paste file attachment (HORE_MY_MASTER_CONTEXT.md
- * §5) — wired to an actual upload endpoint (bank statement CSV import),
- * not a decorative placeholder. This app has exactly one endpoint that
- * genuinely accepts a file today; this component is not reused where
- * no real upload target exists.
+ * §5) — a pure, upload-agnostic file picker. It emits the picked
+ * `File` and nothing else; the caller decides where (if anywhere) it
+ * actually gets uploaded. As of AETS-015 (2026-09-16), two real
+ * endpoints exist for this to feed: bank statement CSV import
+ * (`/bank-accounts/{id}/import`) and generic Evidence attachment
+ * (`POST /evidence`, wired into `AppComposer.vue`). Still not reused
+ * where no real upload target exists.
  */
 const props = withDefaults(
   defineProps<{ modelValue: File | null; accept?: string; hint?: string }>(),

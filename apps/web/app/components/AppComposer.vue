@@ -15,6 +15,14 @@
  * codebase (HORE_MY_MASTER_CONTEXT.md §19 gates that until Proof of
  * Accuracy passes). The "type" chips below are the composer's own
  * progressive-disclosure mechanism, not an AI classification.
+ *
+ * **Real evidence attachment (AETS-015, 2026-09-16).** The optional
+ * receipt/invoice file is uploaded to a real endpoint
+ * (`POST /api/v1/evidence`) *before* the transaction itself is
+ * recorded — never a decorative attachment, and never sent as a
+ * fabricated placeholder reference. Uploading happens first so a
+ * transaction is only ever recorded with an `evidence_reference` that
+ * genuinely, already resolves to stored Evidence.
  */
 interface Account {
   id: string
@@ -134,6 +142,7 @@ const transactionDate = ref(new Date().toISOString().slice(0, 10))
 const primaryAccountId = ref('')
 const secondaryAccountId = ref('')
 const description = ref('')
+const evidenceFile = ref<File | null>(null)
 const submitting = ref(false)
 const error = ref<string | null>(null)
 const justCreated = ref(false)
@@ -170,12 +179,34 @@ function resetForm() {
   description.value = ''
   primaryAccountId.value = ''
   secondaryAccountId.value = ''
+  evidenceFile.value = null
+}
+
+/**
+ * Uploads the attached file (AETS-015) before recording the
+ * transaction itself, never after — an evidence reference is only
+ * ever sent alongside a transaction that genuinely has that evidence
+ * already stored, never a placeholder filled in later.
+ */
+async function uploadEvidenceIfAttached(): Promise<string | undefined> {
+  if (!evidenceFile.value) return undefined
+
+  const formData = new FormData()
+  formData.append('file', evidenceFile.value)
+
+  const uploaded = await request<{ id: string }>('/api/v1/evidence', {
+    method: 'POST',
+    body: formData,
+  })
+  return uploaded.id
 }
 
 async function onSubmit() {
   error.value = null
   submitting.value = true
   try {
+    const evidenceReference = await uploadEvidenceIfAttached()
+
     await request(activeType.value.endpoint, {
       method: 'POST',
       headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -185,6 +216,7 @@ async function onSubmit() {
         [activeType.value.primaryAccountKey]: primaryAccountId.value,
         [activeType.value.secondaryAccountKey]: secondaryAccountId.value,
         description: description.value,
+        ...(evidenceReference ? { evidence_reference: evidenceReference } : {}),
       },
     })
     resetForm()
@@ -193,7 +225,7 @@ async function onSubmit() {
     emit('created')
   } catch {
     error.value =
-      'Could not record this — check the amount format (e.g. 50.00) and account selection.'
+      'Could not record this — check the amount format (e.g. 50.00), account selection, and attachment (max 10MB, image or PDF).'
   } finally {
     submitting.value = false
   }
@@ -267,6 +299,15 @@ onMounted(loadAccounts)
         <div class="sm:col-span-2">
           <AppField label="Description">
             <AppInput v-model="description" placeholder="What was this for?" required />
+          </AppField>
+        </div>
+        <div class="sm:col-span-2">
+          <AppField label="Receipt or invoice (optional)">
+            <AppDropzone
+              v-model="evidenceFile"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              hint="JPG, PNG, WEBP, or PDF — up to 10MB"
+            />
           </AppField>
         </div>
       </div>
