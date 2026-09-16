@@ -128,6 +128,20 @@
 
       .callout { padding: 24px; border-left: 4px solid var(--brand); border-radius: 0 18px 18px 0; background: var(--brand-soft); }
       .callout strong { display: block; margin-bottom: 5px; }
+      .progress-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+      .progress-card { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: white; }
+      .progress-card .label { color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      .progress-card .value { display: block; margin: 10px 0 5px; font-size: 27px; letter-spacing: -.035em; }
+      .progress-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+      .status-table { width: 100%; margin-top: 18px; border-collapse: collapse; border: 1px solid var(--line); background: white; }
+      .status-table th, .status-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+      .status-table th { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+      .status-table td { font-size: 14px; line-height: 1.5; }
+      .status-table tr:last-child td { border-bottom: 0; }
+      .status-badge { display: inline-block; border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 800; white-space: nowrap; }
+      .status-badge.good { background: var(--brand-soft); color: var(--brand); }
+      .status-badge.review { background: var(--amber-soft); color: var(--amber); }
+      .status-badge.pending { background: var(--red-soft); color: var(--red); }
       footer { padding-top: 30px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 
       @media (max-width: 900px) {
@@ -140,12 +154,15 @@
         .hero { min-height: 60vh; }
         .card, .card.wide { grid-column: span 6; }
         .state-map { grid-template-columns: repeat(2, 1fr); }
+        .progress-grid { grid-template-columns: repeat(2, 1fr); }
       }
       @media (max-width: 600px) {
         .card, .card.wide { grid-column: 1 / -1; }
         .compare, .accounting-example { grid-template-columns: 1fr; }
+        .progress-grid { grid-template-columns: 1fr; }
         .section-head { display: block; }
         .state-map { grid-template-columns: 1fr; }
+        .status-table { display: block; overflow-x: auto; }
         h1 { font-size: 48px; }
       }
       @media print {
@@ -169,6 +186,7 @@
           <a href="#accounting">Accounting Core</a>
           <a href="#modules">Modul produk</a>
           <a href="#reality">Semasa vs sasaran</a>
+          <a href="#engineering-progress">Progress engineering</a>
           <a href="#screening">Checklist screening</a>
         </nav>
         <div class="sidebar-note">
@@ -193,6 +211,7 @@
           <div class="status-strip">
             <span class="pill good">Accounting foundation tersedia</span>
             <span class="pill good">Human confirmation tersedia</span>
+            <span class="pill partial">Banking menunggu domain sign-off</span>
             <span class="pill partial">AI & OCR belum lengkap</span>
             <span class="pill partial">Bukan production-ready</span>
           </div>
@@ -311,9 +330,76 @@
           </div>
         </section>
 
+        <section id="engineering-progress">
+          <div class="section-head">
+            <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
+            <p>Snapshot ini merujuk keadaan committed pada <code>2ff19f2</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+          </div>
+          <div class="progress-grid">
+            <article class="progress-card">
+              <span class="label">Accounting core</span>
+              <strong class="value">Aktif</strong>
+              <p>Money, Chart of Accounts, Journal, Posting, Reporting, Audit dan Period Management mempunyai AETS aktif.</p>
+            </article>
+            <article class="progress-card">
+              <span class="label">Banking proof</span>
+              <strong class="value">62 bukti</strong>
+              <p>ATS-008 v0.5.0 merekodkan 62 test ID sedia ada, termasuk concurrency, tenant isolation dan completion snapshot.</p>
+            </article>
+            <article class="progress-card">
+              <span class="label">Banking governance</span>
+              <strong class="value">Draft</strong>
+              <p>AETS-008 v0.3.0 belum aktif sehingga Accounting Domain Reviewer memberikan sign-off.</p>
+            </article>
+            <article class="progress-card">
+              <span class="label">Release readiness</span>
+              <strong class="value">Belum</strong>
+              <p>Proof of Accuracy, production operations dan pengalaman produk sasaran belum menutup release gate.</p>
+            </article>
+          </div>
+
+          <table class="status-table">
+            <thead>
+              <tr><th>Lapisan</th><th>Status semasa</th><th>Bukti / baki gate</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Financial engine</td>
+                <td><span class="status-badge good">Implemented + tested</span></td>
+                <td>Exact money, balanced posting, atomicity, idempotency, append-only Journal serta reversal/replacement dilindungi spesifikasi aktif dan ujian.</td>
+              </tr>
+              <tr>
+                <td>Bank import, matching &amp; reconciliation</td>
+                <td><span class="status-badge review">Review required</span></td>
+                <td>Sembilan keputusan Banking telah dilaksanakan dan dipetakan kepada bukti PostgreSQL. AETS/ATS kekal Draft; connected golden dataset masih diperlukan dan guided mapping ditangguh secara jelas.</td>
+              </tr>
+              <tr>
+                <td>Task → Proposal → confirmation</td>
+                <td><span class="status-badge good">Baseline available</span></td>
+                <td>Flow manual dan E2E asas tersedia. Universal composer, lampiran sebenar, NeedsInformation serta edit/supersede masih perlu disempurnakan.</td>
+              </tr>
+              <tr>
+                <td>AI, OCR &amp; automation</td>
+                <td><span class="status-badge pending">Incomplete</span></td>
+                <td>AI kekal cadangan/interpretasi sahaja dan tiada kuasa posting. Provider workflow, OCR dan evaluation belum menjadi pengalaman produk lengkap.</td>
+              </tr>
+              <tr>
+                <td>External compliance &amp; delivery</td>
+                <td><span class="status-badge pending">Not release-ready</span></td>
+                <td>MyInvois live adapter, PWA, observability, backup/restore drill, security/release certification dan Proof of Accuracy masih menjadi gate.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="callout" style="margin-top: 18px">
+            <strong>Gate seterusnya</strong>
+            Lengkapkan connected Proof of Accuracy golden dataset dan semakan bebas Accounting Domain Reviewer sebelum Banking boleh dinaikkan daripada Draft. Selepas itu barulah readiness produk dan operasi boleh dinilai sebagai release candidate.
+          </div>
+        </section>
+
         <section id="screening">
           <div class="section-head">
-            <div><span class="kicker">06 · Team review</span><h2>Checklist product screening</h2></div>
+            <div><span class="kicker">07 · Team review</span><h2>Checklist product screening</h2></div>
             <p>Tanda bersama Founder, Product, Design dan Engineering. Kemajuan disimpan hanya dalam browser ini.</p>
           </div>
           <div class="card full">
@@ -326,7 +412,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 9 September 2026</p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 16 September 2026 · committed baseline <code>2ff19f2</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
