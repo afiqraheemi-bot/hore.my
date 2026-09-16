@@ -44,6 +44,7 @@ use App\Domain\Workspace\Exception\TaskSubmissionConflictException;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Support\DeterministicIdempotentId;
 use App\Infrastructure\Workspace\ProposalRepository;
+use App\Infrastructure\Workspace\TaskDraftRepository;
 use App\Infrastructure\Workspace\TaskRepository;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
@@ -91,6 +92,7 @@ final class TaskService
         private readonly ConnectionInterface $connection,
         private readonly TaskRepository $taskRepository,
         private readonly ProposalRepository $proposalRepository,
+        private readonly TaskDraftRepository $taskDraftRepository,
         private readonly ExpenseRecordingService $expenseService,
         private readonly IncomeRecordingService $incomeService,
         private readonly TransferRecordingService $transferService,
@@ -127,6 +129,11 @@ final class TaskService
      * rejected — rather than surfacing a raw, unhandled database
      * constraint-violation error.
      *
+     * `$supersedesTaskId` (TSK-014) is non-null only when this call is
+     * the second half of
+     * {@see supersedeAndSubmitCorrection()} — an ordinary submission
+     * never sets it.
+     *
      * @throws TaskSubmissionConflictException if `$idempotencyKey` was
      *                                         already used for a materially different Proposal.
      */
@@ -141,6 +148,7 @@ final class TaskService
         AccountId $secondaryAccountId,
         string $description,
         ?EvidenceReference $evidenceReference,
+        ?TaskId $supersedesTaskId = null,
     ): Task {
         $taskId = TaskId::of(DeterministicIdempotentId::derive($tenantId, $idempotencyKey, 'task'));
 
@@ -153,10 +161,10 @@ final class TaskService
         try {
             return $this->connection->transaction(function () use (
                 $taskId, $tenantId, $actor, $idempotencyKey, $commandType, $amount,
-                $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $evidenceReference,
+                $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $evidenceReference, $supersedesTaskId,
             ): Task {
                 $now = new \DateTimeImmutable;
-                $task = Task::receive($taskId, $tenantId, $now);
+                $task = Task::receive($taskId, $tenantId, $now, $supersedesTaskId);
                 $this->taskRepository->record($task);
                 $this->taskRepository->recordTransition(new TaskTransition(
                     (string) Str::uuid(), $tenantId, $task->id(), $actor, null, $task->state(), null, $evidenceReference, $now,
@@ -225,6 +233,15 @@ final class TaskService
         string $description,
         Task $existing,
     ): Task {
+        if ($existing->state() === TaskState::NeedsInformation) {
+            // This key was already used for a deferred-Account
+            // submission ({@see saveForLaterCompletion()}) — there is
+            // no Proposal to compare against, and submitting a full
+            // payload under the same key here is a materially
+            // different request regardless.
+            throw TaskSubmissionConflictException::forKey($tenantId, $idempotencyKey);
+        }
+
         $existingProposal = $this->proposalRepository->getCurrentForTask($tenantId, $taskId);
 
         if (! $this->proposalMatchesRequest($existingProposal, $commandType, $amount, $transactionDate, $primaryAccountId, $secondaryAccountId, $description)) {
@@ -244,6 +261,232 @@ final class TaskService
         return $e->getCode() === '23503'
             && (str_contains($e->getMessage(), 'proposals_tenant_id_primary_account_id_foreign')
                 || str_contains($e->getMessage(), 'proposals_tenant_id_secondary_account_id_foreign'));
+    }
+
+    /**
+     * Creates a Task and its Task Draft in one atomic transaction,
+     * landing directly in `NeedsInformation` (TSK-013) — the submitter
+     * has explicitly deferred the Account decision. Zero Proposal is
+     * ever created here; {@see provideInformation()} is the only path
+     * from this state back toward `NeedsReview`.
+     *
+     * Mirrors {@see submit()} exactly for idempotency and the
+     * concurrent-first-submission race: `$idempotencyKey` derives the
+     * same deterministic `TaskId` scheme (discriminator `'task'`), a
+     * retry with an unchanged Draft payload replays the original Task,
+     * a materially different one is rejected, and a genuine
+     * `INSERT`-race loser resolves identically to an ordinary retry
+     * rather than surfacing a raw constraint violation.
+     *
+     * @throws TaskSubmissionConflictException if `$idempotencyKey` was
+     *                                         already used for a materially different Draft (or a real Proposal).
+     */
+    public function saveForLaterCompletion(
+        TenantId $tenantId,
+        ActorReference $actor,
+        IdempotencyKey $idempotencyKey,
+        CommandType $commandType,
+        Money $amount,
+        \DateTimeImmutable $transactionDate,
+        string $description,
+        ?EvidenceReference $evidenceReference,
+    ): Task {
+        $taskId = TaskId::of(DeterministicIdempotentId::derive($tenantId, $idempotencyKey, 'task'));
+
+        $existing = $this->taskRepository->findById($tenantId, $taskId);
+
+        if ($existing !== null) {
+            return $this->replayOrConflictDraft($tenantId, $taskId, $idempotencyKey, $commandType, $amount, $transactionDate, $description, $existing);
+        }
+
+        try {
+            return $this->connection->transaction(function () use (
+                $taskId, $tenantId, $actor, $commandType, $amount, $transactionDate, $description, $evidenceReference,
+            ): Task {
+                $now = new \DateTimeImmutable;
+                $task = Task::receive($taskId, $tenantId, $now);
+                $this->taskRepository->record($task);
+                $this->taskRepository->recordTransition(new TaskTransition(
+                    (string) Str::uuid(), $tenantId, $task->id(), $actor, null, $task->state(), null, $evidenceReference, $now,
+                ));
+
+                $task = $this->applyTransition($task, static fn (Task $t): Task => $t->startProcessing(), $actor, null, $evidenceReference);
+
+                $this->taskDraftRepository->record(new TaskDraft(
+                    $tenantId, $task->id(), $commandType, $amount, $transactionDate, $description, $evidenceReference, new \DateTimeImmutable,
+                ));
+
+                return $this->applyTransition($task, static fn (Task $t): Task => $t->needsInformation(), $actor, null, $evidenceReference);
+            });
+        } catch (QueryException $e) {
+            if (! $this->isTaskPrimaryKeyViolation($e)) {
+                throw $e;
+            }
+
+            $winner = $this->taskRepository->getById($tenantId, $taskId);
+
+            return $this->replayOrConflictDraft($tenantId, $taskId, $idempotencyKey, $commandType, $amount, $transactionDate, $description, $winner);
+        }
+    }
+
+    /**
+     * TSK-013 applied to the *request*: a Task already recorded under
+     * `$idempotencyKey` is a safe replay only if its Draft payload is
+     * unchanged from the incoming request.
+     *
+     * @throws TaskSubmissionConflictException if the payloads differ,
+     *                                         or if the existing Task
+     *                                         is not itself
+     *                                         `NeedsInformation` (a
+     *                                         real Proposal already
+     *                                         exists under this key).
+     */
+    private function replayOrConflictDraft(
+        TenantId $tenantId,
+        TaskId $taskId,
+        IdempotencyKey $idempotencyKey,
+        CommandType $commandType,
+        Money $amount,
+        \DateTimeImmutable $transactionDate,
+        string $description,
+        Task $existing,
+    ): Task {
+        if ($existing->state() !== TaskState::NeedsInformation) {
+            throw TaskSubmissionConflictException::forKey($tenantId, $idempotencyKey);
+        }
+
+        $existingDraft = $this->taskDraftRepository->getByTask($tenantId, $taskId);
+
+        $matches = $existingDraft->commandType() === $commandType
+            && $existingDraft->amount()->equals($amount)
+            && $existingDraft->transactionDate()->format('Y-m-d') === $transactionDate->format('Y-m-d')
+            && $existingDraft->description() === $description;
+
+        if (! $matches) {
+            throw TaskSubmissionConflictException::forKey($tenantId, $idempotencyKey);
+        }
+
+        return $existing;
+    }
+
+    /**
+     * Completes the deferred Account decision (TSK-013): the caller
+     * has now supplied both Account references for a Task's retained
+     * Draft. Performs `NeedsInformation -> Processing -> NeedsReview`
+     * in one atomic transaction, running the Draft's retained fields
+     * through the exact same Proposal construction {@see submit()}
+     * itself uses — a rejected Account reference here rolls the whole
+     * transaction back, leaving the Task in `NeedsInformation`
+     * unchanged and the Draft intact, never partially advanced.
+     *
+     * **Pessimistic locking, not the optimistic CAS most transitions
+     * use** — mirrors {@see resume()}'s own reasoning exactly: two
+     * concurrent `provideInformation()` calls both already observe
+     * `NeedsInformation`, so there is no earlier "first to leave" step
+     * to race on optimistically.
+     *
+     * @throws InvalidTaskStateTransitionException if the Task is not
+     *                                             currently `NeedsInformation`.
+     */
+    public function provideInformation(
+        TenantId $tenantId,
+        TaskId $taskId,
+        ActorReference $actor,
+        AccountId $primaryAccountId,
+        AccountId $secondaryAccountId,
+    ): Task {
+        try {
+            return $this->connection->transaction(function () use ($tenantId, $taskId, $actor, $primaryAccountId, $secondaryAccountId): Task {
+                $task = $this->taskRepository->getByIdForUpdate($tenantId, $taskId);
+
+                if ($task->state() !== TaskState::NeedsInformation) {
+                    throw InvalidTaskStateTransitionException::forTransition($taskId, $task->state(), 'provide information');
+                }
+
+                $draft = $this->taskDraftRepository->getByTask($tenantId, $taskId);
+
+                $task = $this->applyTransition($task, static fn (Task $t): Task => $t->resumeProcessing(), $actor);
+
+                $proposal = new Proposal(
+                    ProposalId::of(DeterministicIdempotentId::derive($tenantId, IdempotencyKey::of($taskId->toString()), 'proposal')),
+                    $tenantId,
+                    $taskId,
+                    $draft->commandType(),
+                    $draft->amount(),
+                    $draft->transactionDate(),
+                    $primaryAccountId,
+                    $secondaryAccountId,
+                    $draft->description(),
+                    $draft->evidenceReference(),
+                    null,
+                    $actor,
+                    ProposalProducerType::Human,
+                    new \DateTimeImmutable,
+                );
+                $this->proposalRepository->record($proposal);
+
+                return $this->applyTransition($task, static fn (Task $t): Task => $t->moveToReview(), $actor);
+            });
+        } catch (QueryException $e) {
+            if (! $this->isProposalAccountReferenceViolation($e)) {
+                throw $e;
+            }
+
+            $accountId = str_contains($e->getMessage(), 'proposals_tenant_id_primary_account_id_foreign')
+                ? $primaryAccountId
+                : $secondaryAccountId;
+
+            throw RejectedAccountReferenceException::forUnresolvedAccount($accountId);
+        }
+    }
+
+    /**
+     * The edit/supersede correction flow (TSK-014): supersedes
+     * `$supersedesTaskId` (must currently be `NeedsReview`) and
+     * submits its replacement, atomically. Superseding the original
+     * and creating the correction are one transaction — if the
+     * correction submission is rejected (a bad Account reference, or
+     * a conflicting retried Idempotency Key), the supersede itself
+     * rolls back too, leaving the original Task in `NeedsReview`
+     * exactly as it was.
+     *
+     * The replacement Task is created through {@see submit()} itself
+     * (with `$supersedesTaskId` threaded through to
+     * {@see Task::receive()}), so it carries the identical atomicity,
+     * idempotency, and concurrent-first-submission race handling any
+     * other submission gets — no separate code path is invented here.
+     *
+     * @throws InvalidTaskStateTransitionException if
+     *                                             `$supersedesTaskId` is not currently `NeedsReview`.
+     * @throws TaskAlreadyTransitionedException if a concurrent request
+     *                                          already transitioned `$supersedesTaskId` first.
+     */
+    public function supersedeAndSubmitCorrection(
+        TenantId $tenantId,
+        TaskId $supersedesTaskId,
+        ActorReference $actor,
+        ?string $reason,
+        IdempotencyKey $idempotencyKey,
+        CommandType $commandType,
+        Money $amount,
+        \DateTimeImmutable $transactionDate,
+        AccountId $primaryAccountId,
+        AccountId $secondaryAccountId,
+        string $description,
+        ?EvidenceReference $evidenceReference,
+    ): Task {
+        return $this->connection->transaction(function () use (
+            $tenantId, $supersedesTaskId, $actor, $reason, $idempotencyKey, $commandType, $amount,
+            $transactionDate, $primaryAccountId, $secondaryAccountId, $description, $evidenceReference,
+        ): Task {
+            $original = $this->taskRepository->getById($tenantId, $supersedesTaskId);
+            $this->applyTransition($original, static fn (Task $t): Task => $t->supersede(), $actor, $reason);
+
+            return $this->submit(
+                $tenantId, $actor, $idempotencyKey, $commandType, $amount, $transactionDate,
+                $primaryAccountId, $secondaryAccountId, $description, $evidenceReference, $supersedesTaskId,
+            );
+        });
     }
 
     /**

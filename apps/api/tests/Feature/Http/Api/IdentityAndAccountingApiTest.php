@@ -42,6 +42,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         'owner_equity_transactions',
         'task_transitions',
         'proposals',
+        'task_drafts',
         'tasks',
         'reconciliation_completion_snapshots',
         'reconciliation_reopenings',
@@ -933,6 +934,111 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         $rejectResponse->assertStatus(200);
         $rejectResponse->assertJsonPath('state', 'Rejected');
+    }
+
+    /**
+     * TSK-013 (WTS-001 v3.0.0): omitting both Account references defers
+     * the decision to `NeedsInformation`; supplying them later via
+     * `provide-information` completes the Task into `NeedsReview` with
+     * a real Proposal, reachable end to end over HTTP.
+     */
+    public function test_a_task_can_defer_the_account_decision_and_later_provide_information_over_http(): void
+    {
+        $this->registerAndReturnCredentials('workspace-defer@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Cash', 'Asset');
+
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '30.00',
+            'transaction_date' => '2026-09-16',
+            'description' => 'Not sure which account yet',
+        ], ['Idempotency-Key' => 'task-key-defer-0001']);
+
+        $submitResponse->assertStatus(201);
+        $submitResponse->assertJsonPath('state', 'NeedsInformation');
+        $taskId = $submitResponse->json('id');
+
+        $showResponse = $this->getJson('/api/v1/tasks/'.$taskId);
+        $showResponse->assertStatus(200);
+        $showResponse->assertJsonPath('proposal', null);
+        $showResponse->assertJsonPath('draft.command_type', 'Expense');
+        $showResponse->assertJsonPath('draft.amount', '30.00');
+
+        $provideResponse = $this->postJson('/api/v1/tasks/'.$taskId.'/provide-information', [
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+        ]);
+
+        $provideResponse->assertStatus(200);
+        $provideResponse->assertJsonPath('state', 'NeedsReview');
+        $provideResponse->assertJsonPath('proposal.primary_account_id', $expenseAccountId);
+
+        $approveResponse = $this->postJson('/api/v1/tasks/'.$taskId.'/approve');
+        $approveResponse->assertStatus(200);
+        $approveResponse->assertJsonPath('state', 'Completed');
+    }
+
+    public function test_submitting_a_task_with_exactly_one_account_reference_is_rejected(): void
+    {
+        $this->registerAndReturnCredentials('workspace-defer-invalid@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '30.00',
+            'transaction_date' => '2026-09-16',
+            'primary_account_id' => $expenseAccountId,
+            'description' => 'Only one account supplied',
+        ], ['Idempotency-Key' => 'task-key-defer-invalid-0001']);
+
+        $submitResponse->assertStatus(422);
+    }
+
+    /**
+     * TSK-014 (WTS-001 v3.0.0): a Task under review can be edited by
+     * superseding it and submitting a correction, reachable end to end
+     * over HTTP. The correction carries the opaque `supersedes_task_id`
+     * link, and the original is left `Superseded`.
+     */
+    public function test_a_task_under_review_can_be_edited_via_supersede_over_http(): void
+    {
+        $this->registerAndReturnCredentials('workspace-supersede@example.my');
+        $expenseAccountId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $cashAccountId = $this->createAccount('1000', 'Cash', 'Asset');
+        $savingsAccountId = $this->createAccount('1010', 'Savings', 'Asset');
+
+        $submitResponse = $this->postJson('/api/v1/tasks', [
+            'command_type' => 'Expense',
+            'amount' => '40.00',
+            'transaction_date' => '2026-09-16',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $cashAccountId,
+            'description' => 'Wrong payment account',
+        ], ['Idempotency-Key' => 'task-key-supersede-0001']);
+        $originalTaskId = $submitResponse->json('id');
+
+        $supersedeResponse = $this->postJson('/api/v1/tasks/'.$originalTaskId.'/supersede', [
+            'command_type' => 'Expense',
+            'amount' => '40.00',
+            'transaction_date' => '2026-09-16',
+            'primary_account_id' => $expenseAccountId,
+            'secondary_account_id' => $savingsAccountId,
+            'description' => 'Corrected payment account',
+            'reason' => 'Paid from savings, not cash.',
+        ], ['Idempotency-Key' => 'task-key-supersede-correction-0001']);
+
+        $supersedeResponse->assertStatus(201);
+        $supersedeResponse->assertJsonPath('state', 'NeedsReview');
+        $supersedeResponse->assertJsonPath('supersedes_task_id', $originalTaskId);
+        $correctionTaskId = $supersedeResponse->json('id');
+
+        $originalShowResponse = $this->getJson('/api/v1/tasks/'.$originalTaskId);
+        $originalShowResponse->assertJsonPath('state', 'Superseded');
+
+        $approveResponse = $this->postJson('/api/v1/tasks/'.$correctionTaskId.'/approve');
+        $approveResponse->assertStatus(200);
+        $approveResponse->assertJsonPath('state', 'Completed');
     }
 
     public function test_a_tenants_tasks_are_never_visible_to_another_tenant(): void

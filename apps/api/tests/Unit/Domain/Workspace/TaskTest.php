@@ -85,6 +85,35 @@ final class TaskTest extends TestCase
         $this->assertSame(TaskState::Superseded, $task->state());
     }
 
+    public function test_a_task_created_without_supersedes_task_id_carries_none(): void
+    {
+        $this->assertNull($this->received()->supersedesTaskId());
+    }
+
+    public function test_a_correction_task_carries_the_opaque_supersedes_task_id_it_was_created_with(): void
+    {
+        $supersedesTaskId = TaskId::of('task-0000');
+        $task = Task::receive(TaskId::of('task-0001'), TenantId::of('tenant-0001'), new \DateTimeImmutable('2026-09-08'), $supersedesTaskId);
+
+        $this->assertNotNull($task->supersedesTaskId());
+        $this->assertTrue($task->supersedesTaskId()->equals($supersedesTaskId));
+    }
+
+    public function test_supersedes_task_id_survives_every_transition(): void
+    {
+        $supersedesTaskId = TaskId::of('task-0000');
+        $completedAt = new \DateTimeImmutable('2026-09-08 10:00:00');
+        $task = Task::receive(TaskId::of('task-0001'), TenantId::of('tenant-0001'), new \DateTimeImmutable('2026-09-08'), $supersedesTaskId)
+            ->startProcessing()
+            ->moveToReview()
+            ->approve()
+            ->startExecuting()
+            ->complete(JournalId::of('journal-0001'), $completedAt);
+
+        $this->assertNotNull($task->supersedesTaskId());
+        $this->assertTrue($task->supersedesTaskId()->equals($supersedesTaskId));
+    }
+
     /**
      * @return list<array{0: string}>
      */

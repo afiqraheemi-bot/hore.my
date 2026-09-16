@@ -39,11 +39,18 @@ final class Task
         private readonly ?\DateTimeImmutable $completedAt,
         private readonly ?JournalId $resultJournalId,
         private readonly ?string $failureReason,
+        private readonly ?TaskId $supersedesTaskId,
     ) {}
 
-    public static function receive(TaskId $id, TenantId $tenantId, \DateTimeImmutable $createdAt): self
+    /**
+     * `$supersedesTaskId` (TSK-014) names the Task this one corrects,
+     * when it is created as a replacement for one just superseded via
+     * {@see TaskService::supersedeAndSubmitCorrection()}. `null` for
+     * every ordinary, non-correction submission.
+     */
+    public static function receive(TaskId $id, TenantId $tenantId, \DateTimeImmutable $createdAt, ?TaskId $supersedesTaskId = null): self
     {
-        return new self($id, $tenantId, TaskState::Received, $createdAt, null, null, null);
+        return new self($id, $tenantId, TaskState::Received, $createdAt, null, null, null, $supersedesTaskId);
     }
 
     public static function reconstitute(
@@ -54,8 +61,9 @@ final class Task
         ?\DateTimeImmutable $completedAt,
         ?JournalId $resultJournalId,
         ?string $failureReason,
+        ?TaskId $supersedesTaskId = null,
     ): self {
-        return new self($id, $tenantId, $state, $createdAt, $completedAt, $resultJournalId, $failureReason);
+        return new self($id, $tenantId, $state, $createdAt, $completedAt, $resultJournalId, $failureReason, $supersedesTaskId);
     }
 
     /**
@@ -134,7 +142,7 @@ final class Task
     {
         $this->assertState(TaskState::Executing, 'complete');
 
-        return new self($this->id, $this->tenantId, TaskState::Completed, $this->createdAt, $completedAt, $resultJournalId, null);
+        return new self($this->id, $this->tenantId, TaskState::Completed, $this->createdAt, $completedAt, $resultJournalId, null, $this->supersedesTaskId);
     }
 
     /**
@@ -145,7 +153,7 @@ final class Task
     {
         $this->assertState(TaskState::Executing, 'fail');
 
-        return new self($this->id, $this->tenantId, TaskState::Failed, $this->createdAt, null, null, $reason);
+        return new self($this->id, $this->tenantId, TaskState::Failed, $this->createdAt, null, null, $reason, $this->supersedesTaskId);
     }
 
     /**
@@ -224,6 +232,11 @@ final class Task
         return $this->failureReason;
     }
 
+    public function supersedesTaskId(): ?TaskId
+    {
+        return $this->supersedesTaskId;
+    }
+
     public function equals(self $other): bool
     {
         return $this->id->equals($other->id);
@@ -242,6 +255,6 @@ final class Task
 
     private function with(TaskState $state): self
     {
-        return new self($this->id, $this->tenantId, $state, $this->createdAt, $this->completedAt, $this->resultJournalId, $this->failureReason);
+        return new self($this->id, $this->tenantId, $state, $this->createdAt, $this->completedAt, $this->resultJournalId, $this->failureReason, $this->supersedesTaskId);
     }
 }

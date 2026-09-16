@@ -120,6 +120,7 @@ const amount = ref('')
 const transactionDate = ref(new Date().toISOString().slice(0, 10))
 const primaryAccountId = ref('')
 const secondaryAccountId = ref('')
+const deferAccounts = ref(false)
 const description = ref('')
 const evidenceFile = ref<File | null>(null)
 const submitting = ref(false)
@@ -172,6 +173,7 @@ function selectType(type: TaskType) {
   activeType.value = type
   primaryAccountId.value = ''
   secondaryAccountId.value = ''
+  deferAccounts.value = false
   submitError.value = null
   expanded.value = true
 }
@@ -204,8 +206,12 @@ async function onSubmit() {
         command_type: activeType.value.commandType,
         amount: amount.value,
         transaction_date: transactionDate.value,
-        primary_account_id: primaryAccountId.value,
-        secondary_account_id: secondaryAccountId.value,
+        ...(deferAccounts.value
+          ? {}
+          : {
+              primary_account_id: primaryAccountId.value,
+              secondary_account_id: secondaryAccountId.value,
+            }),
         description: description.value,
         ...(evidenceReference ? { evidence_reference: evidenceReference } : {}),
       },
@@ -215,6 +221,7 @@ async function onSubmit() {
     description.value = ''
     primaryAccountId.value = ''
     secondaryAccountId.value = ''
+    deferAccounts.value = false
     evidenceFile.value = null
     expanded.value = false
     await loadTasks()
@@ -287,22 +294,45 @@ onMounted(async () => {
           v-if="expanded"
           class="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2"
         >
-          <AppField :label="activeType.primaryAccountLabel">
-            <AppSelect
-              v-model="primaryAccountId"
-              :options="primaryAccountOptions"
-              placeholder="Select an account"
-              required
-            />
-          </AppField>
-          <AppField :label="activeType.secondaryAccountLabel">
-            <AppSelect
-              v-model="secondaryAccountId"
-              :options="secondaryAccountOptions"
-              placeholder="Select an account"
-              required
-            />
-          </AppField>
+          <template v-if="!deferAccounts">
+            <AppField :label="activeType.primaryAccountLabel">
+              <AppSelect
+                v-model="primaryAccountId"
+                :options="primaryAccountOptions"
+                placeholder="Select an account"
+                required
+              />
+            </AppField>
+            <AppField :label="activeType.secondaryAccountLabel">
+              <AppSelect
+                v-model="secondaryAccountId"
+                :options="secondaryAccountOptions"
+                placeholder="Select an account"
+                required
+              />
+            </AppField>
+            <div class="sm:col-span-2">
+              <button
+                type="button"
+                class="text-xs font-medium text-ink-tertiary underline hover:text-ink"
+                @click="deferAccounts = true"
+              >
+                Not sure which accounts yet? Decide later.
+              </button>
+            </div>
+          </template>
+          <div v-else class="sm:col-span-2">
+            <p class="text-sm text-ink-secondary">
+              No accounts chosen yet — this will wait for you to decide.
+            </p>
+            <button
+              type="button"
+              class="mt-1 text-xs font-medium text-ink-tertiary underline hover:text-ink"
+              @click="deferAccounts = false"
+            >
+              Choose accounts now
+            </button>
+          </div>
           <div class="sm:col-span-2">
             <AppField label="Description">
               <AppInput v-model="description" placeholder="What was this for?" required />

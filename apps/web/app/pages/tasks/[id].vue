@@ -8,12 +8,19 @@
  * (WTS-000 §5) — today, every Proposal is human-authored already, but
  * the confirmation step is not skipped for that reason.
  */
-definePageMeta({ middleware: 'auth' })
+// `key` forces a full remount on navigation between two instances of
+// this same dynamic route (e.g. `supersede()` below navigating from
+// the superseded Task's own page to its correction's) — otherwise Vue
+// Router reuses the existing component instance, `taskId` (captured
+// once from the route below) would go stale, and the page would keep
+// showing the *original* Task's data under the *new* URL.
+definePageMeta({ middleware: 'auth', key: (route) => route.fullPath })
 
 interface Account {
   id: string
   account_code: string
   account_name: string
+  account_type: string
 }
 
 interface Proposal {
@@ -27,6 +34,14 @@ interface Proposal {
   evidence_reference: string | null
   confidence: number | null
   producer_type: string
+}
+
+interface Draft {
+  command_type: string
+  amount: string
+  transaction_date: string
+  description: string
+  evidence_reference: string | null
 }
 
 interface Transition {
@@ -44,8 +59,58 @@ interface TaskDetail {
   completed_at: string | null
   result_journal_id: string | null
   failure_reason: string | null
+  supersedes_task_id: string | null
   proposal: Proposal | null
+  draft: Draft | null
   transitions: Transition[]
+}
+
+interface AccountRule {
+  primaryLabel: string
+  primaryTypes: string[]
+  secondaryLabel: string
+  secondaryTypes: string[]
+}
+
+/**
+ * Mirrors `index.vue`'s own `types` list exactly — the same
+ * primary/secondary Account-type rule per Command type, reused here
+ * for both the `NeedsInformation` completion form and the
+ * `NeedsReview` edit/supersede form, so an Account picker never
+ * offers a structurally wrong Account regardless of which flow
+ * reaches it.
+ */
+const accountRules: Record<string, AccountRule> = {
+  Expense: {
+    primaryLabel: 'Expense account',
+    primaryTypes: ['Expense'],
+    secondaryLabel: 'Paid from',
+    secondaryTypes: ['Asset'],
+  },
+  Income: {
+    primaryLabel: 'Income account',
+    primaryTypes: ['Revenue'],
+    secondaryLabel: 'Deposited to',
+    secondaryTypes: ['Asset'],
+  },
+  Transfer: {
+    primaryLabel: 'From account',
+    primaryTypes: ['Asset', 'Liability'],
+    secondaryLabel: 'To account',
+    secondaryTypes: ['Asset', 'Liability'],
+  },
+  CapitalContribution: {
+    primaryLabel: 'Cash account',
+    primaryTypes: ['Asset'],
+    secondaryLabel: 'Equity account',
+    secondaryTypes: ['Equity'],
+  },
+  OwnerDrawing: {
+    primaryLabel: 'Cash account',
+    primaryTypes: ['Asset'],
+    secondaryLabel: 'Equity account',
+    secondaryTypes: ['Equity'],
+  },
 }
 
 const stateTone: Record<string, 'neutral' | 'success' | 'danger' | 'warning' | 'accent'> = {
@@ -85,11 +150,32 @@ const showRejectReason = ref(false)
 const showCancelReason = ref(false)
 const reason = ref('')
 
+const provideInfoPrimaryAccountId = ref('')
+const provideInfoSecondaryAccountId = ref('')
+
+const showEditForm = ref(false)
+const editAmount = ref('')
+const editDate = ref('')
+const editDescription = ref('')
+const editPrimaryAccountId = ref('')
+const editSecondaryAccountId = ref('')
+const editReason = ref('')
+
 const cancellableStates = ['Received', 'Processing', 'NeedsInformation', 'NeedsReview']
 
 function accountLabel(id: string): string {
   const account = accounts.value.find((a) => a.id === id)
   return account ? `${account.account_code} — ${account.account_name}` : id.slice(0, 8)
+}
+
+function accountOptions(types: string[]): { value: string; label: string }[] {
+  return accounts.value
+    .filter((a) => types.includes(a.account_type))
+    .map((a) => ({ value: a.id, label: `${a.account_code} — ${a.account_name}` }))
+}
+
+function ruleFor(commandType: string): AccountRule {
+  return accountRules[commandType] ?? accountRules.Expense!
 }
 
 async function load() {
@@ -170,6 +256,64 @@ async function cancel() {
   }
 }
 
+async function provideInformation() {
+  actionError.value = null
+  acting.value = true
+  try {
+    task.value = await request<TaskDetail>(`/api/v1/tasks/${taskId}/provide-information`, {
+      method: 'POST',
+      body: {
+        primary_account_id: provideInfoPrimaryAccountId.value,
+        secondary_account_id: provideInfoSecondaryAccountId.value,
+      },
+    })
+  } catch {
+    actionError.value = 'Could not complete this Task — check the accounts you chose.'
+  } finally {
+    acting.value = false
+  }
+}
+
+function startEdit() {
+  if (!task.value?.proposal) return
+
+  editAmount.value = task.value.proposal.amount
+  editDate.value = task.value.proposal.transaction_date
+  editDescription.value = task.value.proposal.description
+  editPrimaryAccountId.value = task.value.proposal.primary_account_id
+  editSecondaryAccountId.value = task.value.proposal.secondary_account_id
+  editReason.value = ''
+  actionError.value = null
+  showEditForm.value = true
+}
+
+async function supersede() {
+  if (!task.value?.proposal) return
+
+  actionError.value = null
+  acting.value = true
+  try {
+    const correction = await request<TaskDetail>(`/api/v1/tasks/${taskId}/supersede`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: {
+        command_type: task.value.proposal.command_type,
+        amount: editAmount.value,
+        transaction_date: editDate.value,
+        primary_account_id: editPrimaryAccountId.value,
+        secondary_account_id: editSecondaryAccountId.value,
+        description: editDescription.value,
+        ...(editReason.value ? { reason: editReason.value } : {}),
+      },
+    })
+    await navigateTo(`/tasks/${correction.id}`)
+  } catch {
+    actionError.value = 'Could not save this correction — check the amount and accounts.'
+  } finally {
+    acting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -199,6 +343,69 @@ onMounted(load)
           </div>
           <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
         </div>
+        <p v-if="task.supersedes_task_id" class="mt-3 text-sm text-ink-tertiary">
+          Correction of
+          <NuxtLink :to="`/tasks/${task.supersedes_task_id}`" class="text-accent underline">
+            {{ task.supersedes_task_id.slice(0, 8) }}
+          </NuxtLink>
+        </p>
+      </AppCard>
+
+      <AppCard v-if="task.state === 'NeedsInformation' && task.draft">
+        <h2 class="mb-1 text-sm font-semibold text-ink">Needs more information</h2>
+        <p class="mb-3 text-sm text-ink-tertiary">
+          This was saved without choosing accounts yet. Pick both to send it for review.
+        </p>
+        <dl class="mb-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt class="text-ink-tertiary">Type</dt>
+            <dd class="text-ink">
+              {{ commandTypeLabel[task.draft.command_type] ?? task.draft.command_type }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-ink-tertiary">Amount</dt>
+            <dd class="text-lg font-semibold text-ink">RM{{ task.draft.amount }}</dd>
+          </div>
+          <div>
+            <dt class="text-ink-tertiary">Date</dt>
+            <dd class="text-ink">{{ task.draft.transaction_date }}</dd>
+          </div>
+          <div class="sm:col-span-2">
+            <dt class="text-ink-tertiary">Description</dt>
+            <dd class="text-ink">{{ task.draft.description }}</dd>
+          </div>
+        </dl>
+
+        <p v-if="actionError" class="mb-3 text-sm text-danger">{{ actionError }}</p>
+
+        <form class="grid grid-cols-1 gap-4 sm:grid-cols-2" @submit.prevent="provideInformation">
+          <AppField :label="ruleFor(task.draft.command_type).primaryLabel">
+            <AppSelect
+              v-model="provideInfoPrimaryAccountId"
+              :options="accountOptions(ruleFor(task.draft.command_type).primaryTypes)"
+              placeholder="Select an account"
+              required
+            />
+          </AppField>
+          <AppField :label="ruleFor(task.draft.command_type).secondaryLabel">
+            <AppSelect
+              v-model="provideInfoSecondaryAccountId"
+              :options="accountOptions(ruleFor(task.draft.command_type).secondaryTypes)"
+              placeholder="Select an account"
+              required
+            />
+          </AppField>
+          <div class="sm:col-span-2">
+            <AppButton type="submit" variant="primary" :disabled="acting">
+              {{ acting ? 'Submitting…' : 'Submit for review' }}
+            </AppButton>
+          </div>
+        </form>
+      </AppCard>
+
+      <AppCard v-if="task.state === 'Superseded'">
+        <p class="text-sm font-medium text-ink">This Task was superseded by a correction.</p>
       </AppCard>
 
       <AppCard v-if="task.proposal">
@@ -283,10 +490,14 @@ onMounted(load)
 
         <p v-if="actionError" class="mb-3 text-sm text-danger">{{ actionError }}</p>
 
-        <div v-if="!showRejectReason && !showCancelReason" class="flex flex-wrap gap-2">
+        <div
+          v-if="!showRejectReason && !showCancelReason && !showEditForm"
+          class="flex flex-wrap gap-2"
+        >
           <AppButton variant="primary" :disabled="acting" @click="approve">
             <AppIcon name="check" :size="15" /> {{ acting ? 'Confirming…' : 'Confirm and post' }}
           </AppButton>
+          <AppButton variant="ghost" :disabled="acting" @click="startEdit">Edit</AppButton>
           <AppButton variant="ghost" :disabled="acting" @click="showRejectReason = true">
             Reject
           </AppButton>
@@ -305,6 +516,65 @@ onMounted(load)
             >Back</AppButton
           >
         </div>
+
+        <form
+          v-if="showEditForm && task.proposal"
+          class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+          @submit.prevent="supersede"
+        >
+          <AppField label="Amount">
+            <input
+              v-model="editAmount"
+              aria-label="Corrected amount"
+              required
+              inputmode="decimal"
+              class="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink"
+            />
+          </AppField>
+          <AppField label="Date">
+            <input
+              v-model="editDate"
+              aria-label="Corrected transaction date"
+              type="date"
+              required
+              class="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink"
+            />
+          </AppField>
+          <AppField :label="ruleFor(task.proposal.command_type).primaryLabel">
+            <AppSelect
+              v-model="editPrimaryAccountId"
+              :options="accountOptions(ruleFor(task.proposal.command_type).primaryTypes)"
+              placeholder="Select an account"
+              required
+            />
+          </AppField>
+          <AppField :label="ruleFor(task.proposal.command_type).secondaryLabel">
+            <AppSelect
+              v-model="editSecondaryAccountId"
+              :options="accountOptions(ruleFor(task.proposal.command_type).secondaryTypes)"
+              placeholder="Select an account"
+              required
+            />
+          </AppField>
+          <div class="sm:col-span-2">
+            <AppField label="Description">
+              <AppInput v-model="editDescription" required />
+            </AppField>
+          </div>
+          <div class="sm:col-span-2">
+            <AppField label="Reason for editing (optional)">
+              <AppInput v-model="editReason" placeholder="Wrong account, typo, etc." />
+            </AppField>
+          </div>
+          <div class="flex gap-2 sm:col-span-2">
+            <AppButton type="submit" variant="primary" :disabled="acting">
+              {{ acting ? 'Saving…' : 'Save correction' }}
+            </AppButton>
+            <AppButton variant="ghost" :disabled="acting" @click="showEditForm = false">
+              Cancel
+            </AppButton>
+          </div>
+        </form>
       </AppCard>
 
       <AppCard v-if="cancellableStates.includes(task.state) && task.state !== 'NeedsReview'">

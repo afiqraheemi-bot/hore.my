@@ -36,6 +36,7 @@ final class TaskRepository
         $this->connection->table(self::TABLE)->insert([
             'tenant_id' => $task->tenantId()->toString(),
             'task_id' => $task->id()->toString(),
+            'supersedes_task_id' => $task->supersedesTaskId()?->toString(),
             'state' => $task->state()->name,
             'result_journal_id' => $task->resultJournalId()?->toString(),
             'failure_reason' => $task->failureReason(),
@@ -117,7 +118,7 @@ final class TaskRepository
 
     public function findById(TenantId $tenantId, TaskId $id): ?Task
     {
-        /** @var object{tenant_id: string, task_id: string, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}|null $row */
+        /** @var object{tenant_id: string, task_id: string, supersedes_task_id: string|null, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}|null $row */
         $row = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('task_id', $id->toString())
@@ -158,7 +159,7 @@ final class TaskRepository
      */
     public function getByIdForUpdate(TenantId $tenantId, TaskId $id): Task
     {
-        /** @var object{tenant_id: string, task_id: string, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}|null $row */
+        /** @var object{tenant_id: string, task_id: string, supersedes_task_id: string|null, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}|null $row */
         $row = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->where('task_id', $id->toString())
@@ -173,7 +174,7 @@ final class TaskRepository
      */
     public function findByTenant(TenantId $tenantId): array
     {
-        /** @var list<object{tenant_id: string, task_id: string, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}> $rows */
+        /** @var list<object{tenant_id: string, task_id: string, supersedes_task_id: string|null, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}> $rows */
         $rows = $this->connection->table(self::TABLE)
             ->where('tenant_id', $tenantId->toString())
             ->orderByDesc('created_at')
@@ -210,7 +211,7 @@ final class TaskRepository
     }
 
     /**
-     * @param  object{tenant_id: string, task_id: string, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}  $row
+     * @param  object{tenant_id: string, task_id: string, supersedes_task_id: string|null, state: string, result_journal_id: string|null, failure_reason: string|null, completed_at: string|null, created_at: string}  $row
      */
     private static function fromPersisted(object $row): Task
     {
@@ -222,6 +223,7 @@ final class TaskRepository
             $row->completed_at === null ? null : new \DateTimeImmutable($row->completed_at),
             $row->result_journal_id === null ? null : JournalId::of($row->result_journal_id),
             $row->failure_reason,
+            $row->supersedes_task_id === null ? null : TaskId::of($row->supersedes_task_id),
         );
     }
 

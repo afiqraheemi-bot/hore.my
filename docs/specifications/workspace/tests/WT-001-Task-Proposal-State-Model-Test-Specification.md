@@ -1,15 +1,15 @@
 # WT-001: Task & Proposal State Model Test Specification
 
 - Status: Active
-- Version: 1.2.0
-- Effective date: 2026-09-09
+- Version: 1.3.0
+- Effective date: 2026-09-16
 - Owner: Workspace and Task (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner
 - Related: [WTS-000](../WTS-000.md), [WTS-001](../WTS-001-Task-Proposal-State-Model.md); [ADR-0009](../../../adr/0009-workspace-task-module-boundary.md); [AETS-007](../../accounting/AETS-007-Posting-Command.md), [AETS-010](../../accounting/AETS-010-Audit-Trail-Evidence-Linkage.md), [AETS-014](../../accounting/AETS-014-Period-Management.md)
 
 ## 1. Purpose
 
-This document is the normative Workspace & Task test specification proving compliance with [WTS-001: Task & Proposal State Model](../WTS-001-Task-Proposal-State-Model.md) — the counterpart WTS-001 §8 itself calls for, mirroring the `ATS-NNN` pattern already established for the AETS series. Every test defined here is identified by a stable ID (`TSK-T001`–`TSK-T058`) and traced to the `TSK-NNN` invariant(s) it proves (§5).
+This document is the normative Workspace & Task test specification proving compliance with [WTS-001: Task & Proposal State Model](../WTS-001-Task-Proposal-State-Model.md) — the counterpart WTS-001 §8 itself calls for, mirroring the `ATS-NNN` pattern already established for the AETS series. Every test defined here is identified by a stable ID (`TSK-T001`–`TSK-T082`) and traced to the `TSK-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md), this document was authored *after* WTS-001's implementation, not before it — every test ID below traces to a concrete, already-passing test (Unit, Integration, HTTP, or E2E), not a future target. The traceability matrix in §5 can be verified directly against the current test suite.
 
@@ -17,12 +17,14 @@ Like [ATS-010](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md)
 
 ### 2.1 In scope
 
-- A complete traceability matrix from `TSK-001`–`TSK-012` to test IDs.
+- A complete traceability matrix from `TSK-001`–`TSK-014` to test IDs.
 - Concrete test cases across five levels: pure state-machine unit tests (`Tests\Unit\Domain\Workspace\TaskTest`), real-PostgreSQL service-level integration tests including genuine two-process concurrency and fault-injection (`Tests\Feature\Domain\Workspace\TaskServiceIntegrationTest`), isolated real-PostgreSQL migration tests (`Tests\Feature\Infrastructure\Workspace\WorkspaceTablesMigrationTest`), real-HTTP tests (`Tests\Feature\Http\Api\IdentityAndAccountingApiTest`), and real-browser end-to-end tests (`apps/web/tests/e2e/*.spec.ts`).
+- As of v1.3.0: the `NeedsInformation`/`Superseded` application flows §2.2 previously excluded for having no code — TSK-013's deferred-Account-decision path (`saveForLaterCompletion()`, `provideInformation()`) and TSK-014's edit/supersede correction path (`supersedeAndSubmitCorrection()`) — are now real, orchestrated, and tested at every level below.
 
 ### 2.2 Out of scope
 
-- Anything WTS-001 itself does not define: Proposal editing, `NeedsInformation`/`Superseded` application flows, AI-produced Proposal intake (deferred to the future WTS-004) — no test below claims coverage of any of these.
+- Anything WTS-001 itself does not define: Proposal editing *other than* via TSK-014's supersede/correction mechanism, AI-produced Proposal intake (deferred to the future WTS-004) — no test below claims coverage of either.
+- A correction mechanism for a `Completed` Task (TSK-008's own second clause) — still unbuilt; see §7's updated discussion of the distinction from TSK-014.
 - Accounting Core's own invariants (Money, Journal, Posting Command, Period Management) — already fully specified by the `ATS-NNN` series under `docs/specifications/accounting/tests/`. Tests here that exercise Accounting Core (e.g. `TSK-T020`, `TSK-T042`) do so only to prove the Workspace/Task boundary, never to re-prove Accounting Core's own behavior.
 
 ## 3. Authority
@@ -52,6 +54,8 @@ This document is subordinate to [WTS-001](../WTS-001-Task-Proposal-State-Model.m
 | TSK-010 | TSK-T027, TSK-T028, TSK-T037, TSK-T038 |
 | TSK-011 | TSK-T019, TSK-T029, TSK-T030, TSK-T037, TSK-T038 |
 | TSK-012 | TSK-T031, TSK-T032, TSK-T033, TSK-T035, TSK-T036 |
+| TSK-013 | TSK-T062–TSK-T070, TSK-T075, TSK-T076, TSK-T078, TSK-T079, TSK-T081 |
+| TSK-014 | TSK-T059–TSK-T061, TSK-T071–TSK-T074, TSK-T077, TSK-T080, TSK-T082 |
 
 ## 6. Test cases
 
@@ -78,6 +82,9 @@ Pure state-machine tests, no I/O. Proves `TSK-002` and `TSK-009` at the entity l
 | TSK-T015 | `test_reject_only_valid_from_needs_review` | `reject()` is rejected from any state but `NeedsReview`. |
 | TSK-T016 | `test_transitions_never_mutate_the_original_instance` | Every transition method returns a new instance; the original is untouched. |
 | TSK-T017 | `test_is_terminal_matches_wts_001_section_6_tsk_009` (11 data sets) | `TaskState::isTerminal()` agrees with WTS-001 §6 for every one of the 11 states (`TSK-009`). |
+| TSK-T059 | `test_a_task_created_without_supersedes_task_id_carries_none` | An ordinarily-received Task's `supersedesTaskId()` is `null`. |
+| TSK-T060 | `test_a_correction_task_carries_the_opaque_supersedes_task_id_it_was_created_with` | `Task::receive()`'s optional `$supersedesTaskId` argument is carried verbatim (`TSK-014`). |
+| TSK-T061 | `test_supersedes_task_id_survives_every_transition` | `supersedesTaskId()` is unchanged across a full `Received → … → Completed` traversal — proving it is immutable state, not accidentally dropped by any one transition's `with()`/`complete()`/`fail()` constructor path. |
 
 ### 6.2 Integration — `Tests\Feature\Domain\Workspace\TaskServiceIntegrationTest`
 
@@ -106,6 +113,19 @@ Real PostgreSQL, real Accounting Core (`ExpenseRecordingService` et al.), no stu
 | TSK-T036 | `test_two_concurrent_approve_attempts_on_a_stranded_approved_task_never_both_succeed` | Genuine two-process race on `approve()` from a stranded `Approved` Task: exactly one completes, the other is safely rejected. 5 consecutive clean runs required. |
 | TSK-T037 | `test_two_concurrent_first_submissions_with_matching_payload_both_resolve_to_the_same_task` | Genuine two-process race on `submit()` itself, under a *never-before-used* key, identical payload: both processes resolve to the identical Task; exactly one `tasks` row. |
 | TSK-T038 | `test_two_concurrent_first_submissions_with_conflicting_payload_reject_the_loser` | The same race with a materially different payload: exactly one process succeeds, the other observes `TaskSubmissionConflictException` — never a raw, unhandled constraint-violation error. |
+| TSK-T062 | `test_save_for_later_completion_lands_the_task_in_needs_information_with_a_draft_and_no_proposal` | `saveForLaterCompletion()` lands the Task in `NeedsInformation` with exactly one `task_drafts` row and zero `proposals` rows (`TSK-013`). |
+| TSK-T063 | `test_save_for_later_completion_is_idempotent_under_the_same_idempotency_key` | A retry under the same key, unchanged Draft payload, returns the identical Task — no second row. |
+| TSK-T064 | `test_save_for_later_completion_with_a_conflicting_payload_under_the_same_key_is_rejected` | A retry under the same key with a materially different amount raises `TaskSubmissionConflictException`. |
+| TSK-T065 | `test_submit_reused_on_a_key_already_deferred_is_rejected_as_conflicting` | `submit()` retried under a key already used for a deferred submission is rejected as conflicting rather than crashing on the absent Proposal — the defensive guard `replayOrConflict()` added for exactly this case. |
+| TSK-T066 | `test_a_forced_task_draft_insert_failure_rolls_back_the_entire_save_for_later_transaction` | A forced, non-duplicate constraint failure on the `task_drafts` insert rolls back the entire `saveForLaterCompletion()` sequence — mirrors `TSK-T027` for the deferred path (`TSK-010` extended). |
+| TSK-T067 | `test_provide_information_completes_the_deferred_task_into_needs_review_with_a_real_proposal` | `provideInformation()` performs `NeedsInformation → Processing → NeedsReview` atomically, producing a real Proposal from the retained Draft fields plus the newly supplied Accounts; the completed Proposal approves and posts exactly like any other. |
+| TSK-T068 | `test_provide_information_is_rejected_from_a_non_needs_information_state` | `provideInformation()` on a Task already `NeedsReview` raises `InvalidTaskStateTransitionException`. |
+| TSK-T069 | `test_provide_information_with_an_unresolved_account_reference_leaves_the_task_in_needs_information` | An unresolved Account reference at completion time rolls back the whole attempt — the Task remains `NeedsInformation`, its Draft intact, zero Proposal created. |
+| TSK-T070 | `test_two_concurrent_provide_information_attempts_never_both_succeed` | Genuine two-process race on `provideInformation()` from the same `NeedsInformation` Task: exactly one reaches `NeedsReview`, the other is safely rejected (`TSK-004` extended, pessimistic lock per `TSK-T033`'s own reasoning). |
+| TSK-T071 | `test_supersede_and_submit_correction_supersedes_the_original_and_creates_a_linked_replacement` | `supersedeAndSubmitCorrection()` moves the original to `Superseded` and creates a `NeedsReview` replacement carrying the original's id as `supersedesTaskId` (`TSK-014`); the replacement approves and posts exactly like any other Task. |
+| TSK-T072 | `test_supersede_and_submit_correction_is_rejected_from_a_non_needs_review_state` | Attempting to supersede an already-`Rejected` Task raises `InvalidTaskStateTransitionException`. |
+| TSK-T073 | `test_supersede_and_submit_correction_with_a_rejected_account_reference_leaves_the_original_in_needs_review` | A correction rejected for an unresolved Account reference rolls back the supersede too — the original Task is found exactly as it was, still `NeedsReview`, with no replacement row created. |
+| TSK-T074 | `test_two_concurrent_supersede_attempts_on_the_same_task_never_both_succeed` | Genuine two-process race on `supersedeAndSubmitCorrection()` against the same `NeedsReview` Task: exactly one correction succeeds, the other is safely rejected (`TSK-004` extended to the optimistic CAS `supersede()` itself uses). |
 
 ### 6.3 HTTP — `Tests\Feature\Http\Api\IdentityAndAccountingApiTest`
 
@@ -118,6 +138,9 @@ Real HTTP requests (Sanctum SPA session, real CSRF handshake) against a real Pos
 | TSK-T041 | `test_a_tenants_tasks_are_never_visible_to_another_tenant` | A second Tenant's session receives `404` on both `GET /tasks/{id}` and `POST /tasks/{id}/approve` for the first Tenant's Task; the underlying row count is unaffected. |
 | TSK-T042 | `test_a_task_approved_after_its_period_closed_fails_without_posting` | A Task submitted while its financial date is open, then approved *after* the Period closes through that date, transitions to `Failed` with a reason — never posts (`TSK-005`). |
 | TSK-T058 | `test_every_protected_route_rejects_an_unauthenticated_request` | Every non-public `/api/v1` route is structurally required to carry `auth:sanctum`; every tenant-owned route must also carry `tenant.resolved`; an unauthenticated Task approval request receives `401` before Task lookup or transition. |
+| TSK-T075 | `test_a_task_can_defer_the_account_decision_and_later_provide_information_over_http` | `POST /tasks` without either Account reference lands `NeedsInformation`; `GET /tasks/{id}` shows the retained Draft and a `null` Proposal; `POST /tasks/{id}/provide-information` completes it to `NeedsReview` with a real Proposal, reachable end to end over HTTP. |
+| TSK-T076 | `test_submitting_a_task_with_exactly_one_account_reference_is_rejected` | Supplying only one of the two Account references is a `422` — `StoreTaskRequest`'s both-or-neither rule. |
+| TSK-T077 | `test_a_task_under_review_can_be_edited_via_supersede_over_http` | `POST /tasks/{id}/supersede` supersedes the original and returns the linked `201` correction; the original's own `GET` afterward shows `Superseded`. |
 
 ### 6.4 End-to-end — `apps/web/tests/e2e/*.spec.ts`
 
@@ -130,6 +153,8 @@ Real Chromium browser (Playwright) against the live Docker Compose stack — the
 | TSK-T045 | `workspace-task.spec.ts` : *rejecting a Task requires a reason and moves it to Rejected* | The Reject flow requires a reason and reaches `Rejected`. |
 | TSK-T046 | `workspace-task.spec.ts` : *a Task submitted under one tenant never appears in another tenant's Work Queue* | A second, freshly registered Tenant's Work Queue is empty. |
 | TSK-T047 | `workspace-task.spec.ts` : *a Task is not directly loadable by URL from a different, authenticated tenant* | Direct-object proof: navigating straight to Tenant A's Task URL while authenticated as Tenant B shows "Failed to load this Task," never the Proposal detail — a materially stronger proof than TSK-T046 alone, since a listing omission would not by itself catch a route that forgot its own tenant check. |
+| TSK-T081 | `needs-information-and-supersede.spec.ts` : *deferring the account decision lands the task in NeedsInformation, and providing it later completes the task* | The Home composer's "Not sure which accounts yet? Decide later." affordance submits without Accounts; Task Detail's "Needs more information" panel completes it to `NeedsReview`, which then confirms and posts. |
+| TSK-T082 | `needs-information-and-supersede.spec.ts` : *editing a task under review supersedes it and navigates to the linked correction* | Task Detail's "Edit" action on a `NeedsReview` Task pre-fills a correction form; saving it supersedes the original (visiting its own URL afterward shows `Superseded`) and navigates to the new, linked correction. |
 
 ### 6.5 Migration — `Tests\Feature\Infrastructure\Workspace\WorkspaceTablesMigrationTest`
 
@@ -147,21 +172,26 @@ Each case executes the real production migrations inside a dedicated PostgreSQL 
 | TSK-T055 | `test_proposal_cannot_reference_another_tenants_account` | The composite foreign keys reject cross-Tenant Account correlation. |
 | TSK-T056 | `test_task_cannot_reference_another_tenants_journal` | The composite foreign key rejects a cross-Tenant result Journal. |
 | TSK-T057 | `test_transition_sequence_is_generated_always_and_cannot_be_caller_supplied` | PostgreSQL rejects a caller-supplied audit ordering value; sequence ownership remains exclusively with the database. |
+| TSK-T078 | `test_task_draft_rejects_a_noncanonical_command_type` | PostgreSQL rejects a Task Draft command outside the closed `CommandType` set. |
+| TSK-T079 | `test_task_draft_cannot_reference_another_tenants_task` | The composite foreign key rejects cross-Tenant Task correlation for `task_drafts`. |
+| TSK-T080 | `test_task_cannot_supersede_another_tenants_task` | The composite, self-referential `(tenant_id, supersedes_task_id)` foreign key rejects cross-Tenant correlation — the same tenant-isolation discipline every other Workspace foreign key already enforces (`TSK-007`). |
 
 ## 7. TSK-006 and TSK-008 — partially deferred
 
 **TSK-006** ("An AI-originated Proposal may only be written by an authorized AI Orchestration producer into a `NeedsReview`-or-earlier Task state. Only an authenticated human actor's explicit action may perform `NeedsReview`→`Approved`.") is only half testable today. The second half is now isolated by `TSK-T058`: every non-public API route is structurally protected by Sanctum, every tenant-owned route also requires Tenant resolution, and an unauthenticated approval request receives `401` before Task lookup or transition. The first half — that AI cannot write a Proposal — has no code path to test at all: no AI Orchestration producer exists yet (WTS-000 §5, WTS-004 deferred). Mirrors [ATS-010 §7](../../accounting/tests/ATS-010-Audit-Trail-Test-Specification.md#7-aud-007--not-independently-testable)'s own treatment of `AUD-007` exactly: enforcement belongs to whichever future component actually produces AI Proposals, not to a test asserting the absence of code that does not exist.
 
-**TSK-008**'s first clause ("A `Completed` Task is never re-opened") is proven at the state-machine level (`TSK-T013`: `complete()` itself is unreachable from `Completed`) but not independently proven that *no other code path* could mutate a Completed Task's row — `TaskRepository`'s own public surface (`record`, `updateState`, `transitionIfInState`, `recordTransition`) offers no state-specific guard of its own, relying entirely on `TaskService`'s own transition methods, which are proven. The second clause ("a correction ... creates a new Task referencing the original") is unbuilt: no code path exists to create a correction Task, so no test can prove it without inventing behavior WTS-001 does not yet define at the implementation level. Both gaps are explicitly the same governance discipline this repository's own AETS series requires (flag ambiguity or missing implementation, never invent a test for behavior that does not exist) — a future WTS document defining the correction-Task mechanism must extend this specification with real test IDs at that time.
+**TSK-008**'s first clause ("A `Completed` Task is never re-opened") is proven at the state-machine level (`TSK-T013`: `complete()` itself is unreachable from `Completed`) but not independently proven that *no other code path* could mutate a Completed Task's row — `TaskRepository`'s own public surface (`record`, `updateState`, `transitionIfInState`, `recordTransition`) offers no state-specific guard of its own, relying entirely on `TaskService`'s own transition methods, which are proven. The second clause ("a correction ... creates a new Task referencing the original") is **still unbuilt for the `Completed` case specifically** — no code path exists to correct an already-`Completed` Task, so no test can prove that case without inventing behavior WTS-001 does not yet define at the implementation level.
+
+**Not the same gap as TSK-014.** WTS-001 v3.0.0 (2026-09-16) built the analogous correction-linking mechanism for a *different* transition — `NeedsReview → Superseded`, which §4 had always listed as valid but which, until v3.0.0, no code ever reached (see `TSK-T059`–`TSK-T061`, `TSK-T071`–`TSK-T074`, `TSK-T077`, `TSK-T080`, `TSK-T082`). TSK-014 does not correct a `Completed` Task and does not close TSK-008's own second clause — a Task already `Completed` remains just as un-correctable today as before. Both gaps continue to reflect this repository's own governance discipline (flag ambiguity or missing implementation, never invent a test for behavior that does not exist) — a future WTS document defining a `Completed`-Task correction mechanism must extend this specification with real test IDs at that time.
 
 ## 8. Deferred Items
 
-- Proposal editing, `NeedsInformation`/`Superseded` application flows — no code exists (Discovery Report's own explicitly deferred scope); no test is specified.
 - AI-produced Proposal intake — deferred to the future WTS-004; see §7 for TSK-006.
-- Correction-Task linking mechanism for TSK-008's second clause — see §7.
+- A correction mechanism for an already-`Completed` Task (TSK-008's own second clause) — see §7's distinction from TSK-014, which closes only the `NeedsReview` case.
 
 ## Changelog
 
+- **1.3.0 (2026-09-16):** Adds `TSK-T059`–`TSK-T082`, proving WTS-001 v3.0.0's two new invariants across all five test levels: `TSK-013` (the deferred-Account-decision `NeedsInformation` path — Task Draft creation, idempotency and conflict detection, completion into a real Proposal, atomicity under fault injection, and a genuine two-process concurrency proof) and `TSK-014` (the edit/supersede correction path — linked replacement creation, atomicity of the supersede-and-submit pair under an Account-reference rejection, cross-Tenant isolation of the new self-referential foreign key, and a genuine two-process concurrency proof). §7 and §8 updated to distinguish TSK-014's now-closed `NeedsReview` gap from TSK-008's own still-open `Completed`-case gap. TSK-001–TSK-012's own test coverage is unchanged.
 - **1.2.0 (2026-09-13):** Adds `TSK-T058`, converting the authenticated-human half of `TSK-006` from implicit coverage into an explicit route-structure and unauthenticated-approval test. AI-producer authorization remains deferred until that producer exists.
 - **1.1.0 (2026-09-09):** Adds `TSK-T048`–`TSK-T057`, closing the recorded Workspace migration-assurance gap with isolated real-PostgreSQL proof of forward/reverse execution, canonical enum constraints, tenant-safe composite foreign keys, and database-only audit sequence assignment.
 - **1.0.0 (2026-09-09):** Initial version, authored after WTS-001 v2.0.0's implementation (Phase D "Non-AI Workflow Shell" plus its subsequent reliability closure), per WTS-001 §8's own requirement and a second post-implementation QA pass's explicit request to close this governance gap.

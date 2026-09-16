@@ -15,6 +15,7 @@ use App\Domain\Accounting\Posting\PostingCommandTransactionalExecutor;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Workspace\CommandType;
 use App\Domain\Workspace\Exception\InvalidTaskStateTransitionException;
+use App\Domain\Workspace\Exception\ProposalNotFoundException;
 use App\Domain\Workspace\Exception\TaskAlreadyTransitionedException;
 use App\Domain\Workspace\Exception\TaskNotFoundException;
 use App\Domain\Workspace\Exception\TaskSubmissionConflictException;
@@ -657,6 +658,33 @@ final class TaskServiceIntegrationTest extends TestCase
         $this->assertSame(TaskState::NeedsReview, $reloaded->state(), 'The state UPDATE must have rolled back alongside the failed audit insert.');
     }
 
+    /**
+     * TSK-010 extended to {@see TaskService::saveForLaterCompletion()}:
+     * a forced, non-duplicate constraint failure on the `task_drafts`
+     * insert (the last write in that sequence, mirroring
+     * {@see test_a_forced_proposal_insert_failure_rolls_back_the_entire_submit_transaction()})
+     * must roll back the `tasks` row and its `task_transitions` rows
+     * too.
+     */
+    public function test_a_forced_task_draft_insert_failure_rolls_back_the_entire_save_for_later_transaction(): void
+    {
+        DB::connection('pgsql')->statement('ALTER TABLE task_drafts ADD CONSTRAINT force_test_draft_failure CHECK (1 = 0)');
+
+        try {
+            try {
+                $this->saveExpenseForLater();
+                $this->fail('Expected the forced CHECK constraint to reject the Task Draft insert.');
+            } catch (QueryException) {
+                // Expected: a non-duplicate constraint violation, propagated unmodified.
+            }
+        } finally {
+            DB::connection('pgsql')->statement('ALTER TABLE task_drafts DROP CONSTRAINT force_test_draft_failure');
+        }
+
+        $this->assertSame(0, DB::connection('pgsql')->table('tasks')->where('tenant_id', $this->tenantA->toString())->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('task_transitions')->where('tenant_id', $this->tenantA->toString())->count());
+    }
+
     public function test_submit_with_a_conflicting_payload_under_the_same_idempotency_key_is_rejected(): void
     {
         $key = IdempotencyKey::of('idem-conflict-0001');
@@ -982,6 +1010,285 @@ final class TaskServiceIntegrationTest extends TestCase
     }
 
     /**
+     * TSK-013: an explicitly deferred submission lands directly in
+     * `NeedsInformation` with its payload retained in a Task Draft and
+     * zero Proposal ever created.
+     */
+    public function test_save_for_later_completion_lands_the_task_in_needs_information_with_a_draft_and_no_proposal(): void
+    {
+        $task = $this->saveExpenseForLater();
+
+        $this->assertSame(TaskState::NeedsInformation, $task->state());
+        $this->assertSame(1, DB::connection('pgsql')->table('task_drafts')->where('task_id', $task->id()->toString())->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('proposals')->where('task_id', $task->id()->toString())->count());
+    }
+
+    public function test_save_for_later_completion_is_idempotent_under_the_same_idempotency_key(): void
+    {
+        $key = IdempotencyKey::of('idem-defer-0001');
+        $actor = ActorReference::of('user-0001');
+
+        $first = $this->taskService->saveForLaterCompletion(
+            $this->tenantA, $actor, $key, CommandType::Expense, Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'), 'Office supplies', null,
+        );
+        $second = $this->taskService->saveForLaterCompletion(
+            $this->tenantA, $actor, $key, CommandType::Expense, Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'), 'Office supplies', null,
+        );
+
+        $this->assertTrue($first->id()->equals($second->id()));
+        $this->assertSame(1, DB::connection('pgsql')->table('task_drafts')->count());
+    }
+
+    public function test_save_for_later_completion_with_a_conflicting_payload_under_the_same_key_is_rejected(): void
+    {
+        $key = IdempotencyKey::of('idem-defer-conflict-0001');
+        $actor = ActorReference::of('user-0001');
+
+        $this->taskService->saveForLaterCompletion(
+            $this->tenantA, $actor, $key, CommandType::Expense, Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'), 'Office supplies', null,
+        );
+
+        $this->expectException(TaskSubmissionConflictException::class);
+        $this->taskService->saveForLaterCompletion(
+            $this->tenantA, $actor, $key, CommandType::Expense, Money::fromDecimalString('999.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'), 'Office supplies', null,
+        );
+    }
+
+    /**
+     * A `submit()` retried under an Idempotency Key already used for a
+     * deferred submission has no Proposal to compare against — TSK-013's
+     * own defensive guard rejects it as a conflict rather than crashing
+     * on {@see ProposalNotFoundException}.
+     */
+    public function test_submit_reused_on_a_key_already_deferred_is_rejected_as_conflicting(): void
+    {
+        $key = IdempotencyKey::of('idem-defer-then-submit-0001');
+        $actor = ActorReference::of('user-0001');
+
+        $this->taskService->saveForLaterCompletion(
+            $this->tenantA, $actor, $key, CommandType::Expense, Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'), 'Office supplies', null,
+        );
+
+        $this->expectException(TaskSubmissionConflictException::class);
+        $this->taskService->submit(
+            $this->tenantA, $actor, $key, CommandType::Expense, Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'), AccountId::of('account-office-supplies'), AccountId::of('account-cash'), 'Office supplies', null,
+        );
+    }
+
+    /**
+     * TSK-013's completion path: supplying both Account references
+     * performs `NeedsInformation -> Processing -> NeedsReview` in one
+     * call, producing a real Proposal built from the retained Draft
+     * fields plus the newly supplied Accounts.
+     */
+    public function test_provide_information_completes_the_deferred_task_into_needs_review_with_a_real_proposal(): void
+    {
+        $task = $this->saveExpenseForLater();
+
+        $completed = $this->taskService->provideInformation(
+            $this->tenantA, $task->id(), ActorReference::of('user-0001'),
+            AccountId::of('account-office-supplies'), AccountId::of('account-cash'),
+        );
+
+        $this->assertSame(TaskState::NeedsReview, $completed->state());
+
+        $proposal = $this->proposalRepository->getCurrentForTask($this->tenantA, $task->id());
+        $this->assertSame(CommandType::Expense, $proposal->commandType());
+        $this->assertTrue($proposal->amount()->equals(Money::fromDecimalString('50.00', $this->myr)));
+        $this->assertSame('account-office-supplies', $proposal->primaryAccountId()->toString());
+        $this->assertSame('account-cash', $proposal->secondaryAccountId()->toString());
+
+        // Full round trip: the completed Proposal approves and posts
+        // exactly like any other, proving TSK-013's completion path is
+        // not a second, weaker code path into NeedsReview.
+        $posted = $this->taskService->approve($this->tenantA, $task->id(), ActorReference::of('user-approver'));
+        $this->assertSame(TaskState::Completed, $posted->state());
+        $this->assertNotNull($posted->resultJournalId());
+    }
+
+    public function test_provide_information_is_rejected_from_a_non_needs_information_state(): void
+    {
+        $task = $this->submitExpense();
+
+        $this->expectException(InvalidTaskStateTransitionException::class);
+        $this->taskService->provideInformation(
+            $this->tenantA, $task->id(), ActorReference::of('user-0001'),
+            AccountId::of('account-office-supplies'), AccountId::of('account-cash'),
+        );
+    }
+
+    /**
+     * An unresolved Account reference at completion time must leave
+     * the Task exactly as it was — still `NeedsInformation`, its Draft
+     * intact — never partially advanced to `Processing` with no
+     * Proposal to show for it.
+     */
+    public function test_provide_information_with_an_unresolved_account_reference_leaves_the_task_in_needs_information(): void
+    {
+        $task = $this->saveExpenseForLater();
+
+        try {
+            $this->taskService->provideInformation(
+                $this->tenantA, $task->id(), ActorReference::of('user-0001'),
+                AccountId::of('account-does-not-exist'), AccountId::of('account-cash'),
+            );
+            $this->fail('Expected an unresolved Account reference to be rejected.');
+        } catch (RejectedAccountReferenceException) {
+            // Expected.
+        }
+
+        $reloaded = $this->taskRepository->getById($this->tenantA, $task->id());
+        $this->assertSame(TaskState::NeedsInformation, $reloaded->state());
+        $this->assertSame(1, DB::connection('pgsql')->table('task_drafts')->where('task_id', $task->id()->toString())->count());
+        $this->assertSame(0, DB::connection('pgsql')->table('proposals')->where('task_id', $task->id()->toString())->count());
+    }
+
+    /**
+     * The TSK-004 concurrency guard extended to {@see TaskService::provideInformation()}:
+     * two concurrent completions of the same deferred Task must never
+     * both succeed.
+     */
+    public function test_two_concurrent_provide_information_attempts_never_both_succeed(): void
+    {
+        $task = $this->saveExpenseForLater();
+
+        [$resultAData, $resultBData] = $this->raceTwoWorkers(
+            base_path('tests/bin/concurrent_task_provide_information_worker.php'),
+            [$this->tenantA->toString(), $task->id()->toString(), 'account-office-supplies', 'account-cash'],
+        );
+
+        $outcomes = ['A' => $resultAData, 'B' => $resultBData];
+        $succeeded = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['state'] ?? null) === 'NeedsReview'));
+        $rejected = array_keys(array_filter($outcomes, static fn (array $r): bool => in_array(
+            $r['exception'] ?? null,
+            [TaskAlreadyTransitionedException::class, InvalidTaskStateTransitionException::class],
+            true,
+        )));
+
+        $this->assertCount(1, $succeeded, 'Exactly one of the two concurrent provideInformation() attempts must complete. Got: '.json_encode($outcomes));
+        $this->assertCount(1, $rejected, 'The other concurrent attempt must be safely rejected. Got: '.json_encode($outcomes));
+        $this->assertSame(1, DB::connection('pgsql')->table('proposals')->where('task_id', $task->id()->toString())->count());
+    }
+
+    /**
+     * TSK-014: superseding a Task under review and submitting its
+     * replacement is one atomic operation, and the replacement carries
+     * an immutable, opaque link back to the original.
+     */
+    public function test_supersede_and_submit_correction_supersedes_the_original_and_creates_a_linked_replacement(): void
+    {
+        $original = $this->submitExpense();
+
+        $correction = $this->taskService->supersedeAndSubmitCorrection(
+            $this->tenantA,
+            $original->id(),
+            ActorReference::of('user-0001'),
+            'Wrong account chosen.',
+            IdempotencyKey::of('idem-correction-0001'),
+            CommandType::Expense,
+            Money::fromDecimalString('60.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'),
+            AccountId::of('account-office-supplies'),
+            AccountId::of('account-savings'),
+            'Corrected office supplies',
+            null,
+        );
+
+        $this->assertSame(TaskState::NeedsReview, $correction->state());
+        $this->assertNotNull($correction->supersedesTaskId());
+        $this->assertTrue($correction->supersedesTaskId()->equals($original->id()));
+
+        $reloadedOriginal = $this->taskRepository->getById($this->tenantA, $original->id());
+        $this->assertSame(TaskState::Superseded, $reloadedOriginal->state());
+
+        $proposal = $this->proposalRepository->getCurrentForTask($this->tenantA, $correction->id());
+        $this->assertSame('account-savings', $proposal->secondaryAccountId()->toString());
+
+        // The correction Task is a fully ordinary Task from here on —
+        // it approves and posts exactly like any other.
+        $posted = $this->taskService->approve($this->tenantA, $correction->id(), ActorReference::of('user-approver'));
+        $this->assertSame(TaskState::Completed, $posted->state());
+    }
+
+    public function test_supersede_and_submit_correction_is_rejected_from_a_non_needs_review_state(): void
+    {
+        $task = $this->submitExpense();
+        $this->taskService->reject($this->tenantA, $task->id(), ActorReference::of('user-0001'), 'Wrong.');
+
+        $this->expectException(InvalidTaskStateTransitionException::class);
+        $this->taskService->supersedeAndSubmitCorrection(
+            $this->tenantA, $task->id(), ActorReference::of('user-0001'), null,
+            IdempotencyKey::of('idem-correction-invalid-0001'), CommandType::Expense,
+            Money::fromDecimalString('60.00', $this->myr), new \DateTimeImmutable('2026-09-16'),
+            AccountId::of('account-office-supplies'), AccountId::of('account-cash'), 'Correction', null,
+        );
+    }
+
+    /**
+     * Atomicity proof: a correction rejected for an unresolved Account
+     * reference must roll back the supersede too — the original Task
+     * must be found exactly as it was, still `NeedsReview`, never
+     * `Superseded` with no living replacement.
+     */
+    public function test_supersede_and_submit_correction_with_a_rejected_account_reference_leaves_the_original_in_needs_review(): void
+    {
+        $original = $this->submitExpense();
+
+        try {
+            $this->taskService->supersedeAndSubmitCorrection(
+                $this->tenantA, $original->id(), ActorReference::of('user-0001'), 'Fixing account.',
+                IdempotencyKey::of('idem-correction-bad-account-0001'), CommandType::Expense,
+                Money::fromDecimalString('60.00', $this->myr), new \DateTimeImmutable('2026-09-16'),
+                AccountId::of('account-does-not-exist'), AccountId::of('account-cash'), 'Correction', null,
+            );
+            $this->fail('Expected an unresolved Account reference to be rejected.');
+        } catch (RejectedAccountReferenceException) {
+            // Expected.
+        }
+
+        $reloaded = $this->taskRepository->getById($this->tenantA, $original->id());
+        $this->assertSame(TaskState::NeedsReview, $reloaded->state());
+        $this->assertSame(0, DB::connection('pgsql')->table('tasks')->where('supersedes_task_id', $original->id()->toString())->count());
+    }
+
+    /**
+     * The TSK-004 concurrency guard extended to
+     * {@see TaskService::supersedeAndSubmitCorrection()}: two
+     * concurrent correction attempts against the same `NeedsReview`
+     * Task must never both succeed.
+     */
+    public function test_two_concurrent_supersede_attempts_on_the_same_task_never_both_succeed(): void
+    {
+        $original = $this->submitExpense();
+
+        [$resultAData, $resultBData] = $this->raceTwoWorkers(
+            base_path('tests/bin/concurrent_task_supersede_worker.php'),
+            [$this->tenantA->toString(), $original->id()->toString(), 'account-office-supplies', 'account-cash'],
+        );
+
+        $outcomes = ['A' => $resultAData, 'B' => $resultBData];
+        $succeeded = array_keys(array_filter($outcomes, static fn (array $r): bool => ($r['state'] ?? null) === 'NeedsReview'));
+        $rejected = array_keys(array_filter($outcomes, static fn (array $r): bool => in_array(
+            $r['exception'] ?? null,
+            [TaskAlreadyTransitionedException::class, InvalidTaskStateTransitionException::class],
+            true,
+        )));
+
+        $this->assertCount(1, $succeeded, 'Exactly one of the two concurrent supersede attempts must complete. Got: '.json_encode($outcomes));
+        $this->assertCount(1, $rejected, 'The other concurrent attempt must be safely rejected. Got: '.json_encode($outcomes));
+
+        $reloadedOriginal = $this->taskRepository->getById($this->tenantA, $original->id());
+        $this->assertSame(TaskState::Superseded, $reloadedOriginal->state());
+        $this->assertSame(1, DB::connection('pgsql')->table('tasks')->where('supersedes_task_id', $original->id()->toString())->count());
+    }
+
+    /**
      * Shared two-process race harness for the concurrency tests above:
      * starts `$workerScript` twice with `[...$args, <actor>, <readyFile>,
      * <goFile>, <resultFile>]`, releases both simultaneously, and
@@ -1065,6 +1372,20 @@ final class TaskServiceIntegrationTest extends TestCase
         );
     }
 
+    private function saveExpenseForLater(): Task
+    {
+        return $this->taskService->saveForLaterCompletion(
+            $this->tenantA,
+            ActorReference::of('user-0001'),
+            IdempotencyKey::of('idem-'.uniqid('', true)),
+            CommandType::Expense,
+            Money::fromDecimalString('50.00', $this->myr),
+            new \DateTimeImmutable('2026-09-16'),
+            'Office supplies',
+            null,
+        );
+    }
+
     private function insertAccount(
         TenantId $tenantId,
         string $accountId,
@@ -1129,11 +1450,13 @@ final class TaskServiceIntegrationTest extends TestCase
             'database/migrations/2026_09_08_020000_create_proposals_table.php',
             'database/migrations/2026_09_08_030000_create_task_transitions_table.php',
             'database/migrations/2026_09_08_035000_add_transition_sequence_to_task_transitions_table.php',
+            'database/migrations/2026_09_16_040000_create_task_drafts_table.php',
+            'database/migrations/2026_09_16_050000_add_supersedes_task_id_to_tasks_table.php',
         ] as $path) {
             Artisan::call('migrate', ['--database' => 'pgsql', '--path' => $path, '--realpath' => false, '--force' => true]);
         }
 
-        if (! Schema::connection('pgsql')->hasTable('tasks') || ! Schema::connection('pgsql')->hasTable('proposals') || ! Schema::connection('pgsql')->hasTable('task_transitions')) {
+        if (! Schema::connection('pgsql')->hasTable('tasks') || ! Schema::connection('pgsql')->hasTable('proposals') || ! Schema::connection('pgsql')->hasTable('task_transitions') || ! Schema::connection('pgsql')->hasTable('task_drafts')) {
             self::$skipReason = 'The tasks/proposals/task_transitions tables did not migrate successfully.';
 
             return;

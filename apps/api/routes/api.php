@@ -97,6 +97,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/tasks/{taskId}/resume', [TaskController::class, 'resume']);
             Route::post('/tasks/{taskId}/reject', [TaskController::class, 'reject']);
             Route::post('/tasks/{taskId}/cancel', [TaskController::class, 'cancel']);
+            Route::post('/tasks/{taskId}/provide-information', [TaskController::class, 'provideInformation']);
+            Route::post('/tasks/{taskId}/supersede', [TaskController::class, 'supersede']);
 
             Route::prefix('reports')->group(function (): void {
                 Route::get('/trial-balance', [ReportingController::class, 'trialBalance']);

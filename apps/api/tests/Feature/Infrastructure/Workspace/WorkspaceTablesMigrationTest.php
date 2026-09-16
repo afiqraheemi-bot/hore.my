@@ -50,6 +50,8 @@ final class WorkspaceTablesMigrationTest extends TestCase
             'database/migrations/2026_09_08_020000_create_proposals_table.php',
             'database/migrations/2026_09_08_030000_create_task_transitions_table.php',
             'database/migrations/2026_09_08_035000_add_transition_sequence_to_task_transitions_table.php',
+            'database/migrations/2026_09_16_040000_create_task_drafts_table.php',
+            'database/migrations/2026_09_16_050000_add_supersedes_task_id_to_tasks_table.php',
         ] as $path) {
             $migration = require base_path($path);
             if (! is_callable([$migration, 'up']) || ! is_callable([$migration, 'down'])) {
@@ -75,13 +77,16 @@ final class WorkspaceTablesMigrationTest extends TestCase
     public function test_workspace_migrations_apply_and_reverse_cleanly(): void
     {
         $this->assertTrue(Schema::connection('pgsql')->hasColumns('tasks', [
-            'tenant_id', 'task_id', 'state', 'result_journal_id', 'failure_reason', 'completed_at',
+            'tenant_id', 'task_id', 'supersedes_task_id', 'state', 'result_journal_id', 'failure_reason', 'completed_at',
         ]));
         $this->assertTrue(Schema::connection('pgsql')->hasColumns('proposals', [
             'tenant_id', 'proposal_id', 'task_id', 'command_type', 'amount', 'producer_type',
         ]));
         $this->assertTrue(Schema::connection('pgsql')->hasColumns('task_transitions', [
             'transition_id', 'tenant_id', 'task_id', 'from_state', 'to_state', 'transition_sequence',
+        ]));
+        $this->assertTrue(Schema::connection('pgsql')->hasColumns('task_drafts', [
+            'tenant_id', 'task_id', 'command_type', 'amount', 'currency', 'transaction_date', 'description', 'evidence_reference',
         ]));
 
         foreach (array_reverse($this->rollbacks) as $rollback) {
@@ -90,7 +95,62 @@ final class WorkspaceTablesMigrationTest extends TestCase
 
         $this->assertFalse(Schema::connection('pgsql')->hasTable('task_transitions'));
         $this->assertFalse(Schema::connection('pgsql')->hasTable('proposals'));
+        $this->assertFalse(Schema::connection('pgsql')->hasTable('task_drafts'));
+        $this->assertFalse(Schema::connection('pgsql')->hasColumn('tasks', 'supersedes_task_id'));
         $this->assertFalse(Schema::connection('pgsql')->hasTable('tasks'));
+    }
+
+    public function test_task_draft_rejects_a_noncanonical_command_type(): void
+    {
+        $this->seedTaskAndAccounts();
+        $this->insertTask('tenant-a', 'task-draft-owner', 'NeedsInformation');
+
+        $this->expectException(QueryException::class);
+        DB::connection('pgsql')->table('task_drafts')->insert([
+            'tenant_id' => 'tenant-a',
+            'task_id' => 'task-draft-owner',
+            'command_type' => 'NotACommand',
+            'amount' => 100,
+            'currency' => 'MYR',
+            'transaction_date' => '2026-09-16',
+            'description' => 'Migration constraint proof',
+        ]);
+    }
+
+    public function test_task_draft_cannot_reference_another_tenants_task(): void
+    {
+        $this->seedTaskAndAccounts();
+        $this->insertTask('tenant-b', 'task-b', 'NeedsInformation');
+
+        $this->expectException(QueryException::class);
+        DB::connection('pgsql')->table('task_drafts')->insert([
+            'tenant_id' => 'tenant-b',
+            'task_id' => 'task-a',
+            'command_type' => 'Expense',
+            'amount' => 100,
+            'currency' => 'MYR',
+            'transaction_date' => '2026-09-16',
+            'description' => 'Migration constraint proof',
+        ]);
+    }
+
+    /**
+     * TSK-014: `supersedes_task_id` is a composite `(tenant_id,
+     * task_id)` self-reference — the same tenant-isolation discipline
+     * every other Workspace foreign key already enforces.
+     */
+    public function test_task_cannot_supersede_another_tenants_task(): void
+    {
+        $this->insertTask('tenant-a', 'task-a', 'NeedsReview');
+        $this->insertTask('tenant-b', 'task-b', 'NeedsReview');
+
+        $this->expectException(QueryException::class);
+        DB::connection('pgsql')->table('tasks')->insert([
+            'tenant_id' => 'tenant-b',
+            'task_id' => 'task-cross-tenant-supersede',
+            'supersedes_task_id' => 'task-a',
+            'state' => 'NeedsReview',
+        ]);
     }
 
     public function test_task_rejects_a_noncanonical_state(): void

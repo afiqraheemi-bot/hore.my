@@ -77,6 +77,7 @@ trait CleansSharedAccountingTables
         'owner_equity_transactions',
         'task_transitions',
         'proposals',
+        'task_drafts',
         'tasks',
         'journal_lines',
         'journals',

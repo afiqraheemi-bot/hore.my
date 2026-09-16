@@ -10,12 +10,13 @@ use Illuminate\Support\Facades\Schema;
  * A distinct, complementary companion to
  * {@see CleansSharedAccountingTables}. That trait clears *rows*
  * (`DELETE FROM`) between tests that share one long-lived database;
- * this trait drops the specific *tables* ADR-0009 introduced
- * (`task_transitions`, `proposals`, `tasks`) for the small set of test
- * classes that test migration reversibility itself by unconditionally
- * tearing down and rebuilding `journals`/`journal_lines`/`accounts` —
- * and PostgreSQL refuses to drop either while `tasks.result_journal_id`
- * or `proposals`' composite Account foreign keys still reference them.
+ * this trait drops the specific *tables* ADR-0009/WTS-001 introduced
+ * (`task_transitions`, `proposals`, `task_drafts`, `tasks`) for the
+ * small set of test classes that test migration reversibility itself
+ * by unconditionally tearing down and rebuilding
+ * `journals`/`journal_lines`/`accounts` — and PostgreSQL refuses to
+ * drop either while `tasks.result_journal_id` or `proposals`'
+ * composite Account foreign keys still reference them.
  *
  * **Deliberately narrow.** This trait does not attempt to also cover
  * `invoices`/`payments`/`bank_accounts`/`period_closures`/etc. — several
@@ -46,6 +47,7 @@ trait DropsTablesDependentOnJournalsAndAccounts
     private static array $tablesDependentOnJournalsAndAccounts = [
         'task_transitions',
         'proposals',
+        'task_drafts',
         'tasks',
     ];
 

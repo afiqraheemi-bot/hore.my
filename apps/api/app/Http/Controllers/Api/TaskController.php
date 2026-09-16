@@ -25,10 +25,13 @@ use App\Domain\Workspace\TaskService;
 use App\Domain\Workspace\TaskTransition;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Workspace\CancelTaskRequest;
+use App\Http\Requests\Workspace\ProvideTaskInformationRequest;
 use App\Http\Requests\Workspace\RejectTaskRequest;
 use App\Http\Requests\Workspace\StoreTaskRequest;
+use App\Http\Requests\Workspace\SupersedeTaskRequest;
 use App\Http\Support\CurrentTenant;
 use App\Infrastructure\Workspace\ProposalRepository;
+use App\Infrastructure\Workspace\TaskDraftRepository;
 use App\Infrastructure\Workspace\TaskRepository;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +52,7 @@ final class TaskController extends Controller
         private readonly TaskService $taskService,
         private readonly TaskRepository $taskRepository,
         private readonly ProposalRepository $proposalRepository,
+        private readonly TaskDraftRepository $taskDraftRepository,
     ) {}
 
     public function index(CurrentTenant $currentTenant): JsonResponse
@@ -69,11 +73,91 @@ final class TaskController extends Controller
         /** @var User $user */
         $user = $request->user();
         $evidenceReference = $request->string('evidence_reference')->toString();
+        $evidenceReferenceValue = $evidenceReference === '' ? null : EvidenceReference::of($evidenceReference);
 
         try {
-            $task = $this->taskService->submit(
+            if ($request->deferringAccountDecision()) {
+                $task = $this->taskService->saveForLaterCompletion(
+                    $currentTenant->id(),
+                    ActorReference::of($user->id),
+                    IdempotencyKey::of($idempotencyKeyHeader),
+                    CommandType::fromName($request->string('command_type')->toString()),
+                    Money::fromDecimalString($request->string('amount')->toString(), Currency::of('MYR')),
+                    new \DateTimeImmutable($request->string('transaction_date')->toString()),
+                    $request->string('description')->toString(),
+                    $evidenceReferenceValue,
+                );
+            } else {
+                $task = $this->taskService->submit(
+                    $currentTenant->id(),
+                    ActorReference::of($user->id),
+                    IdempotencyKey::of($idempotencyKeyHeader),
+                    CommandType::fromName($request->string('command_type')->toString()),
+                    Money::fromDecimalString($request->string('amount')->toString(), Currency::of('MYR')),
+                    new \DateTimeImmutable($request->string('transaction_date')->toString()),
+                    AccountId::of($request->string('primary_account_id')->toString()),
+                    AccountId::of($request->string('secondary_account_id')->toString()),
+                    $request->string('description')->toString(),
+                    $evidenceReferenceValue,
+                );
+            }
+        } catch (InvalidMoneyAmountException|RejectedAccountReferenceException|TaskSubmissionConflictException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($this->toArray($task, $currentTenant), 201);
+    }
+
+    /**
+     * Completes a Task's deferred Account decision — see
+     * {@see TaskService::provideInformation()}.
+     */
+    public function provideInformation(ProvideTaskInformationRequest $request, CurrentTenant $currentTenant, string $taskId): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        try {
+            $task = $this->taskService->provideInformation(
                 $currentTenant->id(),
+                TaskId::of($taskId),
                 ActorReference::of($user->id),
+                AccountId::of($request->string('primary_account_id')->toString()),
+                AccountId::of($request->string('secondary_account_id')->toString()),
+            );
+        } catch (RejectedAccountReferenceException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (InvalidTaskStateTransitionException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (TaskNotFoundException $e) {
+            return response()->json(['message' => $e->getMessage()], 404);
+        }
+
+        return response()->json($this->toArray($task, $currentTenant, includeDetail: true));
+    }
+
+    /**
+     * The edit/supersede correction flow — see
+     * {@see TaskService::supersedeAndSubmitCorrection()}.
+     */
+    public function supersede(SupersedeTaskRequest $request, CurrentTenant $currentTenant, string $taskId): JsonResponse
+    {
+        $idempotencyKeyHeader = $request->header('Idempotency-Key');
+
+        if (! is_string($idempotencyKeyHeader) || $idempotencyKeyHeader === '') {
+            return response()->json(['message' => 'The Idempotency-Key header is required.'], 422);
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        $evidenceReference = $request->string('evidence_reference')->toString();
+
+        try {
+            $task = $this->taskService->supersedeAndSubmitCorrection(
+                $currentTenant->id(),
+                TaskId::of($taskId),
+                ActorReference::of($user->id),
+                $request->string('reason')->toString() === '' ? null : $request->string('reason')->toString(),
                 IdempotencyKey::of($idempotencyKeyHeader),
                 CommandType::fromName($request->string('command_type')->toString()),
                 Money::fromDecimalString($request->string('amount')->toString(), Currency::of('MYR')),
@@ -85,9 +169,15 @@ final class TaskController extends Controller
             );
         } catch (InvalidMoneyAmountException|RejectedAccountReferenceException|TaskSubmissionConflictException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        } catch (TaskAlreadyTransitionedException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        } catch (InvalidTaskStateTransitionException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (TaskNotFoundException $e) {
+            return response()->json(['message' => $e->getMessage()], 404);
         }
 
-        return response()->json($this->toArray($task, $currentTenant), 201);
+        return response()->json($this->toArray($task, $currentTenant, includeDetail: true), 201);
     }
 
     public function show(CurrentTenant $currentTenant, string $taskId): JsonResponse
@@ -167,6 +257,7 @@ final class TaskController extends Controller
             'completed_at' => $task->completedAt()?->format(\DateTimeInterface::ATOM),
             'result_journal_id' => $task->resultJournalId()?->toString(),
             'failure_reason' => $task->failureReason(),
+            'supersedes_task_id' => $task->supersedesTaskId()?->toString(),
         ];
 
         if (! $includeDetail) {
@@ -179,6 +270,15 @@ final class TaskController extends Controller
         } catch (ProposalNotFoundException) {
             $data['proposal'] = null;
         }
+
+        $draft = $this->taskDraftRepository->findByTask($currentTenant->id(), $task->id());
+        $data['draft'] = $draft === null ? null : [
+            'command_type' => $draft->commandType()->name,
+            'amount' => $draft->amount()->toDecimalString(),
+            'transaction_date' => $draft->transactionDate()->format('Y-m-d'),
+            'description' => $draft->description(),
+            'evidence_reference' => $draft->evidenceReference()?->toString(),
+        ];
 
         $data['transitions'] = array_map(
             fn (TaskTransition $transition): array => [
