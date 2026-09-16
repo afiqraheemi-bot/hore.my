@@ -232,20 +232,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div>
-    <header class="mb-8">
-      <p class="text-sm text-ink-tertiary">
+  <div class="mx-auto max-w-2xl space-y-8">
+    <div class="pt-4 text-center">
+      <h1 class="text-2xl font-semibold tracking-tight text-ink">
         {{ greeting }}<template v-if="user">, {{ user.name.split(' ')[0] }}</template>
-      </p>
-      <h1 class="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-        What would you like to get done today?
       </h1>
-      <p class="mt-2 max-w-2xl text-sm leading-6 text-ink-secondary">
-        Create a Task, review the Proposal, then confirm it before anything posts.
-      </p>
-    </header>
+      <p class="mt-1 text-sm text-ink-tertiary">What would you like to get done today?</p>
+    </div>
 
-    <AppCard :padded="false" class="mb-8 overflow-hidden">
+    <AppCard :padded="false" class="overflow-hidden">
       <div
         class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/60 px-3 py-2.5"
       >
@@ -340,47 +335,51 @@ onMounted(async () => {
       </form>
     </AppCard>
 
-    <div class="mb-3 flex items-center justify-between gap-3">
-      <h2 class="text-sm font-medium text-ink-secondary">Work Queue</h2>
-      <button
-        v-if="!loading && tasks.length > 0"
-        type="button"
-        class="text-xs font-medium text-ink-tertiary hover:text-ink"
-        @click="loadTasks"
-      >
-        Refresh
-      </button>
-    </div>
+    <div>
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 class="text-sm font-medium text-ink-secondary">Work Queue</h2>
+        <button
+          v-if="!loading && tasks.length > 0"
+          type="button"
+          class="text-xs font-medium text-ink-tertiary hover:text-ink"
+          @click="loadTasks"
+        >
+          Refresh
+        </button>
+      </div>
 
-    <p v-if="loading" class="py-6 text-sm text-ink-tertiary">Loading…</p>
-    <p v-else-if="error" class="py-6 text-sm text-danger">{{ error }}</p>
-    <EmptyState
-      v-else-if="tasks.length === 0"
-      title="No Tasks yet"
-      description="Submit one above. It will wait here for your review."
-    />
-    <div v-else class="space-y-2">
-      <NuxtLink
-        v-for="task in tasks"
-        :key="task.id"
-        :to="`/tasks/${task.id}`"
-        class="block rounded-2xl"
-      >
-        <AppCard hoverable>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="min-w-0">
-              <p class="font-mono text-xs text-ink-tertiary">Task {{ task.id.slice(0, 8) }}</p>
-              <p class="mt-1 text-sm text-ink-tertiary">
-                Submitted {{ new Date(task.created_at).toLocaleString() }}
-              </p>
-            </div>
-            <div class="flex items-center gap-2">
-              <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
-              <AppIcon name="chevron-left" :size="15" class="rotate-180 text-ink-tertiary" />
-            </div>
-          </div>
-        </AppCard>
-      </NuxtLink>
+      <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
+      <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
+      <EmptyState
+        v-else-if="tasks.length === 0"
+        title="No Tasks yet"
+        description="Submit one above. It will wait here for your review."
+      />
+      <ul v-else class="space-y-1.5">
+        <li v-for="task in tasks" :key="task.id">
+          <NuxtLink :to="`/tasks/${task.id}`" class="block rounded-2xl">
+            <AppCard :padded="false" hoverable>
+              <div class="flex items-center gap-3 px-4 py-3">
+                <span
+                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
+                >
+                  <AppIcon name="tasks" :size="16" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-ink">
+                    Task {{ task.id.slice(0, 8) }}
+                  </p>
+                  <p class="text-xs text-ink-tertiary">
+                    {{ new Date(task.created_at).toLocaleString() }}
+                  </p>
+                </div>
+                <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
+                <AppIcon name="chevron-left" :size="15" class="rotate-180 text-ink-tertiary" />
+              </div>
+            </AppCard>
+          </NuxtLink>
+        </li>
+      </ul>
     </div>
   </div>
 </template>

@@ -25,6 +25,7 @@ const props = defineProps<{
     | 'x'
     | 'trash'
     | 'check'
+    | 'tasks'
     | 'chevron-down'
     | 'logout'
     | 'download'
@@ -120,6 +121,11 @@ const size = props.size ?? 20
     </template>
     <template v-else-if="name === 'check'">
       <path d="M5 12l5 5L20 7" />
+    </template>
+    <template v-else-if="name === 'tasks'">
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M8 8l1.25 1.25L11.5 7M13.5 8.5H17" />
+      <path d="M8 14l1.25 1.25L11.5 13M13.5 14.5H17" />
     </template>
     <template v-else-if="name === 'logout'">
       <path d="M9 21H5a1 1 0 01-1-1V4a1 1 0 011-1h4" />
