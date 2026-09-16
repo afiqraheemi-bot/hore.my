@@ -17,12 +17,15 @@ use App\Domain\Accounting\Reporting\TrialBalance;
 use App\Domain\Invoicing\Reporting\AgingBucket;
 use App\Domain\Invoicing\Reporting\AgingReport;
 use App\Domain\Invoicing\Reporting\AgingReportLine;
+use App\Domain\Shared\Tenancy\TenantId;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reporting\AsOfDateRequest;
 use App\Http\Requests\Reporting\GeneralLedgerRequest;
 use App\Http\Requests\Reporting\PeriodRequest;
 use App\Http\Support\CsvResponseBuilder;
 use App\Http\Support\CurrentTenant;
+use App\Http\Support\DocumentPartyFormatter;
+use App\Http\Support\DocumentPdfBuilder;
 use App\Http\Support\XlsxResponseBuilder;
 use App\Http\Support\ZipResponseBuilder;
 use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
@@ -31,6 +34,8 @@ use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
 use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
 use App\Infrastructure\Invoicing\Reporting\AgingReportQuery;
+use App\Models\BusinessProfile;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
 
@@ -48,9 +53,21 @@ use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
  * JSON — no new Query-layer code, no new business logic, purely an
  * HTTP-layer presentation choice; both formats are built from the
  * identical `(header, rows)` tuple ({@see buildExport()}), so they can
- * never diverge in content. PDF rendering of a *report* (as opposed to
- * an Invoice/Quotation, see AETS-017) remains its own deferred item —
- * AETS-009 §2.2 explains why.
+ * never diverge in content.
+ *
+ * **`?format=pdf` on {@see profitAndLoss()} and {@see self::balanceSheet()}
+ * only (AETS-009 §21, added 2026-09-17)** returns a formatted,
+ * "loan-ready" statement via {@see DocumentPdfBuilder} instead — the
+ * identical already-computed `AccountBalance`/`Money` figures, never a
+ * new computation (`RPT-017`). PDF rendering remains deferred for
+ * every other report (AETS-009 §2.2 explains why): Trial Balance,
+ * Evidence Index, and Aging share {@see AsOfDateRequest}/{@see PeriodRequest}
+ * with Balance Sheet/Profit & Loss, so `format=pdf` validates but
+ * silently falls back to JSON, exactly like any other unrecognized
+ * format value; General Ledger's own dedicated
+ * {@see GeneralLedgerRequest} does not accept `pdf` at all and rejects
+ * it with a validation error instead — no PDF is produced by either
+ * path.
  *
  * **{@see compliancePack()} (AETS-009 §19, added 2026-09-16)** bundles
  * five of the reports above into one downloadable ZIP of CSVs —
@@ -89,6 +106,11 @@ final class ReportingController extends Controller
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
         );
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->profitAndLossPdf($statement, $currentTenant);
+        }
+
         $format = $this->requestedExportFormat($request);
 
         if ($format !== null) {
@@ -103,6 +125,11 @@ final class ReportingController extends Controller
     public function balanceSheet(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
     {
         $balanceSheet = $this->balanceSheetQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->balanceSheetPdf($balanceSheet, $currentTenant);
+        }
+
         $format = $this->requestedExportFormat($request);
 
         if ($format !== null) {
@@ -201,6 +228,13 @@ final class ReportingController extends Controller
             'balance-sheet.csv' => CsvResponseBuilder::toCsvString(...$this->balanceSheetCsvRows($balanceSheet)),
             'aging-report.csv' => CsvResponseBuilder::toCsvString(...$this->agingReportCsvRows($agingReport)),
             'evidence-index.csv' => CsvResponseBuilder::toCsvString(...$this->evidenceIndexCsvRows($evidenceIndex)),
+            // AETS-009 §21/§19: the identical "loan-ready" statement
+            // format §21 already builds for the standalone PDF
+            // endpoints — a bank or accountant handed this Pack gets a
+            // human-readable statement alongside the five machine-
+            // readable CSVs, not just the latter.
+            'profit-and-loss.pdf' => DocumentPdfBuilder::renderBytes('pdf.financial-statement', $this->profitAndLossPdfData($profitAndLoss, $currentTenant)),
+            'balance-sheet.pdf' => DocumentPdfBuilder::renderBytes('pdf.financial-statement', $this->balanceSheetPdfData($balanceSheet, $currentTenant)),
         ];
 
         return ZipResponseBuilder::build(
@@ -286,6 +320,109 @@ final class ReportingController extends Controller
                 ...array_map(fn (AccountBalance $line): array => ['Liability', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->liabilityLines()),
                 ...array_map(fn (AccountBalance $line): array => ['Equity', ...$this->accountBalanceToCsvRow($line)], $balanceSheet->equityLines()),
                 ['Cumulative Net Income', '(Cumulative Net Income)', '', '', '', $netIncome->amount()->toDecimalString(), $netIncome->direction() === null ? '' : $netIncome->direction()->name],
+            ],
+        ];
+    }
+
+    /**
+     * A plain, uncomputed read of the Tenant's own `accounts` table
+     * (AETS-009 §21) — the only HTTP-layer addition {@see profitAndLossPdf()}/
+     * {@see balanceSheetPdf()} need beyond already-computed report figures,
+     * since {@see AccountBalance} itself carries only an opaque
+     * {@see AccountId}, never a human-readable name.
+     *
+     * @return array<string, string>
+     */
+    private function accountNamesByTenant(TenantId $tenantId): array
+    {
+        /** @var array<string, string> */
+        return DB::connection('pgsql')->table('accounts')
+            ->where('tenant_id', $tenantId->toString())
+            ->pluck('account_name', 'account_id')
+            ->all();
+    }
+
+    /**
+     * @param  list<AccountBalance>  $lines
+     * @param  array<string, string>  $accountNames
+     * @return list<array{name: string, amount: string}>
+     */
+    private function accountBalancePdfLines(array $lines, array $accountNames): array
+    {
+        return array_map(static fn (AccountBalance $line): array => [
+            'name' => $accountNames[$line->accountId()->toString()] ?? $line->accountId()->toString(),
+            'amount' => $line->netBalance()->amount()->toDecimalString(),
+        ], $lines);
+    }
+
+    private function profitAndLossPdf(ProfitAndLossStatement $statement, CurrentTenant $currentTenant): Response
+    {
+        return DocumentPdfBuilder::build(
+            sprintf('profit-and-loss-%s-to-%s.pdf', $statement->periodStart()->format('Y-m-d'), $statement->periodEnd()->format('Y-m-d')),
+            'pdf.financial-statement',
+            $this->profitAndLossPdfData($statement, $currentTenant),
+        );
+    }
+
+    private function balanceSheetPdf(BalanceSheet $balanceSheet, CurrentTenant $currentTenant): Response
+    {
+        return DocumentPdfBuilder::build(
+            sprintf('balance-sheet-%s.pdf', $balanceSheet->asOfDate()->format('Y-m-d')),
+            'pdf.financial-statement',
+            $this->balanceSheetPdfData($balanceSheet, $currentTenant),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function profitAndLossPdfData(ProfitAndLossStatement $statement, CurrentTenant $currentTenant): array
+    {
+        $accountNames = $this->accountNamesByTenant($currentTenant->id());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+
+        return [
+            'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+            'statementTitle' => 'PROFIT & LOSS STATEMENT',
+            'periodLabel' => sprintf('For the period %s to %s', $statement->periodStart()->format('d M Y'), $statement->periodEnd()->format('d M Y')),
+            'currency' => $statement->totalRevenue()->currency()->identifier(),
+            'sections' => [
+                ['label' => 'Revenue', 'lines' => $this->accountBalancePdfLines($statement->revenueLines(), $accountNames), 'subtotal' => $statement->totalRevenue()->toDecimalString()],
+                ['label' => 'Expenses', 'lines' => $this->accountBalancePdfLines($statement->expenseLines(), $accountNames), 'subtotal' => $statement->totalExpense()->toDecimalString()],
+            ],
+            'summaryLines' => [
+                ['label' => $statement->isProfit() ? 'Net Income' : 'Net Loss', 'amount' => $statement->netIncome()->toDecimalString(), 'emphasized' => true],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function balanceSheetPdfData(BalanceSheet $balanceSheet, CurrentTenant $currentTenant): array
+    {
+        $accountNames = $this->accountNamesByTenant($currentTenant->id());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+        $netIncome = $balanceSheet->cumulativeNetIncome();
+
+        $liabilityAndEquityLines = [
+            ...$this->accountBalancePdfLines($balanceSheet->liabilityLines(), $accountNames),
+            ...$this->accountBalancePdfLines($balanceSheet->equityLines(), $accountNames),
+            ['name' => 'Cumulative Net Income', 'amount' => $netIncome->amount()->toDecimalString()],
+        ];
+
+        return [
+            'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+            'statementTitle' => 'BALANCE SHEET',
+            'periodLabel' => sprintf('As of %s', $balanceSheet->asOfDate()->format('d M Y')),
+            'currency' => $balanceSheet->totalAssets()->currency()->identifier(),
+            'sections' => [
+                ['label' => 'Assets', 'lines' => $this->accountBalancePdfLines($balanceSheet->assetLines(), $accountNames), 'subtotal' => $balanceSheet->totalAssets()->toDecimalString()],
+                ['label' => 'Liabilities & Equity', 'lines' => $liabilityAndEquityLines, 'subtotal' => $balanceSheet->totalLiabilitiesAndEquity()->toDecimalString()],
+            ],
+            'summaryLines' => [
+                ['label' => 'Total Assets', 'amount' => $balanceSheet->totalAssets()->toDecimalString(), 'emphasized' => false],
+                ['label' => 'Total Liabilities & Equity', 'amount' => $balanceSheet->totalLiabilitiesAndEquity()->toDecimalString(), 'emphasized' => true],
             ],
         ];
     }

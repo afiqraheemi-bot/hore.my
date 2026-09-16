@@ -1072,11 +1072,13 @@ final class IdentityAndAccountingApiTest extends TestCase
     /**
      * AETS-009 §19: the Compliance Pack bundles Trial Balance,
      * Profit & Loss, Balance Sheet, Aging, and Evidence Index as CSV
-     * entries inside one downloadable ZIP — this proves the real HTTP
-     * boundary end to end, not just that `ZipResponseBuilder` itself
-     * produces a valid archive (already proven at the unit level).
+     * entries, plus (as of v1.7.0) Profit & Loss and Balance Sheet as
+     * "loan-ready" PDF entries too, inside one downloadable ZIP — this
+     * proves the real HTTP boundary end to end, not just that
+     * `ZipResponseBuilder` itself produces a valid archive (already
+     * proven at the unit level).
      */
-    public function test_the_compliance_pack_can_be_downloaded_as_a_zip_of_csvs(): void
+    public function test_the_compliance_pack_can_be_downloaded_as_a_zip_of_csvs_and_pdfs(): void
     {
         $this->registerAndReturnCredentials('compliance-pack@example.my');
         $cashId = $this->createAccount('1000', 'Cash', 'Asset');
@@ -1100,12 +1102,14 @@ final class IdentityAndAccountingApiTest extends TestCase
         $zip = new \ZipArchive;
         $this->assertTrue($zip->open($tempPath) === true);
 
-        $this->assertSame(5, $zip->numFiles);
+        $this->assertSame(7, $zip->numFiles);
         $this->assertStringContainsString($cashId, (string) $zip->getFromName('trial-balance.csv'));
         $this->assertStringContainsString($revenueId, (string) $zip->getFromName('profit-and-loss.csv'));
         $this->assertNotFalse($zip->getFromName('balance-sheet.csv'));
         $this->assertNotFalse($zip->getFromName('aging-report.csv'));
         $this->assertNotFalse($zip->getFromName('evidence-index.csv'));
+        $this->assertStringStartsWith('%PDF-', (string) $zip->getFromName('profit-and-loss.pdf'));
+        $this->assertStringStartsWith('%PDF-', (string) $zip->getFromName('balance-sheet.pdf'));
 
         $zip->close();
         unlink($tempPath);
@@ -1577,6 +1581,49 @@ final class IdentityAndAccountingApiTest extends TestCase
         $evidenceIndex = $this->getJson('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31');
         $evidenceIndex->assertStatus(200);
         $evidenceIndex->assertJsonCount(2, 'entries');
+    }
+
+    public function test_profit_and_loss_and_balance_sheet_can_be_downloaded_as_a_loan_ready_pdf(): void
+    {
+        $this->registerAndReturnCredentials('loan-ready-pdf@example.my');
+
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $revenueId = $this->createAccount('4000', 'Consulting Revenue', 'Revenue');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-loan-ready-expense-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '200.00',
+            'transaction_date' => '2026-08-15',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Consulting revenue',
+        ], ['Idempotency-Key' => 'key-loan-ready-income-0001'])->assertStatus(201);
+
+        $pnlPdf = $this->get('/api/v1/reports/profit-and-loss?period_start=2026-08-01&period_end=2026-08-31&format=pdf');
+        $pnlPdf->assertStatus(200);
+        $pnlPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $pnlPdf->getContent());
+
+        $balanceSheetPdf = $this->get('/api/v1/reports/balance-sheet?as_of=2026-08-31&format=pdf');
+        $balanceSheetPdf->assertStatus(200);
+        $balanceSheetPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $balanceSheetPdf->getContent());
+
+        // format=pdf is meaningless for Evidence Index (shares PeriodRequest's
+        // validation schema with Profit & Loss for other reasons) — it
+        // silently falls back to JSON, exactly like any other unrecognized
+        // format value.
+        $evidenceIndexWithPdfFormat = $this->get('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31&format=pdf');
+        $evidenceIndexWithPdfFormat->assertStatus(200);
+        $evidenceIndexWithPdfFormat->assertHeader('Content-Type', 'application/json');
     }
 
     // --- HTTP idempotency: a real retry must replay, never duplicate -------

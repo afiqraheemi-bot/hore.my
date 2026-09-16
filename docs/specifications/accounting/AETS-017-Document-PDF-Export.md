@@ -1,7 +1,7 @@
 # AETS-017: Invoice and Quotation PDF Export
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.1.1
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer (outstanding — same honest gap [AETS-008](AETS-008-Bank-Reconciliation.md)/[AETS-012](AETS-012-Proof-of-Accuracy.md)/[AETS-015](AETS-015-Evidence-Storage.md)/[AETS-016](AETS-016-Quotation.md) each record); Founder / Product Owner (scope approval obtained 2026-09-16 — see §3)
@@ -69,4 +69,5 @@ A dedicated ATS-017 companion document is deferred for this initial slice, mirro
 
 ## Changelog
 
+- **0.1.1 (2026-09-17):** Bug fix, found while visually rendering a real downloaded PDF for AETS-009 §21's own new "loan-ready" export (a check no prior work had done — every existing test proved only that a valid PDF was produced, magic bytes and Content-Type, never that its text rendered correctly): the shared template's footer used a literal em-dash character, which Dompdf's base Helvetica font — not Unicode-aware — silently renders as mojibake ("hore.my â?? a computer-generated invoice") instead of failing loudly. Replaced with a plain ASCII hyphen; added a template comment warning against non-ASCII characters in the rendered HTML for the same reason. No `PDF-NNN` invariant addresses text legibility, so none is newly violated or resolved — this is a cosmetic defect, not an invariant gap. Classified **PATCH**.
 - **0.1.0 (2026-09-16):** Initial Draft. Resolves AETS-009 §2.2's and AETS-016 §2.2's identical "PDF (Invoice)"/"PDF quotation documents" deferrals with one shared, minimal, functional PDF template for both — no logo/letterhead/branding, per the Founder's own explicit choice between that and waiting for branding guidelines first. Introduces `PDF-001`–`PDF-006`. Founder scope approval obtained; Accounting Domain Reviewer sign-off outstanding.

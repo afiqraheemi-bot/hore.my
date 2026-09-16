@@ -158,6 +158,34 @@ async function downloadXlsx() {
   }
 }
 
+const exportingPdf = ref(false)
+
+/**
+ * AETS-009 §21: a formatted, "loan-ready" statement PDF — Profit &
+ * Loss and Balance Sheet only, the two reports a bank or accountant
+ * actually reviews as a statement rather than a data export.
+ */
+async function downloadPdf() {
+  exportingPdf.value = true
+  error.value = null
+  try {
+    const blob = await request<Blob>(reportEndpoints[activeTab.value], {
+      query: { ...currentReportQuery(), format: 'pdf' },
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${activeTab.value.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    error.value = 'Failed to export this report as PDF.'
+  } finally {
+    exportingPdf.value = false
+  }
+}
+
 onMounted(async () => {
   await loadAccounts()
   await runReport()
@@ -248,6 +276,13 @@ async function selectTab(tab: (typeof tabs)[number]) {
         </AppButton>
         <AppButton :disabled="exportingXlsx" @click="downloadXlsx">
           <AppIcon name="download" :size="14" /> {{ exportingXlsx ? 'Exporting…' : 'XLSX' }}
+        </AppButton>
+        <AppButton
+          v-if="activeTab === 'Profit & Loss' || activeTab === 'Balance Sheet'"
+          :disabled="exportingPdf"
+          @click="downloadPdf"
+        >
+          <AppIcon name="download" :size="14" /> {{ exportingPdf ? 'Exporting…' : 'PDF' }}
         </AppButton>
       </div>
     </AppCard>
