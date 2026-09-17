@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Api;
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
 use App\Domain\Accounting\Reporting\AccountBalance;
 use App\Domain\Accounting\Reporting\BalanceSheet;
+use App\Domain\Accounting\Reporting\CashFlowLine;
+use App\Domain\Accounting\Reporting\CashFlowStatement;
 use App\Domain\Accounting\Reporting\EvidenceIndex;
 use App\Domain\Accounting\Reporting\EvidenceIndexEntry;
 use App\Domain\Accounting\Reporting\GeneralLedgerAccountActivity;
@@ -29,6 +31,7 @@ use App\Http\Support\DocumentPdfBuilder;
 use App\Http\Support\XlsxResponseBuilder;
 use App\Http\Support\ZipResponseBuilder;
 use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
+use App\Infrastructure\Accounting\Reporting\CashFlowStatementQuery;
 use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
@@ -40,11 +43,12 @@ use Symfony\Component\HttpFoundation\Response;
 use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
 
 /**
- * Wraps M10's five Accounting Core report Query classes plus M22's
- * Aging Report over HTTP — read-only, no new business logic (AETS-009
- * §5 rule 6, proven by {@see ReportingHasNoWriteEffectTest} at the
- * Query layer itself, extended to cover {@see AgingReportQuery} too;
- * this controller adds nothing that layer does not already guarantee).
+ * Wraps M10's five Accounting Core report Query classes, M22's Aging
+ * Report, and (as of AETS-009 §22) {@see CashFlowStatementQuery} over
+ * HTTP — read-only, no new business logic (AETS-009 §5 rule 6, proven
+ * by {@see ReportingHasNoWriteEffectTest} at the Query layer itself,
+ * extended to cover {@see AgingReportQuery} too; this controller adds
+ * nothing that layer does not already guarantee).
  *
  * **`?format=csv|xlsx` (M23/AETS-009 §20, Hasil MVP item 8: "Eksport
  * PDF, XLSX dan CSV")** on every endpoint here returns the same
@@ -55,14 +59,15 @@ use Tests\Unit\Domain\Accounting\Reporting\ReportingHasNoWriteEffectTest;
  * identical `(header, rows)` tuple ({@see buildExport()}), so they can
  * never diverge in content.
  *
- * **`?format=pdf` on {@see profitAndLoss()} and {@see self::balanceSheet()}
- * only (AETS-009 §21, added 2026-09-17)** returns a formatted,
- * "loan-ready" statement via {@see DocumentPdfBuilder} instead — the
- * identical already-computed `AccountBalance`/`Money` figures, never a
- * new computation (`RPT-017`). PDF rendering remains deferred for
- * every other report (AETS-009 §2.2 explains why): Trial Balance,
- * Evidence Index, and Aging share {@see AsOfDateRequest}/{@see PeriodRequest}
- * with Balance Sheet/Profit & Loss, so `format=pdf` validates but
+ * **`?format=pdf` on {@see profitAndLoss()}, {@see self::balanceSheet()},
+ * and {@see cashFlow()} only (AETS-009 §21/§22, added 2026-09-17)**
+ * returns a formatted, "loan-ready" statement via
+ * {@see DocumentPdfBuilder} instead — the identical already-computed
+ * figures every other format already returns, never a new computation
+ * (`RPT-017`). PDF rendering remains deferred for every other report
+ * (AETS-009 §2.2 explains why): Trial Balance, Evidence Index, and
+ * Aging share {@see AsOfDateRequest}/{@see PeriodRequest} with
+ * Balance Sheet/Profit & Loss/Cash Flow, so `format=pdf` validates but
  * silently falls back to JSON, exactly like any other unrecognized
  * format value; General Ledger's own dedicated
  * {@see GeneralLedgerRequest} does not accept `pdf` at all and rejects
@@ -83,6 +88,7 @@ final class ReportingController extends Controller
         private readonly GeneralLedgerQuery $generalLedgerQuery,
         private readonly EvidenceIndexQuery $evidenceIndexQuery,
         private readonly AgingReportQuery $agingReportQuery,
+        private readonly CashFlowStatementQuery $cashFlowStatementQuery,
     ) {}
 
     public function trialBalance(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
@@ -192,17 +198,41 @@ final class ReportingController extends Controller
         return response()->json($this->agingReportToArray($report));
     }
 
+    public function cashFlow(PeriodRequest $request, CurrentTenant $currentTenant): Response
+    {
+        $statement = $this->cashFlowStatementQuery->forPeriod(
+            $currentTenant->id(),
+            new \DateTimeImmutable($request->string('period_start')->toString()),
+            new \DateTimeImmutable($request->string('period_end')->toString()),
+        );
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->cashFlowPdf($statement, $currentTenant);
+        }
+
+        $format = $this->requestedExportFormat($request);
+
+        if ($format !== null) {
+            [$header, $rows] = $this->cashFlowCsvRows($statement);
+
+            return $this->buildExport($format, sprintf('cash-flow-%s-to-%s', $statement->periodStart()->format('Y-m-d'), $statement->periodEnd()->format('Y-m-d')), $header, $rows);
+        }
+
+        return response()->json($this->cashFlowToArray($statement));
+    }
+
     /**
      * AETS-009 §19 (Compliance Pack export): bundles Trial Balance,
      * Profit & Loss (the current Accounting Period), Balance Sheet,
-     * Aging, and Evidence Index (the current Accounting Period) — the
-     * five tenant-wide reports this controller already computes — as
-     * CSV entries inside one downloadable ZIP archive, reusing each
-     * report's own already-proven CSV row mapping unchanged (no new
-     * business logic, mirrors this controller's own established rule
-     * for `?format=csv`). General Ledger is not included: it requires
-     * a specific Account, not a tenant-wide view, so there is no
-     * single canonical CSV for it to bundle.
+     * Aging, Evidence Index (the current Accounting Period), and (as
+     * of v1.8.0) Cash Flow — six tenant-wide reports this controller
+     * already computes — as CSV entries inside one downloadable ZIP
+     * archive, reusing each report's own already-proven CSV row
+     * mapping unchanged (no new business logic, mirrors this
+     * controller's own established rule for `?format=csv`). General
+     * Ledger is not included: it requires a specific Account, not a
+     * tenant-wide view, so there is no single canonical CSV for it to
+     * bundle.
      *
      * **Not a compliance guarantee.** Per
      * [`HORE_MY_MASTER_CONTEXT.md`](../../../../../../docs/product/reference/HORE_MY_MASTER_CONTEXT.md)
@@ -221,6 +251,7 @@ final class ReportingController extends Controller
         $balanceSheet = $this->balanceSheetQuery->asOf($currentTenant->id(), $periodEnd);
         $agingReport = $this->agingReportQuery->asOf($currentTenant->id(), $periodEnd);
         $evidenceIndex = $this->evidenceIndexQuery->forPeriod($currentTenant->id(), $periodStart, $periodEnd);
+        $cashFlow = $this->cashFlowStatementQuery->forPeriod($currentTenant->id(), $periodStart, $periodEnd);
 
         $entries = [
             'trial-balance.csv' => CsvResponseBuilder::toCsvString(...$this->trialBalanceCsvRows($trialBalance)),
@@ -228,13 +259,19 @@ final class ReportingController extends Controller
             'balance-sheet.csv' => CsvResponseBuilder::toCsvString(...$this->balanceSheetCsvRows($balanceSheet)),
             'aging-report.csv' => CsvResponseBuilder::toCsvString(...$this->agingReportCsvRows($agingReport)),
             'evidence-index.csv' => CsvResponseBuilder::toCsvString(...$this->evidenceIndexCsvRows($evidenceIndex)),
+            // AETS-009 §22: the same Cash Flow Statement §22 exposes
+            // standalone — Master Context §7 item 5 names "aliran
+            // tunai" explicitly among the reports a Compliance Pack
+            // should carry.
+            'cash-flow.csv' => CsvResponseBuilder::toCsvString(...$this->cashFlowCsvRows($cashFlow)),
             // AETS-009 §21/§19: the identical "loan-ready" statement
             // format §21 already builds for the standalone PDF
             // endpoints — a bank or accountant handed this Pack gets a
-            // human-readable statement alongside the five machine-
-            // readable CSVs, not just the latter.
+            // human-readable statement alongside the machine-readable
+            // CSVs, not just the latter.
             'profit-and-loss.pdf' => DocumentPdfBuilder::renderBytes('pdf.financial-statement', $this->profitAndLossPdfData($profitAndLoss, $currentTenant)),
             'balance-sheet.pdf' => DocumentPdfBuilder::renderBytes('pdf.financial-statement', $this->balanceSheetPdfData($balanceSheet, $currentTenant)),
+            'cash-flow.pdf' => DocumentPdfBuilder::renderBytes('pdf.financial-statement', $this->cashFlowPdfData($cashFlow, $currentTenant)),
         ];
 
         return ZipResponseBuilder::build(
@@ -322,6 +359,33 @@ final class ReportingController extends Controller
                 ['Cumulative Net Income', '(Cumulative Net Income)', '', '', '', $netIncome->amount()->toDecimalString(), $netIncome->direction() === null ? '' : $netIncome->direction()->name],
             ],
         ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<list<string>>}
+     */
+    private function cashFlowCsvRows(CashFlowStatement $statement): array
+    {
+        return [
+            ['Activity', 'Counterparty Account ID', 'Net Cash Flow Amount', 'Net Cash Flow Direction'],
+            [
+                ...array_map(fn (CashFlowLine $line): array => ['Operating', ...$this->cashFlowLineToCsvRow($line)], $statement->operatingLines()),
+                ...array_map(fn (CashFlowLine $line): array => ['Investing', ...$this->cashFlowLineToCsvRow($line)], $statement->investingLines()),
+                ...array_map(fn (CashFlowLine $line): array => ['Financing', ...$this->cashFlowLineToCsvRow($line)], $statement->financingLines()),
+                ['Cash at Period Start', '', $statement->cashAtPeriodStart()->amount()->toDecimalString(), $statement->cashAtPeriodStart()->direction()->name ?? ''],
+                ['Cash at Period End', '', $statement->cashAtPeriodEnd()->amount()->toDecimalString(), $statement->cashAtPeriodEnd()->direction()->name ?? ''],
+            ],
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function cashFlowLineToCsvRow(CashFlowLine $line): array
+    {
+        $balance = $line->netCashFlow();
+
+        return [$line->accountId()->toString(), $balance->amount()->toDecimalString(), $balance->direction()->name ?? ''];
     }
 
     /**
@@ -425,6 +489,70 @@ final class ReportingController extends Controller
                 ['label' => 'Total Liabilities & Equity', 'amount' => $balanceSheet->totalLiabilitiesAndEquity()->toDecimalString(), 'emphasized' => true],
             ],
         ];
+    }
+
+    private function cashFlowPdf(CashFlowStatement $statement, CurrentTenant $currentTenant): Response
+    {
+        return DocumentPdfBuilder::build(
+            sprintf('cash-flow-%s-to-%s.pdf', $statement->periodStart()->format('Y-m-d'), $statement->periodEnd()->format('Y-m-d')),
+            'pdf.financial-statement',
+            $this->cashFlowPdfData($statement, $currentTenant),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cashFlowPdfData(CashFlowStatement $statement, CurrentTenant $currentTenant): array
+    {
+        $accountNames = $this->accountNamesByTenant($currentTenant->id());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+
+        return [
+            'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+            'statementTitle' => 'CASH FLOW STATEMENT',
+            'periodLabel' => sprintf('For the period %s to %s', $statement->periodStart()->format('d M Y'), $statement->periodEnd()->format('d M Y')),
+            'currency' => $statement->cashAtPeriodEnd()->amount()->currency()->identifier(),
+            'sections' => [
+                ['label' => 'Operating Activities', 'lines' => $this->cashFlowPdfLines($statement->operatingLines(), $accountNames), 'subtotal' => $this->signedNetBalance($statement->operatingTotal())],
+                ['label' => 'Investing Activities', 'lines' => $this->cashFlowPdfLines($statement->investingLines(), $accountNames), 'subtotal' => $this->signedNetBalance($statement->investingTotal())],
+                ['label' => 'Financing Activities', 'lines' => $this->cashFlowPdfLines($statement->financingLines(), $accountNames), 'subtotal' => $this->signedNetBalance($statement->financingTotal())],
+            ],
+            'summaryLines' => [
+                ['label' => 'Net Change in Cash', 'amount' => $this->signedNetBalance($statement->netChangeInCash()), 'emphasized' => false],
+                ['label' => 'Cash at Period Start', 'amount' => $statement->cashAtPeriodStart()->amount()->toDecimalString(), 'emphasized' => false],
+                ['label' => 'Cash at Period End', 'amount' => $statement->cashAtPeriodEnd()->amount()->toDecimalString(), 'emphasized' => true],
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<CashFlowLine>  $lines
+     * @param  array<string, string>  $accountNames
+     * @return list<array{name: string, amount: string}>
+     */
+    private function cashFlowPdfLines(array $lines, array $accountNames): array
+    {
+        return array_map(fn (CashFlowLine $line): array => [
+            'name' => $accountNames[$line->accountId()->toString()] ?? $line->accountId()->toString(),
+            'amount' => $this->signedNetBalance($line->netCashFlow()),
+        ], $lines);
+    }
+
+    /**
+     * A cash inflow (Debit direction, mirroring Cash's own Asset
+     * Normal Balance) renders as a plain positive amount; an outflow
+     * (Credit) is prefixed with "-" — unlike Profit & Loss/Balance
+     * Sheet, a single Cash Flow section legitimately mixes inflows and
+     * outflows (e.g. Sales Revenue in, Rent Expense out both under
+     * "Operating"), so the sign must be explicit per line, not implied
+     * by which section it appears in.
+     */
+    private function signedNetBalance(NetBalance $balance): string
+    {
+        $amount = $balance->amount()->toDecimalString();
+
+        return $balance->direction()?->name === 'Credit' ? sprintf('-%s', $amount) : $amount;
     }
 
     /**
@@ -541,6 +669,37 @@ final class ReportingController extends Controller
             'asset_lines' => array_map($this->accountBalanceToArray(...), $balanceSheet->assetLines()),
             'liability_lines' => array_map($this->accountBalanceToArray(...), $balanceSheet->liabilityLines()),
             'equity_lines' => array_map($this->accountBalanceToArray(...), $balanceSheet->equityLines()),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cashFlowToArray(CashFlowStatement $statement): array
+    {
+        return [
+            'period_start' => $statement->periodStart()->format('Y-m-d'),
+            'period_end' => $statement->periodEnd()->format('Y-m-d'),
+            'operating_lines' => array_map($this->cashFlowLineToArray(...), $statement->operatingLines()),
+            'operating_total' => $this->netBalanceToArray($statement->operatingTotal()),
+            'investing_lines' => array_map($this->cashFlowLineToArray(...), $statement->investingLines()),
+            'investing_total' => $this->netBalanceToArray($statement->investingTotal()),
+            'financing_lines' => array_map($this->cashFlowLineToArray(...), $statement->financingLines()),
+            'financing_total' => $this->netBalanceToArray($statement->financingTotal()),
+            'net_change_in_cash' => $this->netBalanceToArray($statement->netChangeInCash()),
+            'cash_at_period_start' => $this->netBalanceToArray($statement->cashAtPeriodStart()),
+            'cash_at_period_end' => $this->netBalanceToArray($statement->cashAtPeriodEnd()),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cashFlowLineToArray(CashFlowLine $line): array
+    {
+        return [
+            'account_id' => $line->accountId()->toString(),
+            'net_cash_flow' => $this->netBalanceToArray($line->netCashFlow()),
         ];
     }
 

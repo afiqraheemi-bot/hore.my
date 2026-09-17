@@ -19,7 +19,7 @@ test.describe('XLSX and PDF export/import', () => {
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: /^xlsx$/i }).click(),
+      page.getByRole('button', { name: /^excel$/i }).click(),
     ])
 
     expect(download.suggestedFilename()).toMatch(/^trial-balance\.xlsx$/)

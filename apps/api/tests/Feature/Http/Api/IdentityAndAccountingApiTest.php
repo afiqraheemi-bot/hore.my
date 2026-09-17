@@ -1102,14 +1102,16 @@ final class IdentityAndAccountingApiTest extends TestCase
         $zip = new \ZipArchive;
         $this->assertTrue($zip->open($tempPath) === true);
 
-        $this->assertSame(7, $zip->numFiles);
+        $this->assertSame(9, $zip->numFiles);
         $this->assertStringContainsString($cashId, (string) $zip->getFromName('trial-balance.csv'));
         $this->assertStringContainsString($revenueId, (string) $zip->getFromName('profit-and-loss.csv'));
         $this->assertNotFalse($zip->getFromName('balance-sheet.csv'));
         $this->assertNotFalse($zip->getFromName('aging-report.csv'));
         $this->assertNotFalse($zip->getFromName('evidence-index.csv'));
+        $this->assertNotFalse($zip->getFromName('cash-flow.csv'));
         $this->assertStringStartsWith('%PDF-', (string) $zip->getFromName('profit-and-loss.pdf'));
         $this->assertStringStartsWith('%PDF-', (string) $zip->getFromName('balance-sheet.pdf'));
+        $this->assertStringStartsWith('%PDF-', (string) $zip->getFromName('cash-flow.pdf'));
 
         $zip->close();
         unlink($tempPath);
@@ -1624,6 +1626,180 @@ final class IdentityAndAccountingApiTest extends TestCase
         $evidenceIndexWithPdfFormat = $this->get('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31&format=pdf');
         $evidenceIndexWithPdfFormat->assertStatus(200);
         $evidenceIndexWithPdfFormat->assertHeader('Content-Type', 'application/json');
+    }
+
+    // --- Cash Flow Statement (AETS-009 §22) ---------------------------------
+
+    private function registerBankAccount(string $linkedAccountId, string $bankName): string
+    {
+        $response = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $linkedAccountId,
+            'bank_name' => $bankName,
+        ]);
+        $response->assertStatus(201);
+
+        /** @var string $id */
+        $id = $response->json('id');
+
+        return $id;
+    }
+
+    /**
+     * The golden-dataset proof: every transaction type this codebase
+     * actually supports today (Income, Expense, a loan received and
+     * repaid via Transfer, a Capital Contribution, an Owner Drawing,
+     * and a pure Cash↔Bank transfer) is classified into the correct
+     * Cash Flow activity, and the whole Statement ties out exactly to
+     * the Tenant's own real Cash+Bank balance change (`RPT-018`).
+     */
+    public function test_the_cash_flow_statement_classifies_every_supported_transaction_type_correctly(): void
+    {
+        $this->registerAndReturnCredentials('cash-flow@example.my');
+
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $bankId = $this->createAccount('1010', 'Bank', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+        $expenseId = $this->createAccount('5000', 'Rent Expense', 'Expense');
+        $loanId = $this->createAccount('2000', 'Loans Payable', 'Liability');
+        $capitalId = $this->createAccount('3000', "Owner's Capital", 'Equity');
+        $drawingsId = $this->createAccount('3100', "Owner's Drawings", 'Equity');
+
+        $this->registerBankAccount($cashId, 'Cash Till');
+        $this->registerBankAccount($bankId, 'Maybank');
+
+        // Operating: Income (+500) and Expense (-100).
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '500.00', 'transaction_date' => '2026-09-05',
+            'income_account_id' => $revenueId, 'deposit_account_id' => $cashId,
+            'description' => 'Sales',
+        ], ['Idempotency-Key' => 'cf-income-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '100.00', 'transaction_date' => '2026-09-06',
+            'expense_account_id' => $expenseId, 'payment_account_id' => $cashId,
+            'description' => 'Rent',
+        ], ['Idempotency-Key' => 'cf-expense-0001'])->assertStatus(201);
+
+        // Financing: loan received (+1000), loan repaid (-200), capital
+        // contribution (+300), owner drawing (-50).
+        $this->postJson('/api/v1/transfers', [
+            'amount' => '1000.00', 'transaction_date' => '2026-09-07',
+            'source_account_id' => $loanId, 'destination_account_id' => $cashId,
+            'description' => 'Loan received',
+        ], ['Idempotency-Key' => 'cf-loan-received-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/transfers', [
+            'amount' => '200.00', 'transaction_date' => '2026-09-08',
+            'source_account_id' => $cashId, 'destination_account_id' => $loanId,
+            'description' => 'Loan repayment',
+        ], ['Idempotency-Key' => 'cf-loan-repay-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/capital-contributions', [
+            'amount' => '300.00', 'transaction_date' => '2026-09-09',
+            'cash_account_id' => $cashId, 'equity_account_id' => $capitalId,
+            'description' => 'Owner injection',
+        ], ['Idempotency-Key' => 'cf-capital-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/owner-drawings', [
+            'amount' => '50.00', 'transaction_date' => '2026-09-10',
+            'cash_account_id' => $cashId, 'equity_account_id' => $drawingsId,
+            'description' => 'Owner drawing',
+        ], ['Idempotency-Key' => 'cf-drawing-0001'])->assertStatus(201);
+
+        // Excluded entirely: a pure Cash↔Bank transfer — both sides are
+        // cash-equivalent, so it never appears in any activity section,
+        // yet the Tenant's total cash position still reflects it.
+        $this->postJson('/api/v1/transfers', [
+            'amount' => '150.00', 'transaction_date' => '2026-09-11',
+            'source_account_id' => $cashId, 'destination_account_id' => $bankId,
+            'description' => 'Move to bank',
+        ], ['Idempotency-Key' => 'cf-cash-to-bank-0001'])->assertStatus(201);
+
+        $response = $this->getJson('/api/v1/reports/cash-flow?period_start=2026-09-01&period_end=2026-09-30');
+        $response->assertStatus(200);
+
+        $response->assertJsonCount(2, 'operating_lines');
+        $response->assertJsonCount(0, 'investing_lines');
+        $response->assertJsonCount(3, 'financing_lines');
+
+        $operatingLines = collect($response->json('operating_lines'))->keyBy('account_id');
+        $this->assertSame('500.00', $operatingLines[$revenueId]['net_cash_flow']['amount']);
+        $this->assertSame('Debit', $operatingLines[$revenueId]['net_cash_flow']['direction']);
+        $this->assertSame('100.00', $operatingLines[$expenseId]['net_cash_flow']['amount']);
+        $this->assertSame('Credit', $operatingLines[$expenseId]['net_cash_flow']['direction']);
+
+        $financingLines = collect($response->json('financing_lines'))->keyBy('account_id');
+        $this->assertSame('800.00', $financingLines[$loanId]['net_cash_flow']['amount']);
+        $this->assertSame('Debit', $financingLines[$loanId]['net_cash_flow']['direction']);
+        $this->assertSame('300.00', $financingLines[$capitalId]['net_cash_flow']['amount']);
+        $this->assertSame('Debit', $financingLines[$capitalId]['net_cash_flow']['direction']);
+        $this->assertSame('50.00', $financingLines[$drawingsId]['net_cash_flow']['amount']);
+        $this->assertSame('Credit', $financingLines[$drawingsId]['net_cash_flow']['direction']);
+
+        $response->assertJsonPath('operating_total.amount', '400.00');
+        $response->assertJsonPath('operating_total.direction', 'Debit');
+        $response->assertJsonPath('investing_total.amount', '0.00');
+        $response->assertJsonPath('financing_total.amount', '1050.00');
+        $response->assertJsonPath('financing_total.direction', 'Debit');
+
+        // RPT-018: net change in cash MUST equal the Tenant's own real
+        // Cash+Bank balance change — 500-100+1000-200+300-50 = 1450,
+        // the Cash↔Bank transfer contributing zero net (it only moves
+        // money between the two cash-equivalent Accounts).
+        $response->assertJsonPath('net_change_in_cash.amount', '1450.00');
+        $response->assertJsonPath('net_change_in_cash.direction', 'Debit');
+        $response->assertJsonPath('cash_at_period_start.amount', '0.00');
+        $response->assertJsonPath('cash_at_period_end.amount', '1450.00');
+        $response->assertJsonPath('cash_at_period_end.direction', 'Debit');
+    }
+
+    public function test_the_cash_flow_statement_can_be_downloaded_as_csv_xlsx_and_pdf(): void
+    {
+        $this->registerAndReturnCredentials('cash-flow-export@example.my');
+
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+        $this->registerBankAccount($cashId, 'Cash Till');
+
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '250.00', 'transaction_date' => '2026-09-05',
+            'income_account_id' => $revenueId, 'deposit_account_id' => $cashId,
+            'description' => 'Sales',
+        ], ['Idempotency-Key' => 'cf-export-income-0001'])->assertStatus(201);
+
+        $csv = $this->get('/api/v1/reports/cash-flow?period_start=2026-09-01&period_end=2026-09-30&format=csv');
+        $csv->assertStatus(200);
+        $this->assertStringContainsString($revenueId, (string) $csv->getContent());
+
+        $xlsx = $this->get('/api/v1/reports/cash-flow?period_start=2026-09-01&period_end=2026-09-30&format=xlsx');
+        $xlsx->assertStatus(200);
+        $xlsx->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        $pdf = $this->get('/api/v1/reports/cash-flow?period_start=2026-09-01&period_end=2026-09-30&format=pdf');
+        $pdf->assertStatus(200);
+        $pdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $pdf->getContent());
+    }
+
+    public function test_a_tenants_cash_flow_statement_is_never_visible_to_another_tenant(): void
+    {
+        $this->registerAndReturnCredentials('cash-flow-tenant-a@example.my');
+        $cashIdA = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueIdA = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+        $this->registerBankAccount($cashIdA, 'Cash Till');
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '900.00', 'transaction_date' => '2026-09-05',
+            'income_account_id' => $revenueIdA, 'deposit_account_id' => $cashIdA,
+            'description' => 'Sales',
+        ], ['Idempotency-Key' => 'cf-tenant-a-income'])->assertStatus(201);
+        $this->logout();
+
+        $this->registerAndReturnCredentials('cash-flow-tenant-b@example.my');
+
+        $response = $this->getJson('/api/v1/reports/cash-flow?period_start=2026-09-01&period_end=2026-09-30');
+        $response->assertStatus(200);
+        $response->assertJsonCount(0, 'operating_lines');
+        $response->assertJsonPath('cash_at_period_end.amount', '0.00');
     }
 
     // --- HTTP idempotency: a real retry must replay, never duplicate -------

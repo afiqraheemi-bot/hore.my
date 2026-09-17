@@ -33,7 +33,7 @@ test.describe('Loan-ready PDF export', () => {
 
     await page.goto('/reports')
     await page.getByRole('button', { name: 'Profit & Loss' }).click()
-    await page.getByRole('button', { name: 'Run' }).click()
+    await page.getByRole('button', { name: 'Run report' }).click()
 
     const [pnlDownload] = await Promise.all([
       page.waitForEvent('download'),
@@ -45,7 +45,7 @@ test.describe('Loan-ready PDF export', () => {
     expect(pnlBytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
 
     await page.getByRole('button', { name: 'Balance Sheet' }).click()
-    await page.getByRole('button', { name: 'Run' }).click()
+    await page.getByRole('button', { name: 'Run report' }).click()
 
     const [balanceSheetDownload] = await Promise.all([
       page.waitForEvent('download'),
@@ -55,6 +55,12 @@ test.describe('Loan-ready PDF export', () => {
     expect(balanceSheetPath).not.toBeNull()
     const balanceSheetBytes = await fs.readFile(balanceSheetPath as string)
     expect(balanceSheetBytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+
+    // Let the export's own request fully settle before switching tabs —
+    // otherwise the next click can race the still-in-flight download
+    // request, occasionally leaving the assertion below observing a
+    // transient state instead of Trial Balance's own steady one.
+    await page.waitForLoadState('networkidle')
 
     // The PDF button is not offered for reports it was never built for.
     await page.getByRole('button', { name: 'Trial Balance' }).click()

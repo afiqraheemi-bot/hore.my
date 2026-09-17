@@ -1,23 +1,20 @@
 <script setup lang="ts">
-definePageMeta({ middleware: 'auth' })
+import type { AccountSummary, ReportResult, ReportTab } from '~/types/reporting'
 
-interface Account {
-  id: string
-  account_code: string
-  account_name: string
-}
+definePageMeta({ middleware: 'auth' })
 
 const { request } = useApi()
 
-const tabs = [
+const tabs: ReportTab[] = [
   'Trial Balance',
   'Profit & Loss',
   'Balance Sheet',
   'General Ledger',
   'Evidence Index',
   'Aging Report',
-] as const
-const activeTab = ref<(typeof tabs)[number]>('Trial Balance')
+  'Cash Flow',
+]
+const activeTab = ref<ReportTab>('Trial Balance')
 
 const today = new Date().toISOString().slice(0, 10)
 const monthStart = `${today.slice(0, 7)}-01`
@@ -25,29 +22,29 @@ const monthStart = `${today.slice(0, 7)}-01`
 const asOf = ref(today)
 const periodStart = ref(monthStart)
 const periodEnd = ref(today)
-const accounts = ref<Account[]>([])
+const accounts = ref<AccountSummary[]>([])
 const selectedAccountId = ref('')
 
 const loading = ref(false)
 const error = ref<string | null>(null)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const result = ref<any>(null)
+const result = ref<ReportResult | null>(null)
 
 async function loadAccounts() {
-  const data = await request<{ data: Account[] }>('/api/v1/accounts')
+  const data = await request<{ data: AccountSummary[] }>('/api/v1/accounts')
   accounts.value = data.data
   if (!selectedAccountId.value && data.data.length > 0) {
     selectedAccountId.value = data.data[0]!.id
   }
 }
 
-const reportEndpoints: Record<(typeof tabs)[number], string> = {
+const reportEndpoints: Record<ReportTab, string> = {
   'Trial Balance': '/api/v1/reports/trial-balance',
   'Profit & Loss': '/api/v1/reports/profit-and-loss',
   'Balance Sheet': '/api/v1/reports/balance-sheet',
   'General Ledger': '/api/v1/reports/general-ledger',
   'Evidence Index': '/api/v1/reports/evidence-index',
   'Aging Report': '/api/v1/reports/aging',
+  'Cash Flow': '/api/v1/reports/cash-flow',
 }
 
 function currentReportQuery(): Record<string, string> {
@@ -68,16 +65,34 @@ function currentReportQuery(): Record<string, string> {
   return { period_start: periodStart.value, period_end: periodEnd.value }
 }
 
+let runReportGeneration = 0
+
+/**
+ * Guards against a stale response landing after a newer `runReport()`
+ * call has already started (e.g. the initial onMounted load for the
+ * default tab resolving after the user has already switched tabs) —
+ * without it, an older report's shape can be written into `result`
+ * after `activeTab` has already moved on, crashing the viewer on a
+ * field the new tab's type doesn't have.
+ */
 async function runReport() {
+  const generation = ++runReportGeneration
   loading.value = true
   error.value = null
   result.value = null
   try {
-    result.value = await request(reportEndpoints[activeTab.value], { query: currentReportQuery() })
+    const data = await request<ReportResult>(reportEndpoints[activeTab.value], {
+      query: currentReportQuery(),
+    })
+    if (generation !== runReportGeneration) return
+    result.value = data
   } catch {
+    if (generation !== runReportGeneration) return
     error.value = 'Failed to load this report.'
   } finally {
-    loading.value = false
+    if (generation === runReportGeneration) {
+      loading.value = false
+    }
   }
 }
 
@@ -191,7 +206,7 @@ onMounted(async () => {
   await runReport()
 })
 
-async function selectTab(tab: (typeof tabs)[number]) {
+async function selectTab(tab: ReportTab) {
   activeTab.value = tab
   await runReport()
 }
@@ -226,7 +241,7 @@ async function selectTab(tab: (typeof tabs)[number]) {
       </button>
     </div>
 
-    <AppCard class="mb-4">
+    <AppCard class="mb-5">
       <div class="flex flex-wrap items-end gap-3">
         <div
           v-if="
@@ -270,29 +285,37 @@ async function selectTab(tab: (typeof tabs)[number]) {
             />
           </AppField>
         </div>
-        <AppButton variant="primary" @click="runReport">Run</AppButton>
-        <AppButton :disabled="exporting" @click="downloadCsv">
-          <AppIcon name="download" :size="14" /> {{ exporting ? 'Exporting…' : 'CSV' }}
-        </AppButton>
-        <AppButton :disabled="exportingXlsx" @click="downloadXlsx">
-          <AppIcon name="download" :size="14" /> {{ exportingXlsx ? 'Exporting…' : 'XLSX' }}
-        </AppButton>
-        <AppButton
-          v-if="activeTab === 'Profit & Loss' || activeTab === 'Balance Sheet'"
-          :disabled="exportingPdf"
-          @click="downloadPdf"
-        >
-          <AppIcon name="download" :size="14" /> {{ exportingPdf ? 'Exporting…' : 'PDF' }}
-        </AppButton>
+        <AppButton variant="primary" @click="runReport">Run report</AppButton>
+        <div class="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <span class="mr-1 text-xs font-medium uppercase tracking-wide text-ink-tertiary">
+            Download
+          </span>
+          <AppButton size="sm" :disabled="exporting" @click="downloadCsv">
+            <AppIcon name="download" :size="14" /> {{ exporting ? 'Exporting…' : 'CSV' }}
+          </AppButton>
+          <AppButton size="sm" :disabled="exportingXlsx" @click="downloadXlsx">
+            <AppIcon name="download" :size="14" />
+            {{ exportingXlsx ? 'Exporting…' : 'Excel' }}
+          </AppButton>
+          <AppButton
+            v-if="
+              activeTab === 'Profit & Loss' ||
+              activeTab === 'Balance Sheet' ||
+              activeTab === 'Cash Flow'
+            "
+            size="sm"
+            :disabled="exportingPdf"
+            @click="downloadPdf"
+          >
+            <AppIcon name="download" :size="14" />
+            {{ exportingPdf ? 'Exporting…' : 'PDF' }}
+          </AppButton>
+        </div>
       </div>
     </AppCard>
 
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
-    <AppCard v-else-if="result" :padded="false">
-      <pre class="overflow-x-auto p-4 text-xs text-ink-secondary">{{
-        JSON.stringify(result, null, 2)
-      }}</pre>
-    </AppCard>
+    <ReportViewer v-else-if="result" :report="activeTab" :result="result" :accounts="accounts" />
   </div>
 </template>

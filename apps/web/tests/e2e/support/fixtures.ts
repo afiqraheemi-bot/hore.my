@@ -90,3 +90,29 @@ export async function createAccount(
     page.locator('form button[type="submit"]').click(),
   ])
 }
+
+/**
+ * Registers an existing Asset Account as a Bank Account via the
+ * `/bank-accounts` page's own inline form — the same real HTTP round
+ * trip a user linking a real bank account performs. This is what
+ * marks an Account "cash-equivalent" for the Cash Flow Statement
+ * (AETS-009 §22) — without it, no Journal touching that Account is
+ * ever considered by that report.
+ */
+export async function registerBankAccount(
+  page: Page,
+  accountName: string,
+  bankName: string,
+): Promise<void> {
+  await page.goto('/bank-accounts')
+  await page.getByRole('button', { name: /register bank account/i }).click()
+  await page.locator('form select').first().selectOption({ label: accountName })
+  await page.getByPlaceholder('Maybank').fill(bankName)
+
+  await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/bank-accounts') && res.request().method() === 'POST',
+    ),
+    page.locator('form button[type="submit"]').click(),
+  ])
+}

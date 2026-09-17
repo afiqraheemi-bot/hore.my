@@ -121,6 +121,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('/general-ledger', [ReportingController::class, 'generalLedger']);
                 Route::get('/evidence-index', [ReportingController::class, 'evidenceIndex']);
                 Route::get('/aging', [ReportingController::class, 'agingReport']);
+                Route::get('/cash-flow', [ReportingController::class, 'cashFlow']);
                 Route::get('/compliance-pack', [ReportingController::class, 'compliancePack']);
             });
         });
