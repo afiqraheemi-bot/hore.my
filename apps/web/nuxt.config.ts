@@ -16,6 +16,23 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'en' },
+      // PWA basics (installable app, no offline-caching sophistication):
+      // a static manifest + a hand-written service worker
+      // (app/plugins/pwa.client.ts registers it), not the
+      // @vite-pwa/nuxt module — that module's dev-mode client
+      // injection never fires under this app's own ssr:false + Nuxt 4
+      // combination (confirmed: its dev service worker writes to a
+      // buildDir the running dev server never serves from, and no
+      // amount of config realignment made its Nuxt plugin inject a
+      // manifest link or registration script into the page). A static
+      // file plus one small plugin is simpler and fully within this
+      // project's own control to verify, for the "basics" this item
+      // actually needs.
+      link: [
+        { rel: 'manifest', href: '/manifest.webmanifest' },
+        { rel: 'apple-touch-icon', href: '/pwa-icons/apple-touch-icon.png' },
+      ],
+      meta: [{ name: 'theme-color', content: '#17171a' }],
     },
   },
   eslint: {
