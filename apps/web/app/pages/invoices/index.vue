@@ -159,7 +159,9 @@ async function onIssue(invoiceId: string) {
     })
     await loadInvoices()
   } catch {
-    actionError.value = 'Failed to issue the invoice — it may be empty or already issued.'
+    actionError.value =
+      'Failed to issue the invoice — check it has at least one line, and that the issue date ' +
+      '(the date box next to Issue) is not after the due date.'
   } finally {
     issuingId.value = null
   }
@@ -277,7 +279,7 @@ onMounted(async () => {
               {{ customerName(invoice.customer_id) }} · Due {{ invoice.due_date }}
             </p>
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center gap-3">
             <p class="text-lg font-semibold text-ink">RM{{ invoice.total_amount }}</p>
             <template v-if="invoice.status === 'Draft'">
               <input

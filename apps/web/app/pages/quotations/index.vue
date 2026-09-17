@@ -325,7 +325,7 @@ onMounted(async () => {
               {{ customerName(quotation.customer_id) }} · Valid until {{ quotation.valid_until }}
             </p>
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center gap-3">
             <p class="text-lg font-semibold text-ink">RM{{ quotation.total_amount }}</p>
 
             <template v-if="quotation.status === 'Draft'">

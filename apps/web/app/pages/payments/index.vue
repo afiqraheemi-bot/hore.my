@@ -278,7 +278,7 @@ onMounted(async () => {
               <template v-if="payment.reference"> · {{ payment.reference }}</template>
             </p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <a :href="pdfUrl(payment.id)" target="_blank" rel="noopener">
               <AppButton size="sm" variant="ghost">
                 <AppIcon name="download" :size="14" /> Receipt
