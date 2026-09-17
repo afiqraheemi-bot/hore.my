@@ -139,6 +139,20 @@ const queueFilter = ref<QueueFilter>('attention')
 
 const expanded = ref(false)
 const activeType = ref<TaskType>(types[0]!)
+
+const {
+  scrollRef: typeTabsScrollRef,
+  showLeftFade: showTypeTabsLeftFade,
+  showRightFade: showTypeTabsRightFade,
+  updateScrollFade: updateTypeTabsFade,
+} = useHorizontalScrollFade()
+const {
+  scrollRef: queueFilterScrollRef,
+  showLeftFade: showQueueFilterLeftFade,
+  showRightFade: showQueueFilterRightFade,
+  updateScrollFade: updateQueueFilterFade,
+} = useHorizontalScrollFade()
+
 const amount = ref('')
 const transactionDate = ref(new Date().toISOString().slice(0, 10))
 const compactTransactionDate = computed(() => {
@@ -315,24 +329,36 @@ onMounted(async () => {
       :padded="false"
       class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
     >
-      <div
-        class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/40 px-3 py-2.5"
-      >
-        <button
-          v-for="type in types"
-          :key="type.key"
-          type="button"
-          class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-          :class="
-            activeType.key === type.key
-              ? 'bg-accent text-accent-contrast'
-              : 'bg-surface text-ink-secondary hover:bg-surface-hover hover:text-ink'
-          "
-          @click="selectType(type)"
+      <div class="relative border-b border-border">
+        <div
+          ref="typeTabsScrollRef"
+          class="flex items-center gap-2 overflow-x-auto bg-surface-secondary/40 px-3 py-2.5"
+          @scroll="updateTypeTabsFade"
         >
-          <AppIcon :name="type.icon" :size="14" />
-          {{ type.label }}
-        </button>
+          <button
+            v-for="type in types"
+            :key="type.key"
+            type="button"
+            class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+            :class="
+              activeType.key === type.key
+                ? 'bg-accent text-accent-contrast'
+                : 'bg-surface text-ink-secondary hover:bg-surface-hover hover:text-ink'
+            "
+            @click="selectType(type)"
+          >
+            <AppIcon :name="type.icon" :size="14" />
+            {{ type.label }}
+          </button>
+        </div>
+        <div
+          v-show="showTypeTabsLeftFade"
+          class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-surface-secondary to-transparent"
+        />
+        <div
+          v-show="showTypeTabsRightFade"
+          class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-secondary to-transparent"
+        />
       </div>
 
       <form class="space-y-4 p-4 sm:p-5" @submit.prevent="onSubmit" @focusin="expanded = true">
@@ -453,32 +479,44 @@ onMounted(async () => {
         </p>
       </div>
 
-      <div
-        class="mb-4 flex gap-1 overflow-x-auto rounded-2xl bg-surface-secondary p-1"
-        role="tablist"
-        aria-label="Filter work queue"
-      >
-        <button
-          v-for="filter in queueFilters"
-          :key="filter.key"
-          type="button"
-          role="tab"
-          :aria-selected="queueFilter === filter.key"
-          class="flex min-h-11 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-colors sm:min-w-0"
-          :class="
-            queueFilter === filter.key
-              ? 'bg-surface text-ink shadow-sm'
-              : 'text-ink-secondary hover:bg-surface-hover hover:text-ink'
-          "
-          @click="queueFilter = filter.key"
+      <div class="relative mb-4">
+        <div
+          ref="queueFilterScrollRef"
+          class="flex gap-1 overflow-x-auto rounded-2xl bg-surface-secondary p-1"
+          role="tablist"
+          aria-label="Filter work queue"
+          @scroll="updateQueueFilterFade"
         >
-          <span>{{ filter.label }}</span>
-          <span
-            class="inline-flex min-w-6 items-center justify-center rounded-full bg-surface-tertiary px-1.5 py-0.5 text-xs tabular-nums text-ink-secondary"
+          <button
+            v-for="filter in queueFilters"
+            :key="filter.key"
+            type="button"
+            role="tab"
+            :aria-selected="queueFilter === filter.key"
+            class="flex min-h-11 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-colors sm:min-w-0"
+            :class="
+              queueFilter === filter.key
+                ? 'bg-surface text-ink shadow-sm'
+                : 'text-ink-secondary hover:bg-surface-hover hover:text-ink'
+            "
+            @click="queueFilter = filter.key"
           >
-            {{ tasksForFilter(filter.key).length }}
-          </span>
-        </button>
+            <span>{{ filter.label }}</span>
+            <span
+              class="inline-flex min-w-6 items-center justify-center rounded-full bg-surface-tertiary px-1.5 py-0.5 text-xs tabular-nums text-ink-secondary"
+            >
+              {{ tasksForFilter(filter.key).length }}
+            </span>
+          </button>
+        </div>
+        <div
+          v-show="showQueueFilterLeftFade"
+          class="pointer-events-none absolute inset-y-1 left-1 w-8 rounded-l-xl bg-gradient-to-r from-surface-secondary to-transparent"
+        />
+        <div
+          v-show="showQueueFilterRightFade"
+          class="pointer-events-none absolute inset-y-1 right-1 w-8 rounded-r-xl bg-gradient-to-l from-surface-secondary to-transparent"
+        />
       </div>
 
       <div class="overflow-hidden rounded-[1.5rem] border border-border bg-surface">

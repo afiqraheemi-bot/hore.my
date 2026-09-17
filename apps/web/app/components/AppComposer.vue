@@ -166,6 +166,13 @@ const accounts = ref<Account[]>([])
 const expanded = ref(false)
 const activeType = ref<TransactionType>(types[0]!)
 
+const {
+  scrollRef: typeTabsScrollRef,
+  showLeftFade: showTypeTabsLeftFade,
+  showRightFade: showTypeTabsRightFade,
+  updateScrollFade: updateTypeTabsFade,
+} = useHorizontalScrollFade()
+
 const amount = ref('')
 const transactionDate = ref(new Date().toISOString().slice(0, 10))
 const compactTransactionDate = computed(() => {
@@ -280,29 +287,41 @@ onMounted(loadAccounts)
     :padded="false"
     class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
   >
-    <div
-      class="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface-secondary/40 px-3 py-2.5"
-    >
-      <button
-        v-for="type in types"
-        :key="type.key"
-        type="button"
-        class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-        :class="
-          activeType.key === type.key
-            ? 'bg-accent text-accent-contrast'
-            : 'bg-surface text-ink-secondary hover:bg-surface-hover hover:text-ink'
-        "
-        @click="
-          () => {
-            selectType(type)
-            open()
-          }
-        "
+    <div class="relative border-b border-border">
+      <div
+        ref="typeTabsScrollRef"
+        class="flex items-center gap-2 overflow-x-auto bg-surface-secondary/40 px-3 py-2.5"
+        @scroll="updateTypeTabsFade"
       >
-        <AppIcon :name="type.icon" :size="14" />
-        {{ type.label }}
-      </button>
+        <button
+          v-for="type in types"
+          :key="type.key"
+          type="button"
+          class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+          :class="
+            activeType.key === type.key
+              ? 'bg-accent text-accent-contrast'
+              : 'bg-surface text-ink-secondary hover:bg-surface-hover hover:text-ink'
+          "
+          @click="
+            () => {
+              selectType(type)
+              open()
+            }
+          "
+        >
+          <AppIcon :name="type.icon" :size="14" />
+          {{ type.label }}
+        </button>
+      </div>
+      <div
+        v-show="showTypeTabsLeftFade"
+        class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-surface-secondary to-transparent"
+      />
+      <div
+        v-show="showTypeTabsRightFade"
+        class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-secondary to-transparent"
+      />
     </div>
 
     <form class="space-y-4 p-4 sm:p-5" @submit.prevent="onSubmit" @focusin="open">
