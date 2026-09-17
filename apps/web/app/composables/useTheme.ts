@@ -16,7 +16,22 @@ export function useTheme() {
     isDark.value = dark
     if (typeof document !== 'undefined') {
       document.documentElement.classList.toggle('dark', dark)
+      updateThemeColorMeta(dark)
     }
+  }
+
+  // `theme-color` was previously hardcoded dark regardless of the
+  // actual theme — iOS Safari uses it to tint its own browser chrome
+  // (the status bar strip above the page), so a light-mode session
+  // with a dark theme-color could show that chrome in a mismatched
+  // tint after any interaction that makes Safari re-evaluate it (e.g.
+  // opening the mobile nav drawer), even though the page itself never
+  // visibly changed. Keeping this tag in sync with the real light/dark
+  // background (main.css's own --color-bg values) removes the
+  // mismatch at the source, in both directions.
+  function updateThemeColorMeta(dark: boolean) {
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.setAttribute('content', dark ? '#18181b' : '#ffffff')
   }
 
   function resolveSystemPrefersDark(): boolean {

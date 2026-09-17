@@ -20,7 +20,17 @@ test.describe('PWA basics', () => {
       'href',
       '/manifest.webmanifest',
     )
-    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#17171a')
+    // Tracks the real light/dark theme, not a fixed value — iOS
+    // Safari tints its own status bar chrome from this tag, so a
+    // mismatch against the actual page background (light UI, dark
+    // theme-color) showed up as an inconsistent-looking status bar
+    // after any interaction that made Safari re-evaluate it.
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ffffff')
+    await page.getByRole('radio', { name: 'Dark' }).click()
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#18181b')
+    await page.getByRole('radio', { name: 'Light' }).click()
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ffffff')
+
     await expect(page.locator('meta[name="apple-mobile-web-app-capable"]')).toHaveAttribute(
       'content',
       'yes',

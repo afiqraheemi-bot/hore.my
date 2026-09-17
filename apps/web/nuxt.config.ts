@@ -33,7 +33,11 @@ export default defineNuxtConfig({
         { rel: 'apple-touch-icon', href: '/pwa-icons/apple-touch-icon.png' },
       ],
       meta: [
-        { name: 'theme-color', content: '#17171a' },
+        // Matches main.css's light --color-bg by default — useTheme.ts
+        // (client-side) keeps this in sync with the user's actual
+        // light/dark choice from then on; this SSR-rendered value is
+        // only ever seen for the instant before that first runs.
+        { name: 'theme-color', content: '#ffffff' },
         // iOS Safari never reads the web manifest for "Add to Home
         // Screen" — these three meta tags are its own, separate
         // opt-in contract for a standalone (no browser chrome) launch.
