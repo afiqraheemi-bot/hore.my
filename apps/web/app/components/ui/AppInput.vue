@@ -22,7 +22,7 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
     :required="required"
     :min="min"
     :step="step"
-    class="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-tertiary focus:border-accent"
+    class="h-10 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-tertiary focus:border-accent"
     @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
   />
 </template>

@@ -282,7 +282,7 @@ async function onSubmit() {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
       body: {
         command_type: activeType.value.commandType,
-        amount: amount.value,
+        amount: normalizeMoney(amount.value),
         transaction_date: transactionDate.value,
         ...(deferAccounts.value
           ? {}

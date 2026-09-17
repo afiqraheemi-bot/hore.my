@@ -259,7 +259,7 @@ async function onSubmit() {
       method: 'POST',
       headers: { 'Idempotency-Key': crypto.randomUUID() },
       body: {
-        amount: amount.value,
+        amount: normalizeMoney(amount.value),
         transaction_date: transactionDate.value,
         [activeType.value.primaryAccountKey]: primaryAccountId.value,
         [activeType.value.secondaryAccountKey]: secondaryAccountId.value,

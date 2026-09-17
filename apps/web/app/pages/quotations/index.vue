@@ -143,7 +143,9 @@ async function onCreate() {
       body: {
         customer_id: customerId.value,
         valid_until: validUntil.value,
-        lines: lineDrafts.value.filter((l) => l.description && l.unit_price),
+        lines: lineDrafts.value
+          .filter((l) => l.description && l.unit_price)
+          .map((l) => ({ ...l, unit_price: normalizeMoney(l.unit_price) })),
       },
     })
     customerId.value = ''

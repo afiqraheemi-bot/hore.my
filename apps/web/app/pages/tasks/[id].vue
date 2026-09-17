@@ -298,7 +298,7 @@ async function supersede() {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
       body: {
         command_type: task.value.proposal.command_type,
-        amount: editAmount.value,
+        amount: normalizeMoney(editAmount.value),
         transaction_date: editDate.value,
         primary_account_id: editPrimaryAccountId.value,
         secondary_account_id: editSecondaryAccountId.value,

@@ -164,8 +164,8 @@ async function onOpenReconciliation() {
       body: {
         period_start: periodStart.value,
         period_end: periodEnd.value,
-        opening_balance: openingBalance.value,
-        closing_balance: closingBalance.value,
+        opening_balance: normalizeMoney(openingBalance.value),
+        closing_balance: normalizeMoney(closingBalance.value),
       },
     })
     periodStart.value = ''

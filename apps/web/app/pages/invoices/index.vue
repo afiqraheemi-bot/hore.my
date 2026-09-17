@@ -129,7 +129,9 @@ async function onCreate() {
         due_date: dueDate.value,
         receivable_account_id: receivableAccountId.value,
         revenue_account_id: revenueAccountId.value,
-        lines: lineDrafts.value.filter((l) => l.description && l.unit_price),
+        lines: lineDrafts.value
+          .filter((l) => l.description && l.unit_price)
+          .map((l) => ({ ...l, unit_price: normalizeMoney(l.unit_price) })),
       },
     })
     customerId.value = ''

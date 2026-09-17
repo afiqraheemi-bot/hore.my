@@ -129,7 +129,7 @@ async function onCreate() {
       method: 'POST',
       body: {
         customer_id: customerId.value,
-        amount: amount.value,
+        amount: normalizeMoney(amount.value),
         payment_date: paymentDate.value,
         deposit_account_id: depositAccountId.value,
         receivable_account_id: receivableAccountId.value,
@@ -164,7 +164,7 @@ async function onAllocate(paymentId: string) {
   try {
     await request(`/api/v1/payments/${paymentId}/allocations`, {
       method: 'POST',
-      body: { invoice_id: allocateInvoiceId.value, amount: allocateAmount.value },
+      body: { invoice_id: allocateInvoiceId.value, amount: normalizeMoney(allocateAmount.value) },
     })
     allocatingPaymentId.value = null
     await Promise.all([loadPayments(), loadOutstandingInvoices()])
