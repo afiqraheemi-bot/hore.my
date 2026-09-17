@@ -3,6 +3,7 @@ import type { AppIcon as AppIconType } from '#components'
 
 const { collapsed, toggle, mobileOpen, closeMobile } = useSidebar()
 const { user, tenant, logout } = useAuth()
+const { canInstall, promptInstall } = useInstallPrompt()
 const router = useRouter()
 const route = useRoute()
 
@@ -169,6 +170,16 @@ function toggleDesktopSidebar() {
         </div>
         <ThemeToggle />
       </div>
+      <button
+        v-if="canInstall"
+        type="button"
+        class="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink"
+        :title="collapsed ? 'Install app' : undefined"
+        @click="promptInstall"
+      >
+        <AppIcon name="download" :size="18" class="shrink-0" />
+        <span v-if="!collapsed || mobileOpen" :class="collapsed && 'md:hidden'">Install app</span>
+      </button>
       <button
         type="button"
         class="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink"

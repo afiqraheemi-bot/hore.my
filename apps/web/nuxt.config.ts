@@ -32,7 +32,15 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'apple-touch-icon', href: '/pwa-icons/apple-touch-icon.png' },
       ],
-      meta: [{ name: 'theme-color', content: '#17171a' }],
+      meta: [
+        { name: 'theme-color', content: '#17171a' },
+        // iOS Safari never reads the web manifest for "Add to Home
+        // Screen" — these three meta tags are its own, separate
+        // opt-in contract for a standalone (no browser chrome) launch.
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-title', content: 'hore.my' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black' },
+      ],
     },
   },
   eslint: {
