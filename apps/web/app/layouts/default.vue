@@ -1,4 +1,12 @@
 <script setup lang="ts">
+// `h-dvh`, not `h-screen` (100vh): iOS Safari's address bar shows and
+// hides as the page scrolls, so 100vh is sized for whichever state
+// was current when the page last loaded — a client-side navigation
+// never re-triggers that calculation, so the shell can render clipped
+// (or the inner scroll container's bounds mismatch what's visually on
+// screen, reading as scrolling that never quite finishes) until a
+// hard reload forces Safari to recompute. `dvh` tracks the real
+// visible viewport continuously instead.
 const { init: initSidebar, openMobile } = useSidebar()
 const { init: initTheme } = useTheme()
 
@@ -9,7 +17,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-surface">
+  <div class="flex h-dvh overflow-hidden bg-surface">
     <AppSidebar />
     <div class="flex min-w-0 flex-1 flex-col">
       <header class="flex h-14 shrink-0 items-center border-b border-border px-4 md:hidden">

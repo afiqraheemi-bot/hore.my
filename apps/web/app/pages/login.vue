@@ -27,7 +27,7 @@ onMounted(initTheme)
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface px-4">
+  <div class="flex min-h-dvh items-center justify-center bg-surface px-4">
     <div class="w-full max-w-sm">
       <div class="mb-8 flex flex-col items-center gap-2">
         <span
