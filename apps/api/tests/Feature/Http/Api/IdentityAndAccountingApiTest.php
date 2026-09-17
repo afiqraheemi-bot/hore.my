@@ -267,6 +267,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->postJson('/api/v1/incomes', [])->assertStatus(401);
         $this->postJson('/api/v1/tasks/task-without-session/approve')->assertStatus(401);
         $this->getJson('/api/v1/dashboard')->assertStatus(401);
+        $this->getJson('/api/v1/periods/current')->assertStatus(401);
         $this->getJson('/api/v1/reports/trial-balance?as_of=2026-08-31')->assertStatus(401);
     }
 
@@ -2972,6 +2973,43 @@ final class IdentityAndAccountingApiTest extends TestCase
         $retry->assertJsonPath('is_newly_closed', false);
         $this->assertSame($close->json('closing_journal_id'), $retry->json('closing_journal_id'));
         $this->assertSame(1, DB::connection('pgsql')->table('period_closures')->count());
+    }
+
+    public function test_the_current_period_watermark_reflects_the_latest_closure_and_is_tenant_isolated(): void
+    {
+        $this->registerAndReturnCredentials('period-watermark@example.my');
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $revenueId = $this->createAccount('4000', 'Consulting Revenue', 'Revenue');
+        $retainedEarningsId = $this->createAccount('3900', 'Retained Earnings', 'Equity');
+
+        $before = $this->getJson('/api/v1/periods/current');
+        $before->assertStatus(200);
+        $before->assertJsonPath('closed_through_date', null);
+        $before->assertJsonPath('closing_journal_id', null);
+
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '200.00',
+            'transaction_date' => '2026-08-15',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Consulting revenue',
+        ], ['Idempotency-Key' => 'key-watermark-income-0001'])->assertStatus(201);
+
+        $close = $this->postJson('/api/v1/periods/close', [
+            'closed_through_date' => '2026-08-31',
+            'retained_earnings_account_id' => $retainedEarningsId,
+        ], ['Idempotency-Key' => 'key-watermark-close-0001']);
+        $close->assertStatus(201);
+
+        $after = $this->getJson('/api/v1/periods/current');
+        $after->assertStatus(200);
+        $after->assertJsonPath('closed_through_date', '2026-08-31');
+        $after->assertJsonPath('closing_journal_id', $close->json('closing_journal_id'));
+
+        $this->registerAndReturnCredentials('period-watermark-tenant-b@example.my');
+        $tenantB = $this->getJson('/api/v1/periods/current');
+        $tenantB->assertStatus(200);
+        $tenantB->assertJsonPath('closed_through_date', null);
     }
 
     public function test_posting_an_expense_into_an_already_closed_period_is_rejected(): void

@@ -1,7 +1,7 @@
 # AETS-014: Period Management
 
 - Status: Active
-- Version: 1.1.0
+- Version: 1.2.0
 - Effective date: 2026-09-07
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -19,6 +19,7 @@ This document specifies Period closing: the operation that rolls every Revenue a
 - The double-entry closing-entry construction: zeroing every Revenue/Expense Account, rolling the net effect into Retained Earnings.
 - A permanent, ever-advancing closed-period watermark per Tenant, and its enforcement against every future ordinary Posting Command.
 - Idempotent, atomic, auditable closing — reusing the existing Posting Command pipeline (M4/AETS-007) unchanged, never a parallel posting mechanism.
+- **As of v1.2.0: a minimal UI surface** (§13) letting a user actually trigger a closing and see the current watermark — until this version, `close()` existed fully built and tested with no way for an actual user to reach it except a direct HTTP call.
 
 ### 2.2 Out of scope
 
@@ -26,7 +27,7 @@ This document specifies Period closing: the operation that rolls every Revenue a
 - **Discrete Period entities, fiscal years, or a Period calendar.** This document models closing as a single ever-advancing watermark, not a list of named Periods with their own lifecycle states (Open/Locked/Closed) — SRS does not require the latter for MVP, and inventing it would be speculative generality.
 - **Automatic/scheduled closing.** Every closing in this document is an explicit, caller-initiated command.
 - **Multi-currency period closing.** Follows [AETS-003](AETS-003-Money-Specification.md)'s own MVP scope (MYR only).
-- **Reporting UI/period-selector changes.** How a future Reporting UI lets a user pick "this month" vs "last month" is a presentation concern, not specified here.
+- **Reporting UI's own period-selector changes.** How the Reporting UI (AETS-009) lets a user pick "this month" vs "last month" when *viewing* a report is a separate presentation concern, not specified here — distinct from §13's own minimal UI for *triggering* a closing.
 - **Reconciling this closing convention against a real accountant's chart-of-accounts numbering practice** (e.g. whether "Retained Earnings" is Account Code 3900) — this document names no canonical Account Code; the Tenant's own Chart of Accounts (AETS-005) decides that.
 
 ## 3. Authority
@@ -110,7 +111,18 @@ The companion [ATS-014](tests/ATS-014-Period-Management-Test-Specification.md) i
 
 This document follows [AETS-000](AETS-000.md)'s governance rules in full. A change to any `PER-NNN` invariant, or to any MUST-level requirement in §6–§7, is a MAJOR change. Adding reopening, discrete Periods, or automatic closing is at minimum a MINOR change and MUST NOT weaken or contradict any invariant this version already establishes.
 
+## 13. Close Period UI (added v1.2.0)
+
+Resolves a gap an audit of the codebase found: `PeriodClosingService::close()` (§6) had existed fully specified, implemented, and tested since v1.0.0 — but with no way for an actual hore.my user to reach it, only a direct HTTP call. This section closes that gap with the minimal surface a closing operation needs, no more.
+
+- **A read endpoint for the watermark.** `GET /api/v1/periods/current` returns the Tenant's current closed-period watermark (§5) — `closed_through_date`, `closing_journal_id`, `closed_at`, each `null` if the Tenant has never closed a Period. No new business logic: every field is a plain, uncomputed read of {@see PeriodClosureRepository::findLatestForTenant()}, the same method `close()` (§6.2) already calls to reject a backward/duplicate close.
+- **A "Close Period" card on the Reports page** (AETS-009): shows the current watermark, a date input, and a Retained Earnings Account selector restricted to the Tenant's own Equity Accounts. Submitting sends the identical `POST /api/v1/periods/close` request (§6.1) the API already accepted before this version, with a client-generated `Idempotency-Key` — no new write path, no new validation the API did not already enforce.
+- **A native `confirm()` dialog before submission**, stating plainly that closing cannot be undone (§2.2's own reopening deferral) and what it does (zeroes Revenue/Expense into the selected Account, forbids posting on or before the closed date). This document's own §2.2 continues to exclude reopening, so the UI's only defense against a mistaken close is this confirmation — never a false promise of a way back.
+- **No confirmation-bypass, no bulk closing, no scheduled closing.** One Tenant, one date, one explicit user action — mirrors §2.2's existing "Automatic/scheduled closing" exclusion exactly; this section adds no capability §2.2 already named out of scope.
+- Implemented by [`PeriodController::current()`](../../../apps/api/app/Http/Controllers/Api/PeriodController.php) (the read endpoint) and the Close Period section of [`apps/web/app/pages/reports/index.vue`](../../../apps/web/app/pages/reports/index.vue) (the UI), reusing `PeriodController::close()` (§6) and the Chart of Accounts list the Reports page already loads — no new controller action for the write path, no new frontend page.
+
 ## Changelog
 
+- **1.2.0 (2026-09-17):** Adds **§13, Close Period UI** — a "Close Period" card on the Reports page and a new `GET /api/v1/periods/current` read endpoint, resolving a real gap an audit found: `close()` (§6) had zero UI since v1.0.0, only a direct HTTP call. No `PER-NNN` invariant changed, no new business logic — the UI reuses the existing `POST /api/v1/periods/close` endpoint unchanged, and the new read endpoint is a plain, uncomputed read of a method `close()` already called internally. Clarifies §2.2's "Reporting UI/period-selector" bullet to name explicitly that it is about a report's own *viewing* period-selector, distinct from §13's closing-trigger UI. Classified **MINOR** per [AETS-000 §9.1](AETS-000.md#91-per-document-version): adds a presentation surface for an already-specified capability, weakens or contradicts nothing.
 - **1.1.0 (2026-09-13):** Links the now-Active ATS-014 and removes the resolved deferred-test-specification item. No Period behavior or invariant changed.
 - **1.0.0 (2026-09-07):** Initial creation. Specifies Period closing (watermark-based, not discrete Period entities), the double-entry closing-entry construction and its direction-agnostic plug algebra, closed-period posting enforcement, and 9 `PER-NNN` invariants. Reopening, discrete Periods/fiscal years, and automatic closing explicitly deferred (§2.2), each for a named reason.

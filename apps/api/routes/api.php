@@ -104,6 +104,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/transfers', [TransferController::class, 'store']);
             Route::post('/capital-contributions', [CapitalContributionController::class, 'store']);
             Route::post('/owner-drawings', [OwnerDrawingController::class, 'store']);
+            Route::get('/periods/current', [PeriodController::class, 'current']);
             Route::post('/periods/close', [PeriodController::class, 'close']);
 
             Route::get('/tasks', [TaskController::class, 'index']);

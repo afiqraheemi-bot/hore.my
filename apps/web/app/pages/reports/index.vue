@@ -201,8 +201,69 @@ async function downloadPdf() {
   }
 }
 
+interface PeriodWatermark {
+  closed_through_date: string | null
+  closing_journal_id: string | null
+  closed_at: string | null
+}
+
+const periodWatermark = ref<PeriodWatermark | null>(null)
+const equityAccounts = computed(() => accounts.value.filter((a) => a.account_type === 'Equity'))
+const closeThroughDate = ref(today)
+const retainedEarningsAccountId = ref('')
+const closingPeriod = ref(false)
+const closePeriodError = ref<string | null>(null)
+const closePeriodSuccess = ref<string | null>(null)
+
+async function loadPeriodWatermark() {
+  periodWatermark.value = await request<PeriodWatermark>('/api/v1/periods/current')
+}
+
+/**
+ * AETS-014: closing a Period is a one-way, ever-advancing commitment —
+ * there is no "reopen" (§2.2, deliberately deferred). The native
+ * `confirm()` dialog is a deliberately minimal safeguard: this is a
+ * rare, high-stakes action, not a everyday form submit, and this
+ * codebase has no existing modal/dialog component to reuse instead of
+ * building one solely for this.
+ */
+async function closePeriod() {
+  if (!retainedEarningsAccountId.value) return
+  const confirmed = confirm(
+    `Close the books through ${closeThroughDate.value}? This cannot be undone — every Revenue and Expense Account will be zeroed into the selected Retained Earnings Account, and no Journal dated on or before this date can be posted afterward.`,
+  )
+  if (!confirmed) return
+
+  closingPeriod.value = true
+  closePeriodError.value = null
+  closePeriodSuccess.value = null
+  try {
+    const response = await request<{ closed_through_date: string; is_newly_closed: boolean }>(
+      '/api/v1/periods/close',
+      {
+        method: 'POST',
+        body: {
+          closed_through_date: closeThroughDate.value,
+          retained_earnings_account_id: retainedEarningsAccountId.value,
+        },
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      },
+    )
+    closePeriodSuccess.value = response.is_newly_closed
+      ? `Books closed through ${response.closed_through_date}.`
+      : `Already closed through ${response.closed_through_date}.`
+    await loadPeriodWatermark()
+  } catch {
+    closePeriodError.value =
+      'Could not close the period. Check the date is after the current watermark and the account is an Equity account with Revenue/Expense activity to close.'
+  } finally {
+    closingPeriod.value = false
+  }
+}
+
 onMounted(async () => {
   await loadAccounts()
+  await loadPeriodWatermark()
   await runReport()
 })
 
@@ -317,5 +378,54 @@ async function selectTab(tab: ReportTab) {
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
     <ReportViewer v-else-if="result" :report="activeTab" :result="result" :accounts="accounts" />
+
+    <AppCard class="mt-8">
+      <h2 class="text-sm font-semibold text-ink">Close Period</h2>
+      <p class="mt-1 text-sm text-ink-tertiary">
+        Zeroes every Revenue and Expense Account into a Retained Earnings Account and permanently
+        forbids posting on or before the closed date. This cannot be undone.
+      </p>
+      <p class="mt-3 text-sm text-ink-secondary">
+        Books currently closed through:
+        <span class="font-medium text-ink">
+          {{ periodWatermark?.closed_through_date ?? 'never' }}
+        </span>
+      </p>
+
+      <div class="mt-4 flex flex-wrap items-end gap-3">
+        <div>
+          <AppField label="Close through">
+            <AppInput v-model="closeThroughDate" type="date" />
+          </AppField>
+        </div>
+        <div class="w-full sm:w-64">
+          <AppField label="Retained Earnings account (Equity)">
+            <AppSelect
+              v-model="retainedEarningsAccountId"
+              placeholder="Select an Equity account"
+              :options="
+                equityAccounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.account_code} — ${a.account_name}`,
+                }))
+              "
+            />
+          </AppField>
+        </div>
+        <AppButton
+          variant="danger"
+          :disabled="closingPeriod || !retainedEarningsAccountId"
+          @click="closePeriod"
+        >
+          {{ closingPeriod ? 'Closing…' : 'Close Period' }}
+        </AppButton>
+      </div>
+
+      <p v-if="equityAccounts.length === 0" class="mt-3 text-sm text-warning">
+        No Equity account exists yet — create one in Chart of Accounts first.
+      </p>
+      <p v-if="closePeriodError" class="mt-3 text-sm text-danger">{{ closePeriodError }}</p>
+      <p v-if="closePeriodSuccess" class="mt-3 text-sm text-success">{{ closePeriodSuccess }}</p>
+    </AppCard>
   </div>
 </template>

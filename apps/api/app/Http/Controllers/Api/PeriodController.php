@@ -18,6 +18,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Accounting\ClosePeriodRequest;
 use App\Http\Support\CurrentTenant;
 use App\Http\Support\DeterministicIdempotentId;
+use App\Infrastructure\Accounting\Period\PeriodClosureRepository;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
@@ -33,7 +34,35 @@ final class PeriodController extends Controller
 {
     public function __construct(
         private readonly PeriodClosingService $periodClosingService,
+        private readonly PeriodClosureRepository $periodClosureRepository,
     ) {}
+
+    /**
+     * The Tenant's current closed-period watermark (AETS-014) — a
+     * plain, uncomputed read of {@see PeriodClosureRepository::findLatestForTenant()},
+     * added so a future Period-closing UI has something to show before
+     * the user submits a closing request. Introduces no new business
+     * logic: every field returned is already produced by `close()`
+     * below for a newly-created closure.
+     */
+    public function current(CurrentTenant $currentTenant): JsonResponse
+    {
+        $watermark = $this->periodClosureRepository->findLatestForTenant($currentTenant->id());
+
+        if ($watermark === null) {
+            return response()->json([
+                'closed_through_date' => null,
+                'closing_journal_id' => null,
+                'closed_at' => null,
+            ]);
+        }
+
+        return response()->json([
+            'closed_through_date' => $watermark->closedThroughDate()->format('Y-m-d'),
+            'closing_journal_id' => $watermark->closingJournalId()->toString(),
+            'closed_at' => $watermark->closedAt()->format(DATE_ATOM),
+        ]);
+    }
 
     public function close(ClosePeriodRequest $request, CurrentTenant $currentTenant): JsonResponse
     {

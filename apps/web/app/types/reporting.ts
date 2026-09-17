@@ -11,6 +11,7 @@ export interface AccountSummary {
   id: string
   account_code: string
   account_name: string
+  account_type: string
 }
 
 export interface NetBalanceResult {

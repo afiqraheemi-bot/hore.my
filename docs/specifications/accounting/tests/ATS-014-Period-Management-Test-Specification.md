@@ -1,7 +1,7 @@
 # ATS-014: Period Management Test Specification
 
 - Status: Active
-- Version: 1.0.0
+- Version: 1.1.0
 - Effective date: 2026-09-13
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -83,6 +83,11 @@ These are methods of `PeriodClosingToPostingCommandTranslatorTest`.
 
 Reopening, discrete Periods/fiscal calendars, automatic closing, and multi-currency remain excluded exactly as AETS-014 §2.2 states. No test implies those capabilities exist.
 
-## 6. Changelog
+## 6. `GET /api/v1/periods/current` (added v1.1.0, AETS-014 §13) — not separately invariant-tracked
 
+`IdentityAndAccountingApiTest::test_the_current_period_watermark_reflects_the_latest_closure_and_is_tenant_isolated` proves the new read endpoint returns `null` before any closure, the correct watermark after one, and never another Tenant's — but this introduces no new `PER-NNN` invariant: the endpoint is a plain, uncomputed read of {@see PeriodClosureRepository::findLatestForTenant()}, the same method `close()` (§4.2's tests) already exercises internally, mirroring [ATS-009](../../accounting/tests/ATS-009-Financial-Reporting-Test-Specification.md)'s own precedent for not separately tracking a presentation-layer reshaping that adds no business logic to prove.
+
+## 7. Changelog
+
+- **1.1.0 (2026-09-17):** Companion update to [AETS-014](../AETS-014-Period-Management.md) v1.2.0 (§13, Close Period UI). Adds new §6 documenting the `GET /api/v1/periods/current` read endpoint's own HTTP-level test — not a new `PER-NNN` invariant, per §6's own reasoning. No existing test ID or invariant's prior coverage changed. Classified **MINOR**.
 - **1.0.0 (2026-09-13):** Initial Active specification mapping 28 concrete tests to all nine AETS-014 invariants, including newly closed atomicity, Account-validity, tenant-isolation, correction-path, and migration assurance gaps.
