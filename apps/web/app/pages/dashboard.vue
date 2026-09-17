@@ -169,10 +169,8 @@ onMounted(loadDashboard)
           :padded="false"
           class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
         >
-          <div
-            class="grid grid-cols-2 divide-x divide-y divide-border lg:grid-cols-4 lg:divide-y-0"
-          >
-            <div class="p-4 sm:p-5">
+          <div class="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
+            <div class="bg-surface p-4 sm:p-5">
               <p class="text-xs font-medium text-ink-tertiary">
                 {{ dashboard.current_period.is_profit ? 'Net profit' : 'Net loss' }}
               </p>
@@ -183,19 +181,19 @@ onMounted(loadDashboard)
                 {{ formatMyr(dashboard.current_period.net_income) }}
               </p>
             </div>
-            <div class="p-4 sm:p-5">
+            <div class="bg-surface p-4 sm:p-5">
               <p class="text-xs font-medium text-ink-tertiary">Income</p>
               <p class="mt-1.5 text-xl font-semibold tabular-nums text-ink sm:text-2xl">
                 {{ formatMyr(dashboard.current_period.total_revenue) }}
               </p>
             </div>
-            <div class="p-4 sm:p-5">
+            <div class="bg-surface p-4 sm:p-5">
               <p class="text-xs font-medium text-ink-tertiary">Expenses</p>
               <p class="mt-1.5 text-xl font-semibold tabular-nums text-ink sm:text-2xl">
                 {{ formatMyr(dashboard.current_period.total_expense) }}
               </p>
             </div>
-            <div class="p-4 sm:p-5">
+            <div class="bg-surface p-4 sm:p-5">
               <p class="text-xs font-medium text-ink-tertiary">Total assets</p>
               <p class="mt-1.5 text-xl font-semibold tabular-nums text-ink sm:text-2xl">
                 {{ formatMyr(dashboard.financial_position.total_assets) }}
