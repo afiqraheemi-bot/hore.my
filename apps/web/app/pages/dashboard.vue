@@ -32,7 +32,6 @@ interface DashboardSummary {
 }
 
 const { request } = useApi()
-const { user } = useAuth()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -50,26 +49,9 @@ async function loadDashboard() {
   }
 }
 
-const firstName = computed(() => user.value?.name.trim().split(/\s+/)[0] || 'there')
-const greeting = computed(() => {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 18) return 'Good afternoon'
-  return 'Good evening'
-})
-
 const attentionCount = computed(() => {
   if (!dashboard.value) return 0
   return dashboard.value.attention.task_count + dashboard.value.attention.overdue_invoice_count
-})
-
-const insight = computed(() => {
-  const period = dashboard.value?.current_period
-  if (!period) return ''
-  if (toMinorUnits(period.net_income) === 0n) {
-    return 'Your books are at break-even so far this month.'
-  }
-  return `Your books show a net ${period.is_profit ? 'profit' : 'loss'} of ${formatMyr(period.net_income)} this month.`
 })
 
 const chartMaximum = computed(() => {
@@ -138,8 +120,7 @@ onMounted(loadDashboard)
 <template>
   <div class="mx-auto max-w-4xl space-y-6 sm:space-y-8">
     <header class="pt-2 text-center sm:pt-4">
-      <p class="text-sm text-ink-tertiary">{{ greeting }}, {{ firstName }}</p>
-      <h1 class="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+      <h1 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
         Your financial overview
       </h1>
       <p v-if="dashboard" class="mt-2 text-sm text-ink-tertiary">
@@ -168,32 +149,6 @@ onMounted(loadDashboard)
     </AppCard>
 
     <template v-else-if="dashboard">
-      <AppCard
-        class="rounded-[1.5rem] border-border-strong px-5 py-5 shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)] sm:px-6"
-      >
-        <div class="flex items-start gap-3">
-          <span
-            class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"
-          >
-            <AppIcon name="check" :size="17" />
-          </span>
-          <div class="min-w-0">
-            <p class="text-xs font-medium uppercase tracking-wide text-ink-tertiary">
-              Accountant's summary
-            </p>
-            <h2 class="mt-1 text-lg font-semibold leading-snug text-ink sm:text-xl">
-              {{ insight }}
-            </h2>
-            <NuxtLink
-              to="/reports"
-              class="mt-2 inline-flex text-sm font-medium text-ink-secondary underline decoration-border-strong underline-offset-4 hover:text-ink"
-            >
-              Review the financial reports
-            </NuxtLink>
-          </div>
-        </div>
-      </AppCard>
-
       <section aria-labelledby="month-performance-heading">
         <div class="mb-3 flex items-end justify-between gap-4">
           <div>
@@ -252,60 +207,45 @@ onMounted(loadDashboard)
       </section>
 
       <section aria-labelledby="attention-heading">
-        <div class="mb-3 flex items-center justify-between gap-4">
-          <h2 id="attention-heading" class="text-base font-semibold text-ink">
-            Needs your attention
-          </h2>
-          <AppBadge :tone="attentionCount ? 'warning' : 'success'">
-            {{ attentionCount ? `${attentionCount} open` : 'All clear' }}
-          </AppBadge>
-        </div>
-
         <AppCard :padded="false" class="overflow-hidden rounded-[1.5rem] border-border-strong">
-          <div v-if="attentionCount" class="divide-y divide-border">
+          <div class="flex items-center justify-between gap-4 px-5 py-4">
+            <h2 id="attention-heading" class="text-sm font-semibold text-ink">
+              Needs your attention
+            </h2>
+            <span
+              v-if="attentionCount"
+              class="rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium tabular-nums text-warning"
+            >
+              {{ attentionCount }}
+            </span>
+            <span v-else class="flex items-center gap-1.5 text-xs font-medium text-success">
+              <AppIcon name="check" :size="14" /> All caught up
+            </span>
+          </div>
+
+          <div v-if="attentionCount" class="divide-y divide-border border-t border-border">
             <NuxtLink
               v-if="dashboard.attention.task_count"
               to="/?filter=attention"
-              class="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-hover"
+              class="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover"
             >
-              <div>
-                <p class="text-sm font-medium text-ink">Tasks waiting for a decision</p>
-                <p class="mt-0.5 text-xs text-ink-tertiary">
-                  Review proposals, missing information or failed work.
-                </p>
-              </div>
-              <span class="text-sm font-semibold tabular-nums text-warning">
+              <span class="text-sm text-ink">Tasks to review</span>
+              <span class="flex items-center gap-2 text-sm tabular-nums text-ink-secondary">
                 {{ dashboard.attention.task_count }}
+                <AppIcon name="chevron-left" :size="14" class="rotate-180" />
               </span>
             </NuxtLink>
             <NuxtLink
               v-if="dashboard.attention.overdue_invoice_count"
               to="/reports"
-              class="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-hover"
+              class="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover"
             >
-              <div>
-                <p class="text-sm font-medium text-ink">Overdue invoices</p>
-                <p class="mt-0.5 text-xs text-ink-tertiary">
-                  {{ formatMyr(dashboard.attention.overdue_invoice_total) }} requires follow-up.
-                </p>
-              </div>
-              <span class="text-sm font-semibold tabular-nums text-warning">
-                {{ dashboard.attention.overdue_invoice_count }}
+              <span class="text-sm text-ink">Overdue invoices</span>
+              <span class="flex items-center gap-2 text-sm tabular-nums text-ink-secondary">
+                {{ formatMyr(dashboard.attention.overdue_invoice_total) }}
+                <AppIcon name="chevron-left" :size="14" class="rotate-180" />
               </span>
             </NuxtLink>
-          </div>
-          <div v-else class="flex items-center gap-3 px-5 py-5">
-            <span
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"
-            >
-              <AppIcon name="check" :size="16" />
-            </span>
-            <div>
-              <p class="text-sm font-medium text-ink">Nothing urgent right now</p>
-              <p class="mt-0.5 text-xs text-ink-tertiary">
-                No Task decisions or overdue invoices need your attention.
-              </p>
-            </div>
           </div>
         </AppCard>
       </section>

@@ -13,7 +13,7 @@ test.describe('Dashboard', () => {
 
     await expect(page.getByText('RM0.00').first()).toBeVisible()
     await expect(page.getByText('Nothing recorded in the last 6 months')).toBeVisible()
-    await expect(page.getByText('Nothing urgent right now')).toBeVisible()
+    await expect(page.getByText('All caught up')).toBeVisible()
   })
 
   test('reflects a recorded Income and Expense in the KPI cards and trend chart', async ({
@@ -57,7 +57,6 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('RM500.00').first()).toBeVisible()
     await expect(page.getByText('RM120.00').first()).toBeVisible()
     await expect(page.getByText('RM380.00').first()).toBeVisible()
-    await expect(page.getByText(/net profit of RM380\.00/i)).toBeVisible()
     await expect(page.getByRole('img', { name: /income RM500\.00/i })).toBeVisible()
     await expect(page.getByRole('img', { name: /expenses RM120\.00/i })).toBeVisible()
 
