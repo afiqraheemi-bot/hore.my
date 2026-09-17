@@ -1,206 +1,418 @@
 <script setup lang="ts">
 /**
- * A visual summary layer over the existing Reporting endpoints
- * (AETS-009) — Trial Balance / Profit & Loss / Balance Sheet already
- * compute everything shown here; this page adds no new report, no
- * new Query, no new business logic. It calls the same
- * `/api/v1/reports/profit-and-loss` and `/api/v1/reports/balance-sheet`
- * endpoints the Reports page already uses, once per month for the
- * trend chart, purely as an HTTP-layer presentation choice.
- *
- * "Cashflow" here means the Income-vs-Expense trend a micro-SME
- * actually wants to see month to month — not AETS-009 §2.2's still-
- * deferred formal Cash Flow Statement (RPT-003), which requires an
- * operating/investing/financing Account classification this codebase
- * does not have. This page never claims to be that report.
+ * A read-only presentation of `/api/v1/dashboard`. The API composes
+ * authoritative Reporting and Workspace queries inside one database
+ * snapshot; this page never derives accounting totals independently.
+ * Monetary values remain canonical decimal strings. BigInt minor units
+ * are used only to scale chart pixels without binary floating point.
  */
 definePageMeta({ middleware: 'auth' })
 
-interface MonthTotals {
-  key: string
-  label: string
-  periodStart: string
-  periodEnd: string
-  revenue: number
-  expense: number
-  net: number
+interface TrendPeriod {
+  period_start: string
+  period_end: string
+  total_revenue: string
+  total_expense: string
+  net_income: string
+  is_profit: boolean
+}
+
+interface DashboardSummary {
+  generated_at: string
+  as_of: string
+  currency: 'MYR'
+  current_period: TrendPeriod
+  financial_position: { total_assets: string }
+  attention: {
+    task_count: number
+    overdue_invoice_count: number
+    overdue_invoice_total: string
+  }
+  trend: TrendPeriod[]
 }
 
 const { request } = useApi()
+const { user } = useAuth()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
-
-const months = ref<MonthTotals[]>([])
-const totalAssets = ref<number | null>(null)
-
-function monthRange(monthsAgo: number): { start: string; end: string; label: string; key: string } {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth() - monthsAgo
-
-  const first = new Date(year, month, 1)
-  const lastOfMonth = new Date(year, month + 1, 0)
-  const end = monthsAgo === 0 && lastOfMonth > now ? now : lastOfMonth
-
-  return {
-    start: first.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-    label: first.toLocaleDateString('en-MY', { month: 'short' }),
-    key: first.toISOString().slice(0, 7),
-  }
-}
+const dashboard = ref<DashboardSummary | null>(null)
 
 async function loadDashboard() {
   loading.value = true
   error.value = null
   try {
-    const ranges = [5, 4, 3, 2, 1, 0].map(monthRange)
-
-    const [profitAndLossResults, balanceSheet] = await Promise.all([
-      Promise.all(
-        ranges.map((range) =>
-          request<{ total_revenue: string; total_expense: string; net_income: string }>(
-            '/api/v1/reports/profit-and-loss',
-            { query: { period_start: range.start, period_end: range.end } },
-          ),
-        ),
-      ),
-      request<{ total_assets: string }>('/api/v1/reports/balance-sheet', {
-        query: { as_of: new Date().toISOString().slice(0, 10) },
-      }),
-    ])
-
-    months.value = ranges.map((range, i) => ({
-      key: range.key,
-      label: range.label,
-      periodStart: range.start,
-      periodEnd: range.end,
-      revenue: Number(profitAndLossResults[i]!.total_revenue),
-      expense: Number(profitAndLossResults[i]!.total_expense),
-      net: Number(profitAndLossResults[i]!.net_income),
-    }))
-    totalAssets.value = Number(balanceSheet.total_assets)
+    dashboard.value = await request<DashboardSummary>('/api/v1/dashboard')
   } catch {
-    error.value = 'Could not load the dashboard right now.'
+    error.value = 'We could not load your financial overview.'
   } finally {
     loading.value = false
   }
 }
 
-const currentMonth = computed(() => months.value[months.value.length - 1] ?? null)
-
-const chartMax = computed(() => {
-  const values = months.value.flatMap((m) => [m.revenue, m.expense])
-  const max = Math.max(1, ...values)
-  return max
+const firstName = computed(() => user.value?.name.trim().split(/\s+/)[0] || 'there')
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
 })
 
-const BAR_AREA_HEIGHT = 140
+const attentionCount = computed(() => {
+  if (!dashboard.value) return 0
+  return dashboard.value.attention.task_count + dashboard.value.attention.overdue_invoice_count
+})
 
-function barHeight(value: number): number {
-  if (chartMax.value === 0) return 0
-  return Math.max(value > 0 ? 4 : 0, Math.round((value / chartMax.value) * BAR_AREA_HEIGHT))
+const insight = computed(() => {
+  const period = dashboard.value?.current_period
+  if (!period) return ''
+  if (toMinorUnits(period.net_income) === 0n) {
+    return 'Your books are at break-even so far this month.'
+  }
+  return `Your books show a net ${period.is_profit ? 'profit' : 'loss'} of ${formatMyr(period.net_income)} this month.`
+})
+
+const chartMaximum = computed(() => {
+  const values = (dashboard.value?.trend ?? []).flatMap((period) => [
+    toMinorUnits(period.total_revenue),
+    toMinorUnits(period.total_expense),
+  ])
+  return values.reduce((maximum, value) => (value > maximum ? value : maximum), 1n)
+})
+
+const hasTrendData = computed(() =>
+  (dashboard.value?.trend ?? []).some(
+    (period) => toMinorUnits(period.total_revenue) > 0n || toMinorUnits(period.total_expense) > 0n,
+  ),
+)
+
+const BAR_AREA_HEIGHT = 136n
+
+function toMinorUnits(value: string): bigint {
+  const match = /^(\d+)\.(\d{2})$/.exec(value)
+  if (!match) return 0n
+  return BigInt(`${match[1]}${match[2]}`)
 }
 
-function formatMyr(value: number): string {
-  return value.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function barHeight(value: string): number {
+  const minorUnits = toMinorUnits(value)
+  if (minorUnits === 0n) return 0
+  return Math.max(4, Number((minorUnits * BAR_AREA_HEIGHT) / chartMaximum.value))
+}
+
+function formatMyr(value: string): string {
+  const match = /^(\d+)\.(\d{2})$/.exec(value)
+  if (!match) return `RM${value}`
+  return `RM${match[1]!.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${match[2]}`
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('en-MY', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(`${value}T00:00:00`))
+}
+
+function monthLabel(value: string): string {
+  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(`${value}T00:00:00`))
+}
+
+function formatGeneratedAt(value: string): string {
+  return new Intl.DateTimeFormat('en-MY', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Asia/Kuala_Lumpur',
+  }).format(new Date(value))
+}
+
+function formatMinorUnits(value: bigint): string {
+  const whole = value / 100n
+  const fraction = String(value % 100n).padStart(2, '0')
+  return formatMyr(`${whole}.${fraction}`)
 }
 
 onMounted(loadDashboard)
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-8">
-    <div class="pt-2 text-center sm:pt-4">
-      <h1 class="text-2xl font-semibold tracking-tight text-ink">Dashboard</h1>
-      <p class="mt-1 text-sm text-ink-tertiary">A quick look at how your business is doing.</p>
-    </div>
+  <div class="mx-auto max-w-4xl space-y-6 sm:space-y-8">
+    <header class="pt-2 text-center sm:pt-4">
+      <p class="text-sm text-ink-tertiary">{{ greeting }}, {{ firstName }}</p>
+      <h1 class="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+        Your financial overview
+      </h1>
+      <p v-if="dashboard" class="mt-2 text-sm text-ink-tertiary">
+        As of {{ formatDate(dashboard.as_of) }} · Updated
+        {{ formatGeneratedAt(dashboard.generated_at) }}
+      </p>
+      <p v-else class="mt-2 text-sm text-ink-tertiary">
+        A clear view of your business, grounded in posted records.
+      </p>
+    </header>
 
-    <p v-if="loading" class="text-center text-sm text-ink-tertiary">Loading…</p>
-    <p v-else-if="error" class="text-center text-sm text-danger">{{ error }}</p>
-
-    <template v-else>
-      <AppCard
-        :padded="false"
-        class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
-      >
-        <div class="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
-          <div class="p-5">
-            <p class="text-xs font-medium text-ink-tertiary">Income this month</p>
-            <p class="mt-1.5 text-2xl font-semibold tabular-nums text-success">
-              RM{{ formatMyr(currentMonth?.revenue ?? 0) }}
-            </p>
-          </div>
-          <div class="p-5">
-            <p class="text-xs font-medium text-ink-tertiary">Expenses this month</p>
-            <p class="mt-1.5 text-2xl font-semibold tabular-nums text-danger">
-              RM{{ formatMyr(currentMonth?.expense ?? 0) }}
-            </p>
-          </div>
-          <div class="p-5">
-            <p class="text-xs font-medium text-ink-tertiary">Net this month</p>
-            <p
-              class="mt-1.5 text-2xl font-semibold tabular-nums"
-              :class="(currentMonth?.net ?? 0) >= 0 ? 'text-success' : 'text-danger'"
-            >
-              RM{{ formatMyr(currentMonth?.net ?? 0) }}
-            </p>
-          </div>
-          <div class="p-5">
-            <p class="text-xs font-medium text-ink-tertiary">Total assets today</p>
-            <p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink">
-              RM{{ formatMyr(totalAssets ?? 0) }}
-            </p>
-          </div>
+    <template v-if="loading">
+      <div class="animate-pulse space-y-4" aria-label="Loading financial overview">
+        <div class="h-28 rounded-3xl bg-surface-tertiary" />
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div v-for="item in 4" :key="item" class="h-28 rounded-2xl bg-surface-tertiary" />
         </div>
-      </AppCard>
+        <div class="h-64 rounded-3xl bg-surface-tertiary" />
+      </div>
+    </template>
 
+    <AppCard v-else-if="error" class="py-10 text-center">
+      <h2 class="text-base font-semibold text-ink">Dashboard unavailable</h2>
+      <p class="mt-1 text-sm text-ink-tertiary">{{ error }}</p>
+      <AppButton class="mt-4" variant="primary" @click="loadDashboard">Try again</AppButton>
+    </AppCard>
+
+    <template v-else-if="dashboard">
       <AppCard
-        class="rounded-[1.5rem] border-border-strong p-6 shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+        class="rounded-[1.5rem] border-border-strong px-5 py-5 shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)] sm:px-6"
       >
-        <div class="mb-5 flex items-center justify-between">
-          <h2 class="text-sm font-medium text-ink-secondary">
-            Income vs. expenses — last 6 months
-          </h2>
-          <div class="flex items-center gap-3 text-xs text-ink-tertiary">
-            <span class="flex items-center gap-1.5">
-              <span class="h-2.5 w-2.5 rounded-full bg-success" /> Income
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="h-2.5 w-2.5 rounded-full bg-danger" /> Expenses
-            </span>
-          </div>
-        </div>
-
-        <EmptyState
-          v-if="months.every((m) => m.revenue === 0 && m.expense === 0)"
-          :bordered="false"
-          title="Nothing recorded in the last 6 months"
-          description="Record an Expense or Income to see your trend here."
-        />
-        <div v-else class="flex items-end justify-between gap-2 overflow-x-auto px-2 pb-1 sm:gap-4">
-          <div
-            v-for="month in months"
-            :key="month.key"
-            class="flex min-w-[48px] flex-col items-center gap-2"
+        <div class="flex items-start gap-3">
+          <span
+            class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"
           >
-            <div class="flex items-end gap-1" :style="{ height: `${BAR_AREA_HEIGHT}px` }">
-              <div
-                class="w-3.5 rounded-t bg-success transition-all"
-                :style="{ height: `${barHeight(month.revenue)}px` }"
-                :title="`Income — ${month.label}: RM${formatMyr(month.revenue)}`"
-              />
-              <div
-                class="w-3.5 rounded-t bg-danger transition-all"
-                :style="{ height: `${barHeight(month.expense)}px` }"
-                :title="`Expenses — ${month.label}: RM${formatMyr(month.expense)}`"
-              />
-            </div>
-            <span class="text-xs text-ink-tertiary">{{ month.label }}</span>
+            <AppIcon name="check" :size="17" />
+          </span>
+          <div class="min-w-0">
+            <p class="text-xs font-medium uppercase tracking-wide text-ink-tertiary">
+              Accountant's summary
+            </p>
+            <h2 class="mt-1 text-lg font-semibold leading-snug text-ink sm:text-xl">
+              {{ insight }}
+            </h2>
+            <NuxtLink
+              to="/reports"
+              class="mt-2 inline-flex text-sm font-medium text-ink-secondary underline decoration-border-strong underline-offset-4 hover:text-ink"
+            >
+              Review the financial reports
+            </NuxtLink>
           </div>
         </div>
       </AppCard>
+
+      <section aria-labelledby="month-performance-heading">
+        <div class="mb-3 flex items-end justify-between gap-4">
+          <div>
+            <h2 id="month-performance-heading" class="text-base font-semibold text-ink">
+              This month
+            </h2>
+            <p class="mt-0.5 text-xs text-ink-tertiary">
+              {{ formatDate(dashboard.current_period.period_start) }} –
+              {{ formatDate(dashboard.current_period.period_end) }}
+            </p>
+          </div>
+          <NuxtLink to="/reports" class="text-sm font-medium text-ink-secondary hover:text-ink">
+            View details
+          </NuxtLink>
+        </div>
+
+        <AppCard
+          :padded="false"
+          class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+        >
+          <div
+            class="grid grid-cols-2 divide-x divide-y divide-border lg:grid-cols-4 lg:divide-y-0"
+          >
+            <div class="p-4 sm:p-5">
+              <p class="text-xs font-medium text-ink-tertiary">
+                {{ dashboard.current_period.is_profit ? 'Net profit' : 'Net loss' }}
+              </p>
+              <p
+                class="mt-1.5 text-xl font-semibold tabular-nums sm:text-2xl"
+                :class="dashboard.current_period.is_profit ? 'text-success' : 'text-danger'"
+              >
+                {{ formatMyr(dashboard.current_period.net_income) }}
+              </p>
+            </div>
+            <div class="p-4 sm:p-5">
+              <p class="text-xs font-medium text-ink-tertiary">Income</p>
+              <p class="mt-1.5 text-xl font-semibold tabular-nums text-ink sm:text-2xl">
+                {{ formatMyr(dashboard.current_period.total_revenue) }}
+              </p>
+            </div>
+            <div class="p-4 sm:p-5">
+              <p class="text-xs font-medium text-ink-tertiary">Expenses</p>
+              <p class="mt-1.5 text-xl font-semibold tabular-nums text-ink sm:text-2xl">
+                {{ formatMyr(dashboard.current_period.total_expense) }}
+              </p>
+            </div>
+            <div class="p-4 sm:p-5">
+              <p class="text-xs font-medium text-ink-tertiary">Total assets</p>
+              <p class="mt-1.5 text-xl font-semibold tabular-nums text-ink sm:text-2xl">
+                {{ formatMyr(dashboard.financial_position.total_assets) }}
+              </p>
+              <p class="mt-1 text-[11px] text-ink-tertiary">Financial position today</p>
+            </div>
+          </div>
+        </AppCard>
+      </section>
+
+      <section aria-labelledby="attention-heading">
+        <div class="mb-3 flex items-center justify-between gap-4">
+          <h2 id="attention-heading" class="text-base font-semibold text-ink">
+            Needs your attention
+          </h2>
+          <AppBadge :tone="attentionCount ? 'warning' : 'success'">
+            {{ attentionCount ? `${attentionCount} open` : 'All clear' }}
+          </AppBadge>
+        </div>
+
+        <AppCard :padded="false" class="overflow-hidden rounded-[1.5rem] border-border-strong">
+          <div v-if="attentionCount" class="divide-y divide-border">
+            <NuxtLink
+              v-if="dashboard.attention.task_count"
+              to="/?filter=attention"
+              class="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-hover"
+            >
+              <div>
+                <p class="text-sm font-medium text-ink">Tasks waiting for a decision</p>
+                <p class="mt-0.5 text-xs text-ink-tertiary">
+                  Review proposals, missing information or failed work.
+                </p>
+              </div>
+              <span class="text-sm font-semibold tabular-nums text-warning">
+                {{ dashboard.attention.task_count }}
+              </span>
+            </NuxtLink>
+            <NuxtLink
+              v-if="dashboard.attention.overdue_invoice_count"
+              to="/reports"
+              class="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-hover"
+            >
+              <div>
+                <p class="text-sm font-medium text-ink">Overdue invoices</p>
+                <p class="mt-0.5 text-xs text-ink-tertiary">
+                  {{ formatMyr(dashboard.attention.overdue_invoice_total) }} requires follow-up.
+                </p>
+              </div>
+              <span class="text-sm font-semibold tabular-nums text-warning">
+                {{ dashboard.attention.overdue_invoice_count }}
+              </span>
+            </NuxtLink>
+          </div>
+          <div v-else class="flex items-center gap-3 px-5 py-5">
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"
+            >
+              <AppIcon name="check" :size="16" />
+            </span>
+            <div>
+              <p class="text-sm font-medium text-ink">Nothing urgent right now</p>
+              <p class="mt-0.5 text-xs text-ink-tertiary">
+                No Task decisions or overdue invoices need your attention.
+              </p>
+            </div>
+          </div>
+        </AppCard>
+      </section>
+
+      <section aria-labelledby="trend-heading">
+        <AppCard
+          class="rounded-[1.5rem] border-border-strong p-5 shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)] sm:p-6"
+        >
+          <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id="trend-heading" class="text-base font-semibold text-ink">
+                Income and expenses
+              </h2>
+              <p class="mt-0.5 text-xs text-ink-tertiary">Last six calendar months</p>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-ink-tertiary" aria-hidden="true">
+              <span class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full bg-success" /> Income
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-sm bg-ink-tertiary" /> Expenses
+              </span>
+            </div>
+          </div>
+
+          <EmptyState
+            v-if="!hasTrendData"
+            :bordered="false"
+            title="Nothing recorded in the last 6 months"
+            description="Record an Expense or Income to see your trend here."
+          />
+          <template v-else>
+            <div class="flex gap-2" aria-labelledby="trend-heading">
+              <div
+                class="flex h-[136px] w-14 shrink-0 flex-col justify-between pb-0.5 text-right text-[10px] tabular-nums text-ink-tertiary"
+                aria-hidden="true"
+              >
+                <span>{{ formatMinorUnits(chartMaximum) }}</span>
+                <span>RM0</span>
+              </div>
+              <div class="grid min-w-0 flex-1 grid-cols-6 gap-1.5 sm:gap-3">
+                <div
+                  v-for="period in dashboard.trend"
+                  :key="period.period_start"
+                  class="flex min-w-0 flex-col items-center gap-2"
+                >
+                  <div
+                    class="flex h-[136px] w-full items-end justify-center gap-1 border-b border-border"
+                  >
+                    <div
+                      class="w-2.5 rounded-t bg-success transition-all sm:w-3.5"
+                      :style="{ height: `${barHeight(period.total_revenue)}px` }"
+                      :aria-label="`${monthLabel(period.period_start)} income ${formatMyr(period.total_revenue)}`"
+                      role="img"
+                      tabindex="0"
+                    />
+                    <div
+                      class="w-2.5 rounded-t-sm bg-ink-tertiary transition-all sm:w-3.5"
+                      :style="{ height: `${barHeight(period.total_expense)}px` }"
+                      :aria-label="`${monthLabel(period.period_start)} expenses ${formatMyr(period.total_expense)}`"
+                      role="img"
+                      tabindex="0"
+                    />
+                  </div>
+                  <span class="truncate text-[11px] text-ink-tertiary sm:text-xs">
+                    {{ monthLabel(period.period_start) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <details class="mt-5 border-t border-border pt-4">
+              <summary class="cursor-pointer text-sm font-medium text-ink-secondary">
+                View exact monthly figures
+              </summary>
+              <div class="mt-3 overflow-x-auto">
+                <table class="w-full min-w-[520px] text-left text-sm">
+                  <thead class="text-xs uppercase tracking-wide text-ink-tertiary">
+                    <tr>
+                      <th class="py-2 font-medium">Month</th>
+                      <th class="py-2 text-right font-medium">Income</th>
+                      <th class="py-2 text-right font-medium">Expenses</th>
+                      <th class="py-2 text-right font-medium">Profit / loss</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-border">
+                    <tr v-for="period in dashboard.trend" :key="`table-${period.period_start}`">
+                      <td class="py-2.5 text-ink-secondary">
+                        {{ monthLabel(period.period_start) }}
+                      </td>
+                      <td class="py-2.5 text-right tabular-nums text-ink">
+                        {{ formatMyr(period.total_revenue) }}
+                      </td>
+                      <td class="py-2.5 text-right tabular-nums text-ink">
+                        {{ formatMyr(period.total_expense) }}
+                      </td>
+                      <td class="py-2.5 text-right font-medium tabular-nums text-ink">
+                        {{ period.is_profit ? '' : '−' }}{{ formatMyr(period.net_income) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </template>
+        </AppCard>
+      </section>
     </template>
   </div>
 </template>

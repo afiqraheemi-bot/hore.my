@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\BankStatementImportController;
 use App\Http\Controllers\Api\BusinessProfileController;
 use App\Http\Controllers\Api\CapitalContributionController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EvidenceController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
@@ -41,6 +42,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/me', [AuthController::class, 'me']);
 
         Route::middleware(['tenant.resolved'])->group(function (): void {
+            Route::get('/dashboard', [DashboardController::class, 'show']);
             Route::get('/business-profile', [BusinessProfileController::class, 'show']);
             Route::put('/business-profile', [BusinessProfileController::class, 'store']);
 

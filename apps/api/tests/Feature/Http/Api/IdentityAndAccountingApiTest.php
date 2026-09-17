@@ -6,6 +6,7 @@ namespace Tests\Feature\Http\Api;
 
 use App\Domain\Banking\XlsxBankStatementParser;
 use App\Http\Controllers\Api\ExpenseController;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
@@ -265,6 +266,7 @@ final class IdentityAndAccountingApiTest extends TestCase
         $this->postJson('/api/v1/expenses', [])->assertStatus(401);
         $this->postJson('/api/v1/incomes', [])->assertStatus(401);
         $this->postJson('/api/v1/tasks/task-without-session/approve')->assertStatus(401);
+        $this->getJson('/api/v1/dashboard')->assertStatus(401);
         $this->getJson('/api/v1/reports/trial-balance?as_of=2026-08-31')->assertStatus(401);
     }
 
@@ -1583,6 +1585,59 @@ final class IdentityAndAccountingApiTest extends TestCase
         $evidenceIndex = $this->getJson('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31');
         $evidenceIndex->assertStatus(200);
         $evidenceIndex->assertJsonCount(2, 'entries');
+    }
+
+    public function test_dashboard_uses_exact_malaysia_calendar_month_boundaries(): void
+    {
+        CarbonImmutable::setTestNow(new CarbonImmutable('2026-09-17 12:00:00', 'Asia/Kuala_Lumpur'));
+
+        try {
+            $this->registerAndReturnCredentials('dashboard-boundaries@example.my');
+            $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+            $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+
+            $this->postJson('/api/v1/incomes', [
+                'amount' => '90.00',
+                'transaction_date' => '2026-08-31',
+                'income_account_id' => $revenueId,
+                'deposit_account_id' => $cashId,
+                'description' => 'August boundary sale',
+            ], ['Idempotency-Key' => 'key-dashboard-august-boundary'])->assertStatus(201);
+
+            $this->postJson('/api/v1/incomes', [
+                'amount' => '100.00',
+                'transaction_date' => '2026-09-01',
+                'income_account_id' => $revenueId,
+                'deposit_account_id' => $cashId,
+                'description' => 'September boundary sale',
+            ], ['Idempotency-Key' => 'key-dashboard-september-boundary'])->assertStatus(201);
+
+            $journalCountBefore = DB::connection('pgsql')->table('journals')->count();
+            $response = $this->getJson('/api/v1/dashboard');
+
+            $response->assertOk();
+            $response->assertJsonPath('as_of', '2026-09-17');
+            $response->assertJsonPath('generated_at', '2026-09-17T12:00:00+08:00');
+            $response->assertJsonPath('trend.4.period_start', '2026-08-01');
+            $response->assertJsonPath('trend.4.period_end', '2026-08-31');
+            $response->assertJsonPath('trend.4.total_revenue', '90.00');
+            $response->assertJsonPath('current_period.period_start', '2026-09-01');
+            $response->assertJsonPath('current_period.period_end', '2026-09-17');
+            $response->assertJsonPath('current_period.total_revenue', '100.00');
+            $response->assertJsonPath('financial_position.total_assets', '190.00');
+            $response->assertJsonPath('attention.task_count', 0);
+            $response->assertJsonPath('attention.overdue_invoice_count', 0);
+            $response->assertJsonPath('attention.overdue_invoice_total', '0.00');
+            $this->assertSame($journalCountBefore, DB::connection('pgsql')->table('journals')->count());
+
+            $this->registerAndReturnCredentials('dashboard-boundaries-tenant-b@example.my');
+            $tenantBResponse = $this->getJson('/api/v1/dashboard');
+            $tenantBResponse->assertOk();
+            $tenantBResponse->assertJsonPath('current_period.total_revenue', '0.00');
+            $tenantBResponse->assertJsonPath('financial_position.total_assets', '0.00');
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
     }
 
     public function test_profit_and_loss_and_balance_sheet_can_be_downloaded_as_a_loan_ready_pdf(): void
