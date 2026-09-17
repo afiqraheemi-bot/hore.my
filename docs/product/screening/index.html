@@ -285,7 +285,7 @@
             <article class="card"><h3>Payments</h3><p>Bayaran masuk dan allocation kepada outstanding invoices.</p></article>
             <article class="card"><h3>Banking</h3><p>Import penyata CSV/XLSX, transaksi bank, match suggestion dan reconciliation.</p></article>
             <article class="card"><h3>Reconciliation</h3><p>Rekonsiliasi hanya selesai apabila perbezaan tepat RM0.00.</p></article>
-            <article class="card"><h3>Accounting Core</h3><p>Journal, period lock, idempotency dan correction chain.</p></article>
+            <article class="card"><h3>Accounting Core</h3><p>Journal, period closing dengan UI dan penguatkuasaan period lock, idempotency dan correction chain.</p></article>
             <article class="card"><h3>Reporting</h3><p>Trial Balance, P&amp;L, Balance Sheet, Cash Flow, Ledger, Aging dan Evidence Index dengan paparan manusia serta eksport.</p></article>
             <article class="card"><h3>AI Orchestration</h3><p>Interpretasi dan cadangan sahaja; tidak mempunyai laluan menulis ke ledger.</p></article>
             <article class="card"><h3>Audit & Operations</h3><p>Jejak keputusan, bukti, actor, monitoring, backup dan recovery.</p></article>
@@ -295,7 +295,7 @@
         <section id="reality">
           <div class="section-head">
             <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
-            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>2799bf7</code>. Status “ada” tidak bermaksud production-ready.</p>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>67caad1</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
           <div class="status-strip" style="margin: 0 0 18px">
             <span class="pill good">✅ Ada &amp; functional</span>
@@ -374,6 +374,7 @@
                 <li>Dashboard income/expense/net/assets dan trend enam bulan</li>
                 <li>Bank CSV/XLSX import, matching dan reconciliation</li>
                 <li>Financial reports yang boleh dibaca manusia, Cash Flow, loan-ready PDF dan Compliance Pack</li>
+                <li>Close Period melalui UI (tutup buku bulanan/tahunan), sebelum ini hanya boleh dicapai melalui API terus</li>
                 <li>PWA installability asas dengan manifest, service worker dan install prompt</li>
                 <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
                 <li>Exact-money double-entry dengan traceability dan correction chain</li>
@@ -402,7 +403,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>2799bf7</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>67caad1</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -413,7 +414,7 @@
             <article class="progress-card">
               <span class="label">Product surface</span>
               <strong class="value">Bertambah</strong>
-              <p>Dashboard, human-readable reports, Cash Flow, PDF/XLSX export, Compliance Pack, guided loan entry dan PWA installability kini tersedia.</p>
+              <p>Dashboard, human-readable reports, Cash Flow, Close Period, PDF/XLSX export, Compliance Pack, guided loan entry dan PWA installability kini tersedia.</p>
             </article>
             <article class="progress-card">
               <span class="label">Coverage</span>
@@ -481,7 +482,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 17 September 2026 · committed baseline <code>2799bf7</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 17 September 2026 · committed baseline <code>67caad1</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
