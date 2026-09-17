@@ -211,6 +211,7 @@
           <div class="status-strip">
             <span class="pill good">Accounting foundation tersedia</span>
             <span class="pill good">Human confirmation tersedia</span>
+            <span class="pill good">Cash Flow &amp; PWA foundation tersedia</span>
             <span class="pill partial">Banking menunggu domain sign-off</span>
             <span class="pill partial">AI & OCR belum lengkap</span>
             <span class="pill partial">Bukan production-ready</span>
@@ -285,7 +286,7 @@
             <article class="card"><h3>Banking</h3><p>Import penyata CSV/XLSX, transaksi bank, match suggestion dan reconciliation.</p></article>
             <article class="card"><h3>Reconciliation</h3><p>Rekonsiliasi hanya selesai apabila perbezaan tepat RM0.00.</p></article>
             <article class="card"><h3>Accounting Core</h3><p>Journal, period lock, idempotency dan correction chain.</p></article>
-            <article class="card"><h3>Reporting</h3><p>Trial Balance, P&amp;L, Balance Sheet, Ledger, Aging dan Evidence Index.</p></article>
+            <article class="card"><h3>Reporting</h3><p>Trial Balance, P&amp;L, Balance Sheet, Cash Flow, Ledger, Aging dan Evidence Index dengan paparan manusia serta eksport.</p></article>
             <article class="card"><h3>AI Orchestration</h3><p>Interpretasi dan cadangan sahaja; tidak mempunyai laluan menulis ke ledger.</p></article>
             <article class="card"><h3>Audit & Operations</h3><p>Jejak keputusan, bukti, actor, monitoring, backup dan recovery.</p></article>
           </div>
@@ -294,7 +295,7 @@
         <section id="reality">
           <div class="section-head">
             <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
-            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>699ae9e</code>. Status “ada” tidak bermaksud production-ready.</p>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>2799bf7</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
           <div class="status-strip" style="margin: 0 0 18px">
             <span class="pill good">✅ Ada &amp; functional</span>
@@ -324,7 +325,7 @@
               <tr>
                 <td>4</td><td>Dashboard visual</td>
                 <td><span class="status-badge review">🟡 Partial</span></td>
-                <td>Dashboard memaparkan income, expense, net, assets dan trend enam bulan. Ia belum menyediakan formal Cash Flow Statement atau pecahan trend jualan mengikut channel.</td>
+                <td>Dashboard memaparkan income, expense, net, assets dan trend enam bulan. Formal Cash Flow Statement tersedia di Reports, tetapi dashboard belum memvisualkan aliran tunai atau trend jualan mengikut channel.</td>
               </tr>
               <tr>
                 <td>5</td><td>Multi-channel sales capture</td>
@@ -333,8 +334,8 @@
               </tr>
               <tr>
                 <td>6</td><td>Cashflow + P&amp;L loan-ready</td>
-                <td><span class="status-badge review">🟡 Partial</span></td>
-                <td>P&amp;L dan Balance Sheet boleh dieksport sebagai loan-ready PDF. Formal Cash Flow Statement masih deferred kerana klasifikasi operating/investing/financing belum diwujudkan.</td>
+                <td><span class="status-badge good">✅ Functional</span></td>
+                <td>Formal Cash Flow Statement kini mengelaskan operating, investing dan financing; P&amp;L, Balance Sheet dan Cash Flow boleh dieksport sebagai loan-ready PDF.</td>
               </tr>
               <tr>
                 <td>7</td><td>Annual tax / accountant export pack</td>
@@ -372,7 +373,8 @@
                 <li>Customers, quotations, invoices, payments dan PDF documents</li>
                 <li>Dashboard income/expense/net/assets dan trend enam bulan</li>
                 <li>Bank CSV/XLSX import, matching dan reconciliation</li>
-                <li>Financial reports, loan-ready PDF dan Compliance Pack</li>
+                <li>Financial reports yang boleh dibaca manusia, Cash Flow, loan-ready PDF dan Compliance Pack</li>
+                <li>PWA installability asas dengan manifest, service worker dan install prompt</li>
                 <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
                 <li>Exact-money double-entry dengan traceability dan correction chain</li>
               </ul>
@@ -381,13 +383,12 @@
               <h3>Gap seterusnya yang nyata</h3>
               <ul>
                 <li>Multi-channel sales source dan adapter POS/e-commerce</li>
-                <li>Formal Cash Flow Statement dengan activity classification</li>
                 <li>Annual tax pack, tax codes dan filing workflow</li>
                 <li>E-wallet import profile dan configurable statement mapping</li>
                 <li>Tenant membership, staff invitation, roles dan permissions</li>
                 <li>Document processing, OCR dan governed AI proposals</li>
                 <li>MyInvois live adapter dan status reconciliation</li>
-                <li>PWA dan production operations hardening</li>
+                <li>Offline strategy lanjutan dan production operations hardening</li>
                 <li>Release certification, security review dan restore drill</li>
               </ul>
             </div>
@@ -401,7 +402,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>699ae9e</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>2799bf7</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -412,12 +413,12 @@
             <article class="progress-card">
               <span class="label">Product surface</span>
               <strong class="value">Bertambah</strong>
-              <p>Dashboard, quotations, PDF documents, XLSX import/export, Compliance Pack dan guided loan entry kini tersedia.</p>
+              <p>Dashboard, human-readable reports, Cash Flow, PDF/XLSX export, Compliance Pack, guided loan entry dan PWA installability kini tersedia.</p>
             </article>
             <article class="progress-card">
               <span class="label">Coverage</span>
-              <strong class="value">6 gap</strong>
-              <p>Empat feature masih partial dan dua belum ada daripada 11 keupayaan micro-SME yang disaring.</p>
+              <strong class="value">5 gap</strong>
+              <p>Tiga feature masih partial dan dua belum ada daripada 11 keupayaan micro-SME yang disaring.</p>
             </article>
             <article class="progress-card">
               <span class="label">Release readiness</span>
@@ -454,14 +455,14 @@
               <tr>
                 <td>External compliance &amp; delivery</td>
                 <td><span class="status-badge pending">Not release-ready</span></td>
-                <td>MyInvois live adapter, tax filing, PWA, observability, backup/restore drill serta security/release certification masih menjadi gate.</td>
+                <td>MyInvois live adapter, tax filing, observability, backup/restore drill serta security/release certification masih menjadi gate. PWA asas tersedia tetapi belum membuktikan offline accounting workflow.</td>
               </tr>
             </tbody>
           </table>
 
           <div class="callout" style="margin-top: 18px">
             <strong>Gate seterusnya</strong>
-            Tutup gap formal Cash Flow Statement, tax/accountant completeness dan multi-user foundation tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review, observability serta backup/restore drill.
+            Tutup gap tax/accountant completeness, multi-user foundation, governed AI/OCR dan channel capture tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review, observability serta backup/restore drill.
           </div>
         </section>
 
@@ -480,7 +481,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 17 September 2026 · committed baseline <code>699ae9e</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 17 September 2026 · committed baseline <code>2799bf7</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
