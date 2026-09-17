@@ -141,6 +141,18 @@ const expanded = ref(false)
 const activeType = ref<TaskType>(types[0]!)
 const amount = ref('')
 const transactionDate = ref(new Date().toISOString().slice(0, 10))
+const compactTransactionDate = computed(() => {
+  if (!transactionDate.value) return 'Date'
+
+  return new Intl.DateTimeFormat('en-MY', { day: 'numeric', month: 'short' }).format(
+    new Date(`${transactionDate.value}T00:00:00`),
+  )
+})
+const fullTransactionDate = computed(() => {
+  if (!transactionDate.value) return 'Date'
+
+  return new Intl.DateTimeFormat('en-GB').format(new Date(`${transactionDate.value}T00:00:00`))
+})
 const primaryAccountId = ref('')
 const secondaryAccountId = ref('')
 const deferAccounts = ref(false)
@@ -324,7 +336,7 @@ onMounted(async () => {
       </div>
 
       <form class="space-y-4 p-4 sm:p-5" @submit.prevent="onSubmit" @focusin="expanded = true">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="flex items-center gap-3">
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <span class="text-lg font-medium text-ink-tertiary">RM</span>
             <input
@@ -336,13 +348,20 @@ onMounted(async () => {
               class="min-w-0 flex-1 border-0 bg-transparent p-0 text-2xl font-semibold text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-0"
             />
           </div>
-          <input
-            v-model="transactionDate"
-            aria-label="Transaction date"
-            type="date"
-            required
-            class="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-ink-secondary sm:w-auto"
-          />
+          <label
+            class="relative flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-sm font-medium text-ink-secondary focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 sm:px-3"
+          >
+            <span class="sm:hidden">{{ compactTransactionDate }}</span>
+            <span class="hidden sm:inline">{{ fullTransactionDate }}</span>
+            <AppIcon name="calendar" :size="16" />
+            <input
+              v-model="transactionDate"
+              aria-label="Transaction date"
+              type="date"
+              required
+              class="absolute inset-0 cursor-pointer opacity-0 focus:outline-none"
+            />
+          </label>
         </div>
 
         <div

@@ -30,6 +30,7 @@ const props = defineProps<{
     | 'chevron-down'
     | 'logout'
     | 'download'
+    | 'calendar'
     | 'search'
     | 'dots'
   size?: number
@@ -141,6 +142,10 @@ const size = props.size ?? 20
     <template v-else-if="name === 'download'">
       <path d="M12 3v13M7 11l5 5 5-5" />
       <path d="M5 21h14" />
+    </template>
+    <template v-else-if="name === 'calendar'">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3 10h18" />
     </template>
     <template v-else-if="name === 'search'">
       <circle cx="11" cy="11" r="7" />
