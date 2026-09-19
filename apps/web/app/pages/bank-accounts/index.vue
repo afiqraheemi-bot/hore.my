@@ -1,6 +1,31 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
 
+/**
+ * `$fetch` (ofetch) throws a `FetchError` whose own `.data` is the
+ * parsed JSON response body — for a 422 from
+ * `BankStatementImportController`, that is
+ * `{"message": "<the real MalformedBankStatementException reason>"}`.
+ * Falls back to a generic message only when the response truly
+ * carried none (a network failure, not a validation rejection) —
+ * never silently substitutes a guessed reason for a real one.
+ */
+function extractApiErrorMessage(error: unknown): string {
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'data' in error &&
+    error.data !== null &&
+    typeof error.data === 'object' &&
+    'message' in error.data &&
+    typeof error.data.message === 'string'
+  ) {
+    return error.data.message
+  }
+
+  return 'Import failed. Please try again.'
+}
+
 interface Account {
   id: string
   account_code: string
@@ -285,9 +310,8 @@ async function onImport() {
     // the just-computed summary is re-applied after it, not before.
     await selectBankAccount(selectedBankAccountId.value)
     importSummary.value = summary
-  } catch {
-    importError.value =
-      'Import failed — check the CSV header is exactly "date,description,amount,direction,balance,reference".'
+  } catch (error) {
+    importError.value = extractApiErrorMessage(error)
   } finally {
     importing.value = false
   }
