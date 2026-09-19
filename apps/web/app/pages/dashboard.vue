@@ -8,6 +8,18 @@
  */
 definePageMeta({ middleware: 'auth' })
 
+interface NetBalance {
+  amount: string
+  direction: 'Debit' | 'Credit' | null
+}
+
+interface CashFlowTrend {
+  operating: NetBalance
+  investing: NetBalance
+  financing: NetBalance
+  net_change: NetBalance
+}
+
 interface TrendPeriod {
   period_start: string
   period_end: string
@@ -15,6 +27,7 @@ interface TrendPeriod {
   total_expense: string
   net_income: string
   is_profit: boolean
+  cash_flow: CashFlowTrend
 }
 
 interface DashboardSummary {
@@ -68,7 +81,40 @@ const hasTrendData = computed(() =>
   ),
 )
 
+const cashFlowChartMaximum = computed(() => {
+  const values = (dashboard.value?.trend ?? []).map((period) =>
+    toMinorUnits(period.cash_flow.net_change.amount),
+  )
+  return values.reduce((maximum, value) => (value > maximum ? value : maximum), 1n)
+})
+
+const hasCashFlowData = computed(() =>
+  (dashboard.value?.trend ?? []).some(
+    (period) => toMinorUnits(period.cash_flow.net_change.amount) > 0n,
+  ),
+)
+
 const BAR_AREA_HEIGHT = 136n
+const CASH_FLOW_HALF_HEIGHT = 68n
+
+function isInflow(balance: NetBalance): boolean {
+  return balance.direction === 'Debit'
+}
+
+function isOutflow(balance: NetBalance): boolean {
+  return balance.direction === 'Credit'
+}
+
+function cashBarHeight(balance: NetBalance): number {
+  const minorUnits = toMinorUnits(balance.amount)
+  if (minorUnits === 0n) return 0
+  return Math.max(4, Number((minorUnits * CASH_FLOW_HALF_HEIGHT) / cashFlowChartMaximum.value))
+}
+
+function signedMyr(balance: NetBalance): string {
+  const formatted = formatMyr(balance.amount)
+  return isOutflow(balance) ? `−${formatted}` : formatted
+}
 
 function toMinorUnits(value: string): bigint {
   const match = /^(\d+)\.(\d{2})$/.exec(value)
@@ -342,6 +388,131 @@ onMounted(loadDashboard)
                       </td>
                       <td class="py-2.5 text-right font-medium tabular-nums text-ink">
                         {{ period.is_profit ? '' : '−' }}{{ formatMyr(period.net_income) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </template>
+        </AppCard>
+      </section>
+
+      <section aria-labelledby="cash-flow-heading">
+        <AppCard
+          class="rounded-[1.5rem] border-border-strong p-5 shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)] sm:p-6"
+        >
+          <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id="cash-flow-heading" class="text-base font-semibold text-ink">Cash flow</h2>
+              <p class="mt-0.5 text-xs text-ink-tertiary">
+                Net change in cash, last six calendar months
+              </p>
+            </div>
+            <NuxtLink
+              to="/reports"
+              class="flex items-center gap-4 text-xs text-ink-tertiary hover:text-ink"
+              aria-hidden="true"
+            >
+              <span class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full bg-success" /> Cash in
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-sm bg-danger" /> Cash out
+              </span>
+            </NuxtLink>
+          </div>
+
+          <EmptyState
+            v-if="!hasCashFlowData"
+            :bordered="false"
+            title="No cash movement recorded yet"
+            description="Cash flow tracks Accounts linked to a Bank Account. Link one under Bank Accounts to see this chart."
+          />
+          <template v-else>
+            <div class="flex gap-2" aria-labelledby="cash-flow-heading">
+              <div
+                class="flex h-[136px] w-14 shrink-0 flex-col justify-between pb-0.5 text-right text-[10px] tabular-nums text-ink-tertiary"
+                aria-hidden="true"
+              >
+                <span>{{ formatMinorUnits(cashFlowChartMaximum) }}</span>
+                <span>RM0</span>
+                <span>−{{ formatMinorUnits(cashFlowChartMaximum) }}</span>
+              </div>
+              <div class="grid min-w-0 flex-1 grid-cols-6 gap-1.5 sm:gap-3">
+                <div
+                  v-for="period in dashboard.trend"
+                  :key="period.period_start"
+                  class="flex min-w-0 flex-col items-center gap-2"
+                >
+                  <div class="flex h-[136px] w-full flex-col justify-center">
+                    <div
+                      class="flex h-[68px] w-full items-end justify-center border-b border-border"
+                    >
+                      <div
+                        v-if="isInflow(period.cash_flow.net_change)"
+                        class="w-4 rounded-t bg-success transition-all sm:w-5"
+                        :style="{ height: `${cashBarHeight(period.cash_flow.net_change)}px` }"
+                        :aria-label="`${monthLabel(period.period_start)} net cash in ${formatMyr(period.cash_flow.net_change.amount)}`"
+                        role="img"
+                        tabindex="0"
+                      />
+                    </div>
+                    <div class="flex h-[68px] w-full items-start justify-center">
+                      <div
+                        v-if="isOutflow(period.cash_flow.net_change)"
+                        class="w-4 rounded-b bg-danger transition-all sm:w-5"
+                        :style="{ height: `${cashBarHeight(period.cash_flow.net_change)}px` }"
+                        :aria-label="`${monthLabel(period.period_start)} net cash out ${formatMyr(period.cash_flow.net_change.amount)}`"
+                        role="img"
+                        tabindex="0"
+                      />
+                    </div>
+                  </div>
+                  <span class="truncate text-[11px] text-ink-tertiary sm:text-xs">
+                    {{ monthLabel(period.period_start) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <details class="mt-5 border-t border-border pt-4">
+              <summary class="cursor-pointer text-sm font-medium text-ink-secondary">
+                View exact monthly figures
+              </summary>
+              <div class="mt-3 overflow-x-auto">
+                <table class="w-full min-w-[560px] text-left text-sm">
+                  <thead class="text-xs uppercase tracking-wide text-ink-tertiary">
+                    <tr>
+                      <th class="py-2 font-medium">Month</th>
+                      <th class="py-2 text-right font-medium">Operating</th>
+                      <th class="py-2 text-right font-medium">Investing</th>
+                      <th class="py-2 text-right font-medium">Financing</th>
+                      <th class="py-2 text-right font-medium">Net change</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-border">
+                    <tr
+                      v-for="period in dashboard.trend"
+                      :key="`cash-table-${period.period_start}`"
+                    >
+                      <td class="py-2.5 text-ink-secondary">
+                        {{ monthLabel(period.period_start) }}
+                      </td>
+                      <td class="py-2.5 text-right tabular-nums text-ink">
+                        {{ signedMyr(period.cash_flow.operating) }}
+                      </td>
+                      <td class="py-2.5 text-right tabular-nums text-ink">
+                        {{ signedMyr(period.cash_flow.investing) }}
+                      </td>
+                      <td class="py-2.5 text-right tabular-nums text-ink">
+                        {{ signedMyr(period.cash_flow.financing) }}
+                      </td>
+                      <td
+                        class="py-2.5 text-right font-medium tabular-nums"
+                        :class="isOutflow(period.cash_flow.net_change) ? 'text-danger' : 'text-ink'"
+                      >
+                        {{ signedMyr(period.cash_flow.net_change) }}
                       </td>
                     </tr>
                   </tbody>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Accounting\Reporting\NetBalance;
 use App\Domain\Invoicing\Reporting\AgingBucket;
 use App\Domain\Invoicing\Reporting\AgingReportLine;
 use App\Domain\Workspace\Task;
@@ -11,6 +12,7 @@ use App\Domain\Workspace\TaskState;
 use App\Http\Controllers\Controller;
 use App\Http\Support\CurrentTenant;
 use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
+use App\Infrastructure\Accounting\Reporting\CashFlowStatementQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
 use App\Infrastructure\Invoicing\Reporting\AgingReportQuery;
 use App\Infrastructure\Workspace\TaskRepository;
@@ -32,6 +34,7 @@ final class DashboardController extends Controller
         private readonly ProfitAndLossQuery $profitAndLossQuery,
         private readonly BalanceSheetQuery $balanceSheetQuery,
         private readonly AgingReportQuery $agingReportQuery,
+        private readonly CashFlowStatementQuery $cashFlowStatementQuery,
         private readonly TaskRepository $taskRepository,
     ) {}
 
@@ -54,6 +57,12 @@ final class DashboardController extends Controller
                     $periodEnd,
                 );
 
+                $cashFlow = $this->cashFlowStatementQuery->forPeriod(
+                    $currentTenant->id(),
+                    $periodStart,
+                    $periodEnd,
+                );
+
                 $trendEntry = [
                     'period_start' => $periodStart->format('Y-m-d'),
                     'period_end' => $periodEnd->format('Y-m-d'),
@@ -61,6 +70,12 @@ final class DashboardController extends Controller
                     'total_expense' => $statement->totalExpense()->toDecimalString(),
                     'net_income' => $statement->netIncome()->toDecimalString(),
                     'is_profit' => $statement->isProfit(),
+                    'cash_flow' => [
+                        'operating' => $this->netBalanceToArray($cashFlow->operatingTotal()),
+                        'investing' => $this->netBalanceToArray($cashFlow->investingTotal()),
+                        'financing' => $this->netBalanceToArray($cashFlow->financingTotal()),
+                        'net_change' => $this->netBalanceToArray($cashFlow->netChangeInCash()),
+                    ],
                 ];
 
                 $trend[] = $trendEntry;
@@ -112,6 +127,17 @@ final class DashboardController extends Controller
                 'trend' => $trend,
             ]);
         });
+    }
+
+    /**
+     * @return array{amount: string, direction: ?string}
+     */
+    private function netBalanceToArray(NetBalance $balance): array
+    {
+        return [
+            'amount' => $balance->amount()->toDecimalString(),
+            'direction' => $balance->direction()?->name,
+        ];
     }
 
     /**

@@ -1596,6 +1596,7 @@ final class IdentityAndAccountingApiTest extends TestCase
             $this->registerAndReturnCredentials('dashboard-boundaries@example.my');
             $cashId = $this->createAccount('1000', 'Cash', 'Asset');
             $revenueId = $this->createAccount('4000', 'Sales Revenue', 'Revenue');
+            $this->registerBankAccount($cashId, 'Dashboard Test Bank');
 
             $this->postJson('/api/v1/incomes', [
                 'amount' => '90.00',
@@ -1622,9 +1623,21 @@ final class IdentityAndAccountingApiTest extends TestCase
             $response->assertJsonPath('trend.4.period_start', '2026-08-01');
             $response->assertJsonPath('trend.4.period_end', '2026-08-31');
             $response->assertJsonPath('trend.4.total_revenue', '90.00');
+            $response->assertJsonPath('trend.4.cash_flow.operating.amount', '90.00');
+            $response->assertJsonPath('trend.4.cash_flow.operating.direction', 'Debit');
+            $response->assertJsonPath('trend.4.cash_flow.investing.amount', '0.00');
+            $response->assertJsonPath('trend.4.cash_flow.investing.direction', null);
+            $response->assertJsonPath('trend.4.cash_flow.financing.amount', '0.00');
+            $response->assertJsonPath('trend.4.cash_flow.financing.direction', null);
+            $response->assertJsonPath('trend.4.cash_flow.net_change.amount', '90.00');
+            $response->assertJsonPath('trend.4.cash_flow.net_change.direction', 'Debit');
             $response->assertJsonPath('current_period.period_start', '2026-09-01');
             $response->assertJsonPath('current_period.period_end', '2026-09-17');
             $response->assertJsonPath('current_period.total_revenue', '100.00');
+            $response->assertJsonPath('current_period.cash_flow.operating.amount', '100.00');
+            $response->assertJsonPath('current_period.cash_flow.operating.direction', 'Debit');
+            $response->assertJsonPath('current_period.cash_flow.net_change.amount', '100.00');
+            $response->assertJsonPath('current_period.cash_flow.net_change.direction', 'Debit');
             $response->assertJsonPath('financial_position.total_assets', '190.00');
             $response->assertJsonPath('attention.task_count', 0);
             $response->assertJsonPath('attention.overdue_invoice_count', 0);

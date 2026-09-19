@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createAccount, registerNewUser } from './support/fixtures'
+import { createAccount, registerBankAccount, registerNewUser } from './support/fixtures'
 
 /**
  * Real-browser proof of the Dashboard's read-only presentation over
@@ -69,5 +69,46 @@ test.describe('Dashboard', () => {
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
     )
     expect(hasHorizontalPageOverflow).toBe(false)
+  })
+
+  test('cash flow chart stays empty for an unlinked Account and reflects a Bank Account once linked', async ({
+    page,
+  }) => {
+    await registerNewUser(page)
+    await createAccount(page, '1000', 'Cash', 'Asset')
+    await createAccount(page, '4000', 'Sales', 'Revenue')
+
+    await page.goto('/manual-entry')
+    await page.getByRole('button', { name: 'Income' }).click()
+    await page.locator('input[inputmode="decimal"]').fill('500.00')
+    await page.locator('form select').nth(0).selectOption({ label: 'Sales' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
+    await page.getByPlaceholder('What was this for?').fill('Sale')
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/incomes') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /record/i }).click(),
+    ])
+    await page.getByText('Recorded.').waitFor()
+
+    // Cash is not yet linked to a Bank Account: the Cash Flow
+    // Statement's own "cash-equivalent" definition (AETS-009 §22)
+    // excludes it, so the dashboard's Cash flow section must show its
+    // own empty state even though the Income above already appears in
+    // the Income/expenses trend chart.
+    await page.goto('/dashboard')
+    await expect(page.getByText('RM500.00').first()).toBeVisible()
+    await expect(page.getByText('No cash movement recorded yet')).toBeVisible()
+
+    await registerBankAccount(page, 'Cash', 'Test Bank')
+
+    await page.goto('/dashboard')
+    await expect(page.getByText('No cash movement recorded yet')).not.toBeVisible()
+    await expect(page.getByRole('img', { name: /net cash in RM500\.00/i })).toBeVisible()
+
+    await page.locator('text=View exact monthly figures').last().click()
+    const cashFlowTable = page.getByRole('table').last()
+    await expect(cashFlowTable).toContainText('RM500.00')
   })
 })
