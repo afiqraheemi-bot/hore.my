@@ -296,7 +296,7 @@
         <section id="reality">
           <div class="section-head">
             <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
-            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>9e8c319</code>. Status “ada” tidak bermaksud production-ready.</p>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>3a69f3d</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
           <div class="status-strip" style="margin: 0 0 18px">
             <span class="pill good">✅ Ada &amp; functional</span>
@@ -356,7 +356,7 @@
               <tr>
                 <td>10</td><td>Bank / e-wallet reconciliation</td>
                 <td><span class="status-badge review">🟡 Partial</span></td>
-                <td>Bank CSV/XLSX import, matching dan reconciliation tersedia, kini termasuk bukti end-to-end terhadap Proof of Accuracy golden dataset (rekonsiliasi tepat RM0.00). E-wallet-specific adapter, configurable column mapping, live feed dan Accounting Domain Reviewer sign-off belum ada.</td>
+                <td>Bank CSV/XLSX import, matching dan reconciliation tersedia, kini termasuk bukti end-to-end terhadap Proof of Accuracy golden dataset (rekonsiliasi tepat RM0.00) dan import statement PDF Maybank (parser khusus, bukan mapping generik). E-wallet, parser CIMB, configurable column mapping, live feed dan Accounting Domain Reviewer sign-off belum ada.</td>
               </tr>
               <tr>
                 <td>11</td><td>Multi-user / staff access</td>
@@ -381,6 +381,7 @@
                 <li>Backup/restore drill sebenar terhadap PostgreSQL — backup, drop, restore dan pengesahan Trial Balance sepadan tepat</li>
                 <li>Dashboard kini memvisualkan Cash Flow (Operating/Investing/Financing) enam bulan, guna data Reports yang sama</li>
                 <li>ATS-008 traceability lengkap — setiap invariant Bank Reconciliation (BNK-001–BNK-020) kini ada ujian boleh-jalan</li>
+                <li>Import statement bank PDF Maybank — parser khusus bank (bukan mapping generik), disahkan terhadap PostgreSQL sebenar, HTTP dan browser sebenar</li>
                 <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
                 <li>Exact-money double-entry dengan traceability dan correction chain</li>
               </ul>
@@ -408,7 +409,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>9e8c319</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>3a69f3d</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -487,7 +488,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 19 September 2026 · committed baseline <code>9e8c319</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 19 September 2026 · committed baseline <code>3a69f3d</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
