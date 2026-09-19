@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.7.0
+- Version: 0.8.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the workflow decisions in §12 — **the Founder explicitly delegated §12's decisions to the CTO on 2026-09-16, in lieu of deciding each individually**; a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness (distinct from the product/workflow judgment calls §12 required) remains outstanding and is still required before Activation (§13)
@@ -220,6 +220,22 @@ Invoice/document match targets and the Reconciliation Report (already excluded b
 
 Overdraft and negative statement/running/closing balances are out of scope for this document's Active version. A Bank Account or statement period whose opening balance, closing balance, or any running balance is negative must fail closed with an explicit, user-facing validation error raised at import time — not only implicitly, later, when difference computation happens to need a negative intermediate value, as today. This defers rather than forecloses an eventual signed-balance model: introducing negative Money handling has cross-cutting blast radius across AETS-003's non-negative Money invariant well beyond Banking alone, and a change with that reach must not be decided as a side effect of unblocking Banking. Malaysian solopreneur/microbusiness banking (this product's actual target per the Master Context) rarely operates in genuine sustained overdraft, so this ships the common case now and leaves the harder signed-Money architecture question for its own dedicated ADR if real customer need ever demands it. See `BNK-020`.
 
+### 12.10 PDF bank statement import for Maybank and CIMB — decided: two dedicated fixed-layout parsers, §12.5 otherwise unchanged (2026-09-19)
+
+Founder decision, 2026-09-19 (direct chat, "pilihan A" — deterministic per-bank parser over OCR/AI extraction; banks named as "maybank dan cimb"): `BankStatementFileFormat` gains two further members, `MaybankPdf` and `CimbPdf`, each with its own dedicated parser (`MaybankPdfBankStatementParser`, `CimbPdfBankStatementParser`) that extracts that bank's own native PDF statement layout and normalizes it into the **identical** fixed v1 schema §5 already describes (`date, description, amount, direction, balance, reference`) — never a new or divergent schema, mirroring §5.1's own XLSX precedent exactly in that respect.
+
+**This is a narrower reopening of §12.5, not its reversal.** §12.5's "guided file mapping and parser variants" deferral was about *arbitrary, unrecognized* formats requiring a mapping-persistence UX — that remains deferred, unchanged, for every bank other than these two and for any e-wallet (§12.5 itself, reaffirmed 2026-09-19 when e-wallet scope was separately considered and explicitly left deferred). `MaybankPdf`/`CimbPdf` are two more named, fixed, code-defined formats — the same shape of decision XLSX already was, not the general guided-mapping capability.
+
+**Materially larger unit of work than XLSX, unlike XLSX's own precedent.** CSV and XLSX share the same underlying flat-table cell structure — XLSX only had to normalize two cell-type quirks (a serial date, a numeric cell) before reusing `BankStatementRowParser` unchanged. A bank PDF statement has no equivalent shared structure with CSV/XLSX: real Malaysian bank e-statements are native digitally-generated PDFs (not scanned images, so text extraction rather than OCR applies), but each bank's own layout — separate Debit/Credit columns rather than one amount-plus-direction column, running-balance placement, header/footer noise, page-break behavior — must be translated into the canonical schema by dedicated, bank-specific logic. Each of the two parsers is therefore its own real engineering unit, not a thin format adapter.
+
+**Fail-closed contract, unchanged in spirit from CSV/XLSX.** An unrecognized layout, a missing expected marker, or any row this bank's own parser cannot confidently place into the fixed schema rejects the *whole file* with an explicit `MalformedBankStatementException`, exactly like a malformed CSV today — never a silent skip, never a best-effort guess at a financial amount or direction. A future statement whose layout drifts from what these parsers were built against (a bank redesigns its PDF template) is expected to fail closed loudly, not misparse silently.
+
+**New dependency required.** No PDF text-extraction library exists in this codebase today (`dompdf`, already a dependency, only *generates* PDFs). Implementation requires adding one (a PHP PDF-text-extraction package) — itself a small, separate decision (license, maintenance posture) to record at implementation time, not decided by this entry.
+
+**Prerequisite, not yet satisfied: real sample layouts.** Mirroring AETS-012 §5.1's own "never invent financial reality" principle, these two parsers must be built against a real (or realistically redacted) Maybank and CIMB statement PDF's actual text layout — not a guessed structure. This decision authorizes the work; it does not yet unblock implementation until those samples are available.
+
+See `BNK-T053` (still `Deferred` for every format/bank this entry does not name) — this entry does not change that row; a new, separate `BNK-TNNN` pair for `MaybankPdf`/`CimbPdf` will be added to ATS-008 once implemented and proven.
+
 ## 13. Activation checklist
 
 - [x] CTO / Technical Partner review recorded — reviewed 2026-09-19: `BNK-014`–`BNK-020` implementation re-confirmed against current code, and the connected Proof of Accuracy golden-dataset segment (§11) built and proven end to end against real PostgreSQL.
@@ -233,6 +249,7 @@ Overdraft and negative statement/running/closing balances are out of scope for t
 
 ## Changelog
 
+- **0.8.0 (2026-09-19):** Adds §12.10 — Founder decision (direct chat) to reopen §12.5 narrowly: two dedicated fixed-layout PDF parsers for Maybank and CIMB statements, normalizing into the identical fixed v1 schema, never configurable mapping. §12.5 itself is unchanged for every other bank/format/e-wallet. Not yet implemented — blocked on real (or realistically redacted) sample statement layouts for both banks, and on adding a PDF text-extraction dependency. No `BNK-NNN` invariant changed; a new pair will be added once built and proven.
 - **0.7.0 (2026-09-19):** Closes `BNK-T059`/`BNK-T060` (ATS-008 v0.8.0) — `BNK-001` and `BNK-013` now each have a real executable test. Every accepted `BNK-NNN` invariant maps to executable evidence; Accounting Domain Reviewer sign-off is the sole remaining Activation blocker. No `BNK-NNN` invariant's meaning changed.
 - **0.6.0 (2026-09-19):** Records that ATS-008's full normative traceability is complete (ATS-008 v0.7.0, §2) — closing §13's remaining unchecked item. Two genuine gaps found in the process, `BNK-001` and `BNK-013`, are now named in §11 and tracked as `BNK-T059`/`BNK-T060`, joining Accounting Domain Reviewer sign-off as Activation blockers. No `BNK-NNN` invariant's meaning changed.
 - **0.5.0 (2026-09-19):** Records that the connected bank-statement segment §11 names is now implemented and proven — see §11 and §13's updated CTO review line. Still Draft: Accounting Domain Reviewer approval of both this document and the golden dataset's canonical facts/expected values remains outstanding.
