@@ -81,6 +81,7 @@ blob-report/
 # IDE and editor files
 .idea/
 .fleet/
+.claude/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
