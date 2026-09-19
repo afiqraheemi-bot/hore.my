@@ -110,3 +110,6 @@ $RECYCLE.BIN/
 *.rej
 tmp/
 temp/
+
+# Local Postgres backup/restore drill artifacts (infrastructure/postgres/backup.sh)
+infrastructure/postgres/backups/
