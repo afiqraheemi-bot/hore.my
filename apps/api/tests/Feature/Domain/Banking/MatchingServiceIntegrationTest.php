@@ -214,6 +214,37 @@ final class MatchingServiceIntegrationTest extends TestCase
         $this->assertSame(1, DB::connection('pgsql')->table(self::MATCH_TABLE)->count());
     }
 
+    /**
+     * BNK-013 (ATS-008 BNK-T060): {@see MatchingService::suggestFor()}
+     * and {@see MatchingService::confirm()} create no Journal — the
+     * `journals` table's row count for this Tenant is exactly
+     * unchanged across both calls, even though `confirm()` does
+     * persist a new `matches` row. Complements the construction-level
+     * argument (the class has no posting-service dependency at all)
+     * with a real behavioral proof.
+     */
+    public function test_matching_creates_no_journal(): void
+    {
+        $this->expenseService->record($this->makeExpenseCommand());
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-05,Card payment,123.45,OUT,,\n";
+        $this->importService->import($this->tenant, BankAccountId::of('bank-account-0001'), 'statement.csv', $csv, $this->myr);
+
+        $journalsForTenant = fn (): int => DB::connection('pgsql')->table('journals')->where('tenant_id', $this->tenant->toString())->count();
+        $before = $journalsForTenant();
+
+        $candidates = $this->matchingService->suggestFor($this->tenant, BankAccountId::of('bank-account-0001'));
+        $this->assertSame($before, $journalsForTenant());
+
+        $candidate = $candidates[0];
+        $result = $this->matchingService->confirm($this->tenant, $candidate->bankTransactionId(), $candidate->journalId(), ActorReference::of('actor-0001'));
+
+        $this->assertTrue($result->isNewMatch());
+        $this->assertSame(1, DB::connection('pgsql')->table(self::MATCH_TABLE)->count());
+        $this->assertSame($before, $journalsForTenant());
+    }
+
     public function test_a_confirmed_match_is_never_suggested_again(): void
     {
         $this->expenseService->record($this->makeExpenseCommand());

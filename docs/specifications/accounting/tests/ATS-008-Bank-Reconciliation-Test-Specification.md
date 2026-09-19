@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.7.0
+- Version: 0.8.0
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -19,7 +19,7 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 
 | Invariant | Test IDs | Note |
 | --- | --- | --- |
-| `BNK-001` — Import has zero ledger effect | — | **Gap.** No test asserts the `journals` table is unchanged by an import. Every §3.1 import test only checks Bank Transaction/Import Batch rows; none independently confirms no Journal is created. |
+| `BNK-001` — Import has zero ledger effect | BNK-T059 | |
 | `BNK-002` — Money and bank direction are exact and unambiguous | BNK-T001, BNK-T038, BNK-T039 | Canonical direction (`MoneyIn`/`MoneyOut`) is additionally proven by the Bank Transaction migration test class's own CHECK-constraint and valid-insert proofs (§3.1's closing note), not a separate `BNK-TNNN` ID. |
 | `BNK-003` — A malformed statement has zero persistent effect | BNK-T004 | |
 | `BNK-004` — Import Batch and inserted Bank Transactions commit atomically | BNK-T004, BNK-T007 | |
@@ -31,7 +31,7 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 | `BNK-010` — `Balanced` and `Completed` require exact zero live difference | BNK-T019, BNK-T020, BNK-T021 | |
 | `BNK-011` — Lifecycle transitions are serialized and atomic | BNK-T025, BNK-T048 | |
 | `BNK-012` — Reopening is explicit, reasoned, append-only audited, and atomic | BNK-T022, BNK-T023, BNK-T024, BNK-T025, BNK-T043 | |
-| `BNK-013` — AI/matching cannot post or bypass Accounting Core | — | **Gap, though true by construction.** `App\Domain\Banking\MatchingService` has no dependency on any posting service anywhere in its constructor or method bodies (verified by direct source read, 2026-09-19) — it is structurally incapable of posting. No dedicated test asserts this; a future test could grep the class's own dependencies or assert no Journal is created as a side effect of `suggestFor()`/`confirm()` beyond the Match row itself. |
+| `BNK-013` — AI/matching cannot post or bypass Accounting Core | BNK-T060 | True by construction (`App\Domain\Banking\MatchingService` has no posting-service dependency) **and** now behaviorally proven. |
 | `BNK-014` — Transfer Journals accept exactly two confirmed Matches, one per leg; every other type at most one | BNK-T051 | |
 | `BNK-015` — A Reconciliation's period never overlaps another for the same Bank Account, in any lifecycle state | BNK-T052 | |
 | `BNK-016` — Completion requires exact zero difference **and** a confirmed Match for every in-period Bank Transaction | BNK-T019, BNK-T020, BNK-T021, BNK-T050 | |
@@ -40,7 +40,7 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 | `BNK-019` — Every Match's confidence is the discrete value `Exact` | BNK-T054 | |
 | `BNK-020` — Import/reconciliation of a negative balance fails closed | BNK-T058 | |
 
-**Activation is blocked on two open items in this matrix**, independent of `BNK-T057`/Accounting Domain Reviewer sign-off named elsewhere: `BNK-001` and `BNK-013` have no dedicated executable evidence yet. Both are architecturally plausible (import never calls a posting service; matching never calls a posting service) but "plausible" is not "proven" — §5's Activation gate cannot be met until either a real test closes these, or this document's own review explicitly accepts the construction-level argument as sufficient (a decision for the Accounting Domain Reviewer/CTO review, not something this Draft can decide unilaterally by omission).
+Every `BNK-NNN` invariant in this matrix now maps to at least one `BNK-TNNN` executable proof. `BNK-T057` (§4) and Accounting Domain Reviewer sign-off remain the only Activation blockers not resolved by this matrix.
 
 ## 3. Current executable evidence
 
@@ -55,6 +55,7 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 | BNK-T005 | Existing | Identical input is independent between Tenants. | `two_tenants_importing_do_not_interfere` |
 | BNK-T006 | Existing | Identical input is independent between Bank Accounts. | `two_bank_accounts_with_identical_file_content_do_not_interfere` |
 | BNK-T007 | Existing | Forced transaction-row failure rolls back the whole import. | `a_forced_bank_transaction_insert_failure_rolls_back_the_entire_import` |
+| BNK-T059 | Existing | A fresh import and a replay both leave the `journals` table's row count for the Tenant exactly unchanged. | `test_import_leaves_the_journals_table_unchanged_for_a_fresh_import_and_a_replay` |
 
 ### 3.2 Matching
 
@@ -66,6 +67,7 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 | BNK-T011 | Existing | Reconfirming an already-matched Bank Transaction is rejected. | `confirming_an_already_matched_bank_transaction_is_rejected` |
 | BNK-T012 | Existing | A noncandidate Journal is rejected at confirmation. | `confirming_a_journal_that_is_not_a_valid_candidate_is_rejected` |
 | BNK-T013 | Existing | Amount mismatch produces no candidate. | `amount_mismatch_produces_no_candidate` |
+| BNK-T060 | Existing | `suggestFor()` and `confirm()` create no Journal — the `journals` table's row count for the Tenant is exactly unchanged across both calls. | `test_matching_creates_no_journal` |
 
 ### 3.3 Reconciliation lifecycle
 
@@ -145,21 +147,20 @@ The new `reconciliation_completion_snapshots` table (`BNK-017`, `BNK-T049`) has 
 | --- | --- | --- | --- |
 | BNK-T053 | Deferred | Guided mapping of noncanonical statement formats. Out of this Draft's Active-version scope; does not gate Activation. | AETS-008 §12.5 |
 | BNK-T057 | Required (implemented against a candidate dataset) | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. As of 2026-09-19, this is implemented and passing against `hore-my-poa-v1` v1.0.0 — a real bank statement import → matching → completed Reconciliation at exact RM0.00 difference, reconciling exactly to Trial Balance/P&L/Balance Sheet/GL/Evidence Index/Aging (`tests/Feature/ProofOfAccuracy/ProofOfAccuracyCertificationTest.php`; AETS-012 §10, ATS-012 §5.2). Stays `Required`, not `Existing`, because the dataset is a CTO proposal, not yet Accounting Domain Reviewer-approved — this row cannot claim "approved source evidence" until that review lands. | AETS-012 Draft; candidate proof exists, approval outstanding |
-| BNK-T059 | Required | A real-PostgreSQL assertion that the `journals` table's row count (tenant-scoped) is unchanged immediately before and after `BankStatementImportService::import()`, for both a fresh import and a replay. | `BNK-001` (§2) |
-| BNK-T060 | Required | Either a dedicated test asserting `MatchingService::suggestFor()`/`confirm()` create no Journal as a side effect beyond the Match row itself, or an explicit Accounting Domain Reviewer/CTO review record accepting the construction-level argument (§2's own note: the class has no posting-service dependency) as sufficient evidence in place of a test. | `BNK-013` (§2) |
 
 ## 5. Activation gate
 
 ATS-008 may become `Active` only when:
 
 - AETS-008 is Active;
-- every accepted `BNK-NNN` invariant, including `BNK-014`–`BNK-020`, maps to executable evidence (§2 — `BNK-001` and `BNK-013` do not yet);
+- every accepted `BNK-NNN` invariant, including `BNK-014`–`BNK-020`, maps to executable evidence (§2 — satisfied as of v0.8.0);
 - every §4 item marked `Required` is implemented and passing (items marked `Deferred` do not gate Activation);
 - real PostgreSQL runs with zero skips/failures; and
 - neither this document nor CI claims Proof of Accuracy before AETS-012's separate certification gate is satisfied.
 
 ## Changelog
 
+- **0.8.0 (2026-09-19):** Closes both gaps §2's traceability matrix found: `BNK-T059` (`journals` unchanged across a fresh import and a replay) and `BNK-T060` (`suggestFor()`/`confirm()` create no Journal) are now `Existing` with real executable tests, moved from §4 into §3.1/§3.2. Every accepted `BNK-NNN` invariant now maps to at least one `BNK-TNNN`. `BNK-T057` and Accounting Domain Reviewer sign-off remain the only Activation blockers.
 - **0.7.0 (2026-09-19):** Adds §2, the formal Traceability matrix AETS-008 §13's activation checklist named as outstanding ("ATS-008 updated from evidence inventory to complete normative traceability") — every `BNK-001`–`BNK-020` candidate invariant mapped to its `BNK-TNNN` evidence rows. Finds two genuine gaps in the process, `BNK-001` and `BNK-013`, neither previously named as required evidence; adds `BNK-T059`/`BNK-T060` to §4 to track them and updates §5's Activation gate accordingly. Renumbers former §2–§4 to §3–§5; no existing evidence row's State or Proof text changed.
 - **0.6.0 (2026-09-19):** Updates `BNK-T057`: now implemented and passing against AETS-012's `hore-my-poa-v1` v1.0.0 candidate dataset, closing the implementation gap named "blocked on AETS-012." Stays `Required` (not `Existing`) since the dataset is not yet Accounting Domain Reviewer-approved. No other row changed.
 - **0.5.0 (2026-09-16):** Moves `BNK-T055` to `Existing`: Income and Owner Equity Contribution candidates, and independent wrong-date/direction/Account/state/Tenant rejection, each with a dedicated test. Currency independence is not claimed — only MYR is supported anywhere in this system, so a currency-mismatch case is not meaningfully constructible. Only `BNK-T057` (blocked on AETS-012) and `BNK-T053` (deferred, out of scope) remain outstanding.

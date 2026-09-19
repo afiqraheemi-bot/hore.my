@@ -161,6 +161,33 @@ final class BankStatementImportServiceIntegrationTest extends TestCase
         $this->assertSame(1, DB::connection('pgsql')->table(self::BANK_TRANSACTION_TABLE)->count());
     }
 
+    /**
+     * BNK-001 (ATS-008 BNK-T059): a fresh import and a replay of the
+     * byte-identical file both leave the `journals` table's row count
+     * for this Tenant exactly unchanged. Import populates
+     * `bank_transactions`/`bank_statement_import_batches` only —
+     * {@see BankStatementImportService} has no dependency on any
+     * posting service, so this is a real behavioral proof, not merely
+     * a restatement of that structural fact.
+     */
+    public function test_import_leaves_the_journals_table_unchanged_for_a_fresh_import_and_a_replay(): void
+    {
+        $journalsForTenantA = fn (): int => DB::connection('pgsql')->table('journals')->where('tenant_id', $this->tenantA->toString())->count();
+
+        $csv = "date,description,amount,direction,balance,reference\n"
+            ."2026-08-01,Salary credit,3000.00,IN,,\n";
+
+        $before = $journalsForTenantA();
+
+        $result = $this->service->import($this->tenantA, $this->bankAccountA, 'statement.csv', $csv, Currency::of('MYR'));
+        $this->assertTrue($result->isNewImport());
+        $this->assertSame($before, $journalsForTenantA());
+
+        $replay = $this->service->import($this->tenantA, $this->bankAccountA, 'statement.csv', $csv, Currency::of('MYR'));
+        $this->assertTrue($replay->isReplay());
+        $this->assertSame($before, $journalsForTenantA());
+    }
+
     public function test_an_overlapping_non_identical_reexport_skips_only_the_duplicate_rows(): void
     {
         $firstCsv = "date,description,amount,direction,balance,reference\n"

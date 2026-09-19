@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.6.0
+- Version: 0.7.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the workflow decisions in §12 — **the Founder explicitly delegated §12's decisions to the CTO on 2026-09-16, in lieu of deciding each individually**; a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness (distinct from the product/workflow judgment calls §12 required) remains outstanding and is still required before Activation (§13)
@@ -177,8 +177,8 @@ These eight join `BNK-001`–`BNK-013` as candidate invariants pending the same 
 - Accounting Domain Reviewer confirmation of difference sign semantics, lifecycle prerequisites, and transfer matching cardinality.
 - Implementation and real-PostgreSQL proof of `BNK-014`–`BNK-020` — done as of 2026-09-16 (`e1e4ae5`, `3d83477`, `b25590b`, `d0c98b1`, `084b2e7`): two-leg Transfer matching, period-overlap rejection, full-matching completion prerequisite, the immutable completion snapshot (with its own migration/FK proof), replay/conflict concurrency contracts for both import and match confirmation (each with a genuine two-process race proof), the discrete `Exact` confidence value (with its own migration/CHECK-constraint proof), and fail-closed negative-balance validation. Full regression suite run four consecutive times clean and deterministic after the last of these landed.
 - As of 2026-09-19, the connected bank-statement segment named above now exists: AETS-012's `hore-my-poa-v1` v1.0.0 candidate Golden Dataset includes a real bank statement CSV import → matching → a completed Reconciliation at exact RM0.00 difference for two Bank Accounts, executed through the real `BankStatementImportService`/`MatchingService`/`ReconciliationService` and proven against real PostgreSQL by `tests/Feature/ProofOfAccuracy/ProofOfAccuracyCertificationTest.php` (see AETS-012 §10, ATS-012 §5.2). This is a **candidate** segment only — the dataset carries an explicit CTO-proposal marker and is not yet Accounting Domain Reviewer-approved, so it does not itself satisfy this bullet's "approved Proof of Accuracy golden dataset" wording; it removes the *implementation* gap and leaves only the review gap, which is the same outstanding Accounting Domain Reviewer sign-off already named below.
-- As of 2026-09-19, ATS-008's own full normative traceability (`BNK-001`–`BNK-020` each mapped to its executable evidence, ATS-008 §2) is complete and found two genuine gaps not previously named as required evidence: `BNK-001` (import has zero ledger effect) and `BNK-013` (AI/matching cannot post or bypass Accounting Core) have no dedicated test — both are architecturally plausible but unproven, tracked as `BNK-T059`/`BNK-T060` (ATS-008 §4).
-- Remaining before Activation: Accounting Domain Reviewer sign-off on both this document and the golden dataset's canonical facts/expected values (still outstanding, see §13), and closing `BNK-T059`/`BNK-T060`.
+- As of 2026-09-19, ATS-008's own full normative traceability (`BNK-001`–`BNK-020` each mapped to its executable evidence, ATS-008 §2) is complete. The process found two genuine gaps not previously named as required evidence — `BNK-001` (import has zero ledger effect) and `BNK-013` (AI/matching cannot post or bypass Accounting Core) — both since closed with real executable tests (`BNK-T059`/`BNK-T060`, ATS-008 §3.1/§3.2). Every accepted `BNK-NNN` invariant now maps to at least one executable test.
+- Remaining before Activation: Accounting Domain Reviewer sign-off on both this document and the golden dataset's canonical facts/expected values (still outstanding, see §13).
 
 ## 12. Founder/Product decisions (2026-09-16)
 
@@ -227,12 +227,13 @@ Overdraft and negative statement/running/closing balances are out of scope for t
 - [x] Founder / Product decisions in §12 recorded where required — recorded 2026-09-16 under explicit Founder delegation to the CTO.
 - [x] Every accepted decision converted into normative MUST-level language — see §12 and `BNK-014`–`BNK-020`.
 - [x] `BNK-014`–`BNK-020` implemented in code and proven against real PostgreSQL (§11) — done 2026-09-16.
-- [x] ATS-008 updated from evidence inventory to complete normative traceability — done 2026-09-19 (ATS-008 §2); found two genuine gaps (`BNK-001`, `BNK-013`), tracked as `BNK-T059`/`BNK-T060`, which are themselves now an Activation blocker alongside Accounting Domain Reviewer sign-off.
-- [x] All required tests pass against real PostgreSQL with zero skips — 1897 tests, run twice consecutively clean and deterministic (2026-09-19, after the Proof of Accuracy additions).
+- [x] ATS-008 updated from evidence inventory to complete normative traceability — done 2026-09-19 (ATS-008 §2); found and closed two genuine gaps (`BNK-001`, `BNK-013`) with real executable tests (`BNK-T059`/`BNK-T060`).
+- [x] All required tests pass against real PostgreSQL with zero skips — 1899 tests, run twice consecutively clean and deterministic (2026-09-19, after `BNK-T059`/`BNK-T060`).
 - [x] AETS/ATS indexes and versions updated — done 2026-09-16.
 
 ## Changelog
 
+- **0.7.0 (2026-09-19):** Closes `BNK-T059`/`BNK-T060` (ATS-008 v0.8.0) — `BNK-001` and `BNK-013` now each have a real executable test. Every accepted `BNK-NNN` invariant maps to executable evidence; Accounting Domain Reviewer sign-off is the sole remaining Activation blocker. No `BNK-NNN` invariant's meaning changed.
 - **0.6.0 (2026-09-19):** Records that ATS-008's full normative traceability is complete (ATS-008 v0.7.0, §2) — closing §13's remaining unchecked item. Two genuine gaps found in the process, `BNK-001` and `BNK-013`, are now named in §11 and tracked as `BNK-T059`/`BNK-T060`, joining Accounting Domain Reviewer sign-off as Activation blockers. No `BNK-NNN` invariant's meaning changed.
 - **0.5.0 (2026-09-19):** Records that the connected bank-statement segment §11 names is now implemented and proven — see §11 and §13's updated CTO review line. Still Draft: Accounting Domain Reviewer approval of both this document and the golden dataset's canonical facts/expected values remains outstanding.
 - **0.4.0 (2026-09-16):** Adds §5.1: XLSX is now a second accepted file format for the identical fixed v1 import schema §5 already describes (never a second schema, and never SRS BNK-002's own still-deferred guided mapping — `BNK-T053` unchanged). `CsvBankStatementParser` and the new `XlsxBankStatementParser` both delegate to one shared `BankStatementRowParser`, so the two formats can never validate a statement differently; two spreadsheet-only cell-type quirks (a native Excel date, a native numeric amount) are normalized before that shared validation runs. Resolves the Founder's own "Import" instruction (paired with AETS-009 §20/AETS-017's "Eksport PDF/XLSX"). No `BNK-NNN` invariant's meaning changed. Classified **MINOR**.
