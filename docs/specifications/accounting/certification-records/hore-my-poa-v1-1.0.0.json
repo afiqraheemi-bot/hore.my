@@ -1,0 +1,388 @@
+{
+    "id": "58eb6602-d2ae-4e88-b67c-d2d1c20081e3",
+    "generated_at_utc": "2026-09-19T07:33:30+00:00",
+    "git_revision": "c32a15acd379bec8743b766c6d2dd52a6f54d13d",
+    "git_tree_is_clean": true,
+    "dataset_id": "hore-my-poa-v1",
+    "dataset_version": "1.0.0",
+    "manifest_content_digest": "284326f268cc45f43109b3279d17c7ca43d4e7b8da4255f137e19376d7368438",
+    "php_version": "8.5.10",
+    "laravel_version": "13.30.1",
+    "postgres_version": "PostgreSQL 16.15 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "test_runner_version": "PHPUnit 12.5.34 by Sebastian Bergmann and contributors.",
+    "executed_commands": [
+        {
+            "command": "poa:manifest_load_and_verify",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-ar",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-expense",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-revenue",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_bank_account:poa-v1-a-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_bank_account:poa-v1-a-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_customer:poa-v1-a-customer",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:upload_evidence:poa-v1-a-evidence-receipt",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_expense:poa-v1-a-expense-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_income:poa-v1-a-income-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_transfer:poa-v1-a-transfer-tx",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:import_bank_statement:poa-v1-a-bank:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:import_bank_statement:poa-v1-a-savings:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-bank:a7b93296-f77c-4567-a3cd-8d5a1f31e577",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-bank:42916244-c169-4d15-8db2-6536e5f76013",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-bank:7214e6f2-bbc0-494a-a509-b1022ea3c0e3",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-savings:da3b0120-a3a5-468e-a661-a9bd218c947d",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:open_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:start_review_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:mark_balanced_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:complete_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:open_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:start_review_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:mark_balanced_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:complete_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:draft_invoice:poa-v1-a-invoice",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:issue_invoice:poa-v1-a-invoice:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_payment:poa-v1-a-payment-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:allocate_payment:poa-v1-a-payment-tx:poa-v1-a-invoice",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-b-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-b-expense",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_bank_account:poa-v1-b-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_expense:poa-v1-b-expense-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:import_bank_statement:poa-v1-b-bank:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:replay_probe:record_expense:poa-v1-a-expense-tx:replay=true",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:replay_probe:import_bank_statement:poa-v1-a-bank:replay=true",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:second_independent_clean_state_run",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:manifest_load_and_verify",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-ar",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-expense",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-a-revenue",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_bank_account:poa-v1-a-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_bank_account:poa-v1-a-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_customer:poa-v1-a-customer",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:upload_evidence:poa-v1-a-evidence-receipt",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_expense:poa-v1-a-expense-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_income:poa-v1-a-income-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_transfer:poa-v1-a-transfer-tx",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:import_bank_statement:poa-v1-a-bank:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:import_bank_statement:poa-v1-a-savings:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-bank:53b98bf7-eabe-4901-bfef-731e07160f4b",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-bank:bcd5c9a8-9c87-4d79-bc27-bb8aba15370f",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-bank:6706e576-8e90-44df-902e-0aa6c2d78bf8",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:confirm_match:poa-v1-a-savings:1682d588-c75e-4d25-a940-0b2cb9496bb6",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:open_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:start_review_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:mark_balanced_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:complete_reconciliation:poa-v1-a-reconciliation-checking",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:open_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:start_review_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:mark_balanced_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:complete_reconciliation:poa-v1-a-reconciliation-savings",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:draft_invoice:poa-v1-a-invoice",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:issue_invoice:poa-v1-a-invoice:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_payment:poa-v1-a-payment-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:allocate_payment:poa-v1-a-payment-tx:poa-v1-a-invoice",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-b-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:create_account:poa-v1-b-expense",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:register_bank_account:poa-v1-b-bank",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:record_expense:poa-v1-b-expense-tx:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:import_bank_statement:poa-v1-b-bank:replay=false",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:replay_probe:record_expense:poa-v1-a-expense-tx:replay=true",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:replay_probe:import_bank_statement:poa-v1-a-bank:replay=true",
+            "exit_code": 0
+        },
+        {
+            "command": "poa:dedicated_test_suite",
+            "exit_code": 0
+        }
+    ],
+    "test_run_counts": {
+        "passed": 1,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "incomplete": 0,
+        "risky": 0
+    },
+    "criterion_results": [
+        {
+            "criterion_id": "POA-001",
+            "passed": true,
+            "detail": "Manifest loaded and every artifact digest verified against manifest.json."
+        },
+        {
+            "criterion_id": "POA-002",
+            "passed": true,
+            "detail": "Receipt\u2192Expense, bank statement\u2192import\u2192match\u2192Reconciliation, Income, Invoice\u2192Payment\u2192Allocation all present in one connected Tenant A scenario."
+        },
+        {
+            "criterion_id": "POA-004",
+            "passed": true,
+            "detail": "Tenant A and Tenant B Trial Balances both balance exactly, the structural consequence of every contributing Posted Journal already balancing exactly (JRN-007, Active); no Draft Journal exists in this scenario."
+        },
+        {
+            "criterion_id": "POA-005",
+            "passed": true,
+            "detail": "Trial Balance, Profit & Loss, Balance Sheet, General Ledger, Evidence Index, and Aging all reconcile exactly (Money::toDecimalString exact string comparison, never float) to expected\/accounting-results.json."
+        },
+        {
+            "criterion_id": "POA-006",
+            "passed": true,
+            "detail": "Re-submitting the same record_expense (IdempotencyKey) and import_bank_statement (file-hash, BNK-004) commands against the already-populated database both reported isReplay()===true \u2014 no duplicate was created."
+        },
+        {
+            "criterion_id": "POA-007",
+            "passed": true,
+            "detail": "Tenant B, seeded with visually colliding amounts\/dates\/descriptions under distinct IDs, contributes zero Accounts to Tenant A's Trial Balance and vice versa."
+        },
+        {
+            "criterion_id": "POA-008",
+            "passed": true,
+            "detail": "Evidence linked to Journal poa-v1-a-journal-expense resolves to a real persisted Evidence record whose sha256Digest exactly matches a fresh hash of its declared source artifact (sources\/receipt.txt) \u2014 not fabricated."
+        },
+        {
+            "criterion_id": "POA-009",
+            "passed": true,
+            "detail": "Two independent clean-state (migrate:fresh) runs of the full scenario produced byte-identical criterion outcomes."
+        },
+        {
+            "criterion_id": "POA-010",
+            "passed": true,
+            "detail": "Dedicated real-PostgreSQL test suite finished with 1 passed, zero failures\/errors\/skips\/incomplete\/risky."
+        }
+    ],
+    "deviations": [],
+    "cto_reviewed_by": "CTO (self-review, 2026-09-19)",
+    "accounting_domain_reviewer_approved_by": null,
+    "founder_approval_required": true,
+    "founder_approved_by": null,
+    "is_certified_passing": false
+}
