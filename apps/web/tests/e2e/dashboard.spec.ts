@@ -151,5 +151,18 @@ test.describe('Dashboard', () => {
     await page.waitForURL(/\/reports\?tab=Aging(\+|%20)Report/)
     await expect(page.getByRole('button', { name: 'Aging Report' })).toHaveClass(/border-accent/)
     await expect(page.locator('table')).toContainText('RM 269.00')
+
+    // The Aging Report row's own "Record payment" shortcut carries the
+    // Invoice's Customer straight into the Payments form pre-selected —
+    // closing the gap where a user had to re-find the right Customer
+    // themselves in a plain dropdown.
+    await page.getByRole('link', { name: 'Record payment' }).click()
+    await page.waitForURL(/\/payments\?customer_id=/)
+    await expect(page.locator('form select').first()).toHaveValue(/.+/)
+    const selectedLabel = await page
+      .locator('form select')
+      .first()
+      .evaluate((el: HTMLSelectElement) => el.selectedOptions[0]?.textContent)
+    expect(selectedLabel).toBe('Pustaka Azhar')
   })
 })

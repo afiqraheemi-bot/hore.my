@@ -42,6 +42,7 @@ interface OutstandingInvoice {
 }
 
 const { request } = useApi()
+const route = useRoute()
 
 /**
  * AETS-017: a direct link to the Payment's own receipt PDF endpoint —
@@ -193,6 +194,19 @@ function invoiceLabel(invoice: OutstandingInvoice): string {
 
 onMounted(async () => {
   await Promise.all([loadPayments(), loadCustomers(), loadAccounts(), loadOutstandingInvoices()])
+
+  // Deep-linkable from the Aging Report's own "Record payment"
+  // shortcut (?customer_id=<id>) — opens the form pre-selected to
+  // that Customer instead of leaving the user to find them again in
+  // a plain dropdown.
+  const requestedCustomerId = route.query.customer_id
+  if (
+    typeof requestedCustomerId === 'string' &&
+    customers.value.some((c) => c.id === requestedCustomerId)
+  ) {
+    customerId.value = requestedCustomerId
+    showForm.value = true
+  }
 })
 </script>
 

@@ -492,6 +492,7 @@ function words(value: string): string {
                 <th class="px-4 py-3 font-medium">Due date</th>
                 <th class="px-4 py-3 font-medium">Age</th>
                 <th class="px-4 py-3 text-right font-medium">Outstanding</th>
+                <th class="px-4 py-3"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
@@ -505,9 +506,17 @@ function words(value: string): string {
                 <td class="px-4 py-3 text-right font-medium tabular-nums text-ink">
                   {{ money(line.outstanding_balance) }}
                 </td>
+                <td class="px-4 py-3 text-right">
+                  <NuxtLink
+                    :to="{ path: '/payments', query: { customer_id: line.customer_id } }"
+                    class="text-sm font-medium text-accent hover:underline"
+                  >
+                    Record payment
+                  </NuxtLink>
+                </td>
               </tr>
               <tr v-if="!agingReport.lines.length">
-                <td colspan="4" class="px-4 py-10 text-center text-ink-tertiary">
+                <td colspan="5" class="px-4 py-10 text-center text-ink-tertiary">
                   No outstanding invoices as of this date.
                 </td>
               </tr>
