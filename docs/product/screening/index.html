@@ -296,7 +296,7 @@
         <section id="reality">
           <div class="section-head">
             <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
-            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>304d70e</code>. Status “ada” tidak bermaksud production-ready.</p>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>9e8c319</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
           <div class="status-strip" style="margin: 0 0 18px">
             <span class="pill good">✅ Ada &amp; functional</span>
@@ -326,7 +326,7 @@
               <tr>
                 <td>4</td><td>Dashboard visual</td>
                 <td><span class="status-badge review">🟡 Partial</span></td>
-                <td>Dashboard memaparkan income, expense, net, assets dan trend enam bulan. Formal Cash Flow Statement tersedia di Reports, tetapi dashboard belum memvisualkan aliran tunai atau trend jualan mengikut channel.</td>
+                <td>Dashboard memaparkan income, expense, net, assets, trend enam bulan, dan kini chart Cash Flow (Operating/Investing/Financing) menggunakan data Reports yang sama. Masih tiada: trend jualan mengikut channel (bergantung pada model channel — lihat #5, belum wujud).</td>
               </tr>
               <tr>
                 <td>5</td><td>Multi-channel sales capture</td>
@@ -379,6 +379,8 @@
                 <li>PWA installability asas dengan manifest, service worker dan install prompt</li>
                 <li>Proof of Accuracy golden dataset (POA-001–POA-010) lulus penuh terhadap PostgreSQL sebenar — menunggu kelulusan Accounting Domain Reviewer sahaja</li>
                 <li>Backup/restore drill sebenar terhadap PostgreSQL — backup, drop, restore dan pengesahan Trial Balance sepadan tepat</li>
+                <li>Dashboard kini memvisualkan Cash Flow (Operating/Investing/Financing) enam bulan, guna data Reports yang sama</li>
+                <li>ATS-008 traceability lengkap — setiap invariant Bank Reconciliation (BNK-001–BNK-020) kini ada ujian boleh-jalan</li>
                 <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
                 <li>Exact-money double-entry dengan traceability dan correction chain</li>
               </ul>
@@ -406,7 +408,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>304d70e</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>9e8c319</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -444,7 +446,7 @@
               <tr>
                 <td>Bank import, matching &amp; reconciliation</td>
                 <td><span class="status-badge review">Review required</span></td>
-                <td>Bank CSV/XLSX flow telah dilaksanakan, diuji dan kini terbukti end-to-end terhadap Proof of Accuracy golden dataset. E-wallet adapter, guided mapping dan Accounting Domain Reviewer sign-off masih diperlukan.</td>
+                <td>Bank CSV/XLSX flow telah dilaksanakan, diuji dan terbukti end-to-end terhadap Proof of Accuracy golden dataset. ATS-008's formal traceability (setiap BNK-NNN invariant → ujian boleh-jalan) kini lengkap. E-wallet adapter dan guided mapping kekal ditangguhkan (ATS-008 §12.5, keputusan skop, bukan gap); Accounting Domain Reviewer sign-off satu-satunya penghalang Activation yang tinggal.</td>
               </tr>
               <tr>
                 <td>Task → Proposal → confirmation</td>
@@ -485,7 +487,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 19 September 2026 · committed baseline <code>304d70e</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 19 September 2026 · committed baseline <code>9e8c319</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
