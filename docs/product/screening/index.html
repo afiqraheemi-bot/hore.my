@@ -212,7 +212,8 @@
             <span class="pill good">Accounting foundation tersedia</span>
             <span class="pill good">Human confirmation tersedia</span>
             <span class="pill good">Cash Flow &amp; PWA foundation tersedia</span>
-            <span class="pill partial">Banking menunggu domain sign-off</span>
+            <span class="pill partial">Banking &amp; Proof of Accuracy menunggu domain sign-off</span>
+            <span class="pill good">Backup/restore drill terbukti</span>
             <span class="pill partial">AI & OCR belum lengkap</span>
             <span class="pill partial">Bukan production-ready</span>
           </div>
@@ -295,7 +296,7 @@
         <section id="reality">
           <div class="section-head">
             <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
-            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>67caad1</code>. Status “ada” tidak bermaksud production-ready.</p>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>304d70e</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
           <div class="status-strip" style="margin: 0 0 18px">
             <span class="pill good">✅ Ada &amp; functional</span>
@@ -355,7 +356,7 @@
               <tr>
                 <td>10</td><td>Bank / e-wallet reconciliation</td>
                 <td><span class="status-badge review">🟡 Partial</span></td>
-                <td>Bank CSV/XLSX import, matching dan reconciliation tersedia. E-wallet-specific adapter, configurable column mapping dan live feed belum ada.</td>
+                <td>Bank CSV/XLSX import, matching dan reconciliation tersedia, kini termasuk bukti end-to-end terhadap Proof of Accuracy golden dataset (rekonsiliasi tepat RM0.00). E-wallet-specific adapter, configurable column mapping, live feed dan Accounting Domain Reviewer sign-off belum ada.</td>
               </tr>
               <tr>
                 <td>11</td><td>Multi-user / staff access</td>
@@ -376,6 +377,8 @@
                 <li>Financial reports yang boleh dibaca manusia, Cash Flow, loan-ready PDF dan Compliance Pack</li>
                 <li>Close Period melalui UI (tutup buku bulanan/tahunan), sebelum ini hanya boleh dicapai melalui API terus</li>
                 <li>PWA installability asas dengan manifest, service worker dan install prompt</li>
+                <li>Proof of Accuracy golden dataset (POA-001–POA-010) lulus penuh terhadap PostgreSQL sebenar — menunggu kelulusan Accounting Domain Reviewer sahaja</li>
+                <li>Backup/restore drill sebenar terhadap PostgreSQL — backup, drop, restore dan pengesahan Trial Balance sepadan tepat</li>
                 <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
                 <li>Exact-money double-entry dengan traceability dan correction chain</li>
               </ul>
@@ -390,7 +393,7 @@
                 <li>Document processing, OCR dan governed AI proposals</li>
                 <li>MyInvois live adapter dan status reconciliation</li>
                 <li>Offline strategy lanjutan dan production operations hardening</li>
-                <li>Release certification, security review dan restore drill</li>
+                <li>Release certification dan security review (backup/restore drill kini terbukti — lihat di bawah)</li>
               </ul>
             </div>
           </div>
@@ -403,7 +406,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>67caad1</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>304d70e</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -424,7 +427,7 @@
             <article class="progress-card">
               <span class="label">Release readiness</span>
               <strong class="value">Belum</strong>
-              <p>Proof of Accuracy, production operations dan pengalaman produk sasaran belum menutup release gate.</p>
+              <p>Mekanisme Proof of Accuracy kini lulus penuh (POA-001–POA-010) menunggu kelulusan Accounting Domain Reviewer; production operations dan pengalaman produk sasaran masih belum menutup release gate.</p>
             </article>
           </div>
 
@@ -441,7 +444,7 @@
               <tr>
                 <td>Bank import, matching &amp; reconciliation</td>
                 <td><span class="status-badge review">Review required</span></td>
-                <td>Bank CSV/XLSX flow telah dilaksanakan dan diuji. E-wallet adapter, guided mapping dan operational certification masih diperlukan.</td>
+                <td>Bank CSV/XLSX flow telah dilaksanakan, diuji dan kini terbukti end-to-end terhadap Proof of Accuracy golden dataset. E-wallet adapter, guided mapping dan Accounting Domain Reviewer sign-off masih diperlukan.</td>
               </tr>
               <tr>
                 <td>Task → Proposal → confirmation</td>
@@ -456,14 +459,14 @@
               <tr>
                 <td>External compliance &amp; delivery</td>
                 <td><span class="status-badge pending">Not release-ready</span></td>
-                <td>MyInvois live adapter, tax filing, observability, backup/restore drill serta security/release certification masih menjadi gate. PWA asas tersedia tetapi belum membuktikan offline accounting workflow.</td>
+                <td>MyInvois live adapter, tax filing, observability serta security/release certification masih menjadi gate. Backup/restore drill kini terbukti (lihat <code>docs/operations/backup-restore-runbook.md</code>). PWA asas tersedia tetapi belum membuktikan offline accounting workflow.</td>
               </tr>
             </tbody>
           </table>
 
           <div class="callout" style="margin-top: 18px">
             <strong>Gate seterusnya</strong>
-            Tutup gap tax/accountant completeness, multi-user foundation, governed AI/OCR dan channel capture tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review, observability serta backup/restore drill.
+            Tutup gap tax/accountant completeness, multi-user foundation, governed AI/OCR dan channel capture tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review dan observability; backup/restore drill kini selesai.
           </div>
         </section>
 
@@ -482,7 +485,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 17 September 2026 · committed baseline <code>67caad1</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 19 September 2026 · committed baseline <code>304d70e</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
