@@ -1,0 +1,41 @@
+{
+  "dataset_id": "hore-my-poa-v1",
+  "version": "1.0.0",
+  "artifacts": [
+    {
+      "category": "Source",
+      "path": "sources/receipt.txt",
+      "sha256": "61923f38228b553a30cc6312430675aa94db31b5e6ddd62f0c6a0b61ace65f78"
+    },
+    {
+      "category": "Source",
+      "path": "sources/bank-statement-checking.csv",
+      "sha256": "1762fe170513cbea377fc89cc0e8f006e9c8a7294cfef1481c57311787805b2b"
+    },
+    {
+      "category": "Source",
+      "path": "sources/bank-statement-savings.csv",
+      "sha256": "1560d8a98f0592508975edb2434660833e3efc4c180b68704bed386fb2f927a5"
+    },
+    {
+      "category": "Source",
+      "path": "sources/bank-statement-tenant-b.csv",
+      "sha256": "366bc3c8cee9c12954abe85fbd3a952df98a400109c8d330eb3f88e555d618d6"
+    },
+    {
+      "category": "Canonical",
+      "path": "canonical/receipt-facts.json",
+      "sha256": "1a7080de2966d53960ee7358648086e8a98df4d4861f86e60321b17469fa6dbd"
+    },
+    {
+      "category": "Command",
+      "path": "canonical/scenario-commands.json",
+      "sha256": "d5bfe842ba9b68b1ef99ea8daf017b74e73170b1bf4fe6ae9213e00dfaa00199"
+    },
+    {
+      "category": "Expected",
+      "path": "expected/accounting-results.json",
+      "sha256": "5c90aef6a4db2e8649cb6c051ede1ac359a0160a7bc0bafaa42835bf3a245f30"
+    }
+  ]
+}

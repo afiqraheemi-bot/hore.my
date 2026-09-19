@@ -1,0 +1,166 @@
+{
+  "dataset_id": "hore-my-poa-v1",
+  "currency": "MYR",
+  "tenant_a": {
+    "tenant_id": "poa-v1-tenant-a",
+    "email": "poa-v1-tenant-a@example.my",
+    "accounts": [
+      { "account_id": "poa-v1-a-bank", "code": "1000", "name": "Bank", "type": "Asset" },
+      { "account_id": "poa-v1-a-savings", "code": "1050", "name": "Savings", "type": "Asset" },
+      { "account_id": "poa-v1-a-ar", "code": "1100", "name": "Accounts Receivable", "type": "Asset" },
+      { "account_id": "poa-v1-a-expense", "code": "5000", "name": "Office Supplies", "type": "Expense" },
+      { "account_id": "poa-v1-a-revenue", "code": "4000", "name": "Consulting Revenue", "type": "Revenue" }
+    ],
+    "bank_accounts": [
+      { "linked_account_id": "poa-v1-a-bank", "bank_name": "Test Bank Checking" },
+      { "linked_account_id": "poa-v1-a-savings", "bank_name": "Test Bank Savings" }
+    ],
+    "customers": [
+      { "customer_id": "poa-v1-a-customer", "name": "Kedai Runcit Proof" }
+    ],
+    "evidence": {
+      "evidence_id": "poa-v1-a-evidence-receipt",
+      "source_artifact": "sources/receipt.txt",
+      "original_filename": "receipt.txt",
+      "mime_type": "text/plain"
+    },
+    "commands": [
+      {
+        "type": "record_expense",
+        "expense_id": "poa-v1-a-expense-tx",
+        "journal_id": "poa-v1-a-journal-expense",
+        "idempotency_key": "poa-v1-a-key-expense",
+        "amount": "50.00",
+        "transaction_date": "2026-08-05",
+        "expense_account_id": "poa-v1-a-expense",
+        "payment_account_id": "poa-v1-a-bank",
+        "description": "Office supplies purchase",
+        "evidence_id_ref": "poa-v1-a-evidence-receipt"
+      },
+      {
+        "type": "record_income",
+        "income_id": "poa-v1-a-income-tx",
+        "journal_id": "poa-v1-a-journal-income",
+        "idempotency_key": "poa-v1-a-key-income",
+        "amount": "300.00",
+        "transaction_date": "2026-08-10",
+        "income_account_id": "poa-v1-a-revenue",
+        "deposit_account_id": "poa-v1-a-bank",
+        "description": "Consulting revenue"
+      },
+      {
+        "type": "record_transfer",
+        "transfer_id": "poa-v1-a-transfer-tx",
+        "journal_id": "poa-v1-a-journal-transfer",
+        "idempotency_key": "poa-v1-a-key-transfer",
+        "amount": "100.00",
+        "transaction_date": "2026-08-12",
+        "source_account_id": "poa-v1-a-bank",
+        "destination_account_id": "poa-v1-a-savings",
+        "description": "Transfer to savings"
+      },
+      {
+        "type": "import_bank_statement",
+        "linked_account_id": "poa-v1-a-bank",
+        "source_artifact": "sources/bank-statement-checking.csv"
+      },
+      {
+        "type": "import_bank_statement",
+        "linked_account_id": "poa-v1-a-savings",
+        "source_artifact": "sources/bank-statement-savings.csv"
+      },
+      {
+        "type": "confirm_all_suggested_matches",
+        "linked_account_id": "poa-v1-a-bank"
+      },
+      {
+        "type": "confirm_all_suggested_matches",
+        "linked_account_id": "poa-v1-a-savings"
+      },
+      {
+        "type": "open_and_complete_reconciliation",
+        "reconciliation_id": "poa-v1-a-reconciliation-checking",
+        "linked_account_id": "poa-v1-a-bank",
+        "period_start": "2026-08-01",
+        "period_end": "2026-08-31",
+        "opening_balance": "0.00",
+        "closing_balance": "150.00"
+      },
+      {
+        "type": "open_and_complete_reconciliation",
+        "reconciliation_id": "poa-v1-a-reconciliation-savings",
+        "linked_account_id": "poa-v1-a-savings",
+        "period_start": "2026-08-01",
+        "period_end": "2026-08-31",
+        "opening_balance": "0.00",
+        "closing_balance": "100.00"
+      },
+      {
+        "type": "issue_invoice",
+        "invoice_id": "poa-v1-a-invoice",
+        "journal_id": "poa-v1-a-journal-invoice",
+        "idempotency_key": "poa-v1-a-key-invoice",
+        "customer_id": "poa-v1-a-customer",
+        "receivable_account_id": "poa-v1-a-ar",
+        "revenue_account_id": "poa-v1-a-revenue",
+        "due_date": "2026-09-14",
+        "issue_date": "2026-08-15",
+        "lines": [
+          { "description": "Consulting services", "quantity": 1, "unit_price": "200.00" }
+        ]
+      },
+      {
+        "type": "record_payment",
+        "payment_id": "poa-v1-a-payment-tx",
+        "journal_id": "poa-v1-a-journal-payment",
+        "idempotency_key": "poa-v1-a-key-payment",
+        "amount": "120.00",
+        "payment_date": "2026-09-05",
+        "customer_id": "poa-v1-a-customer",
+        "deposit_account_id": "poa-v1-a-bank",
+        "receivable_account_id": "poa-v1-a-ar",
+        "reference": "POA-V1-PAYMENT-001"
+      },
+      {
+        "type": "allocate_payment",
+        "payment_id": "poa-v1-a-payment-tx",
+        "invoice_id": "poa-v1-a-invoice",
+        "amount": "120.00"
+      }
+    ],
+    "as_of_report_date": "2026-09-20",
+    "period_start": "2026-08-01",
+    "period_end": "2026-08-31",
+    "aging_as_of_date": "2026-09-20"
+  },
+  "tenant_b": {
+    "tenant_id": "poa-v1-tenant-b",
+    "email": "poa-v1-tenant-b@example.my",
+    "note": "Deliberately colliding visible amount/date/description with Tenant A's expense, under entirely distinct IDs — proves isolation (POA-007) rather than assuming it.",
+    "accounts": [
+      { "account_id": "poa-v1-b-bank", "code": "1000", "name": "Bank", "type": "Asset" },
+      { "account_id": "poa-v1-b-expense", "code": "5000", "name": "Office Supplies", "type": "Expense" }
+    ],
+    "bank_accounts": [
+      { "linked_account_id": "poa-v1-b-bank", "bank_name": "Test Bank Checking" }
+    ],
+    "commands": [
+      {
+        "type": "record_expense",
+        "expense_id": "poa-v1-b-expense-tx",
+        "journal_id": "poa-v1-b-journal-expense",
+        "idempotency_key": "poa-v1-b-key-expense",
+        "amount": "50.00",
+        "transaction_date": "2026-08-05",
+        "expense_account_id": "poa-v1-b-expense",
+        "payment_account_id": "poa-v1-b-bank",
+        "description": "Office supplies purchase"
+      },
+      {
+        "type": "import_bank_statement",
+        "linked_account_id": "poa-v1-b-bank",
+        "source_artifact": "sources/bank-statement-tenant-b.csv"
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "source_artifact": "sources/receipt.txt",
+  "approved_by": null,
+  "approval_note": "Placeholder — canonical facts below are the CTO's own proposed interpretation of the synthetic receipt, pending Accounting Domain Reviewer approval (AETS-012 §3). Not yet an approved oracle.",
+  "canonical_facts": {
+    "transaction_date": "2026-08-05",
+    "amount": "50.00",
+    "currency": "MYR",
+    "expense_category": "Office Supplies",
+    "payment_method": "Bank transfer",
+    "description": "Office supplies purchase"
+  }
+}

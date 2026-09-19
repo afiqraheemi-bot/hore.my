@@ -1,0 +1,98 @@
+{
+  "computation_note": "Every figure below was computed by hand from scenario-commands.json's own declared amounts and dates, before this dataset was ever run through the application (AETS-012 §5.1) — never captured from the system under test.",
+  "tenant_a": {
+    "trial_balance": {
+      "as_of": "2026-09-20",
+      "is_balanced": true,
+      "total_debit": "770.00",
+      "total_credit": "770.00",
+      "lines": [
+        { "account_id": "poa-v1-a-bank", "total_debit": "420.00", "total_credit": "150.00", "net_amount": "270.00", "net_direction": "Debit" },
+        { "account_id": "poa-v1-a-savings", "total_debit": "100.00", "total_credit": "0.00", "net_amount": "100.00", "net_direction": "Debit" },
+        { "account_id": "poa-v1-a-ar", "total_debit": "200.00", "total_credit": "120.00", "net_amount": "80.00", "net_direction": "Debit" },
+        { "account_id": "poa-v1-a-expense", "total_debit": "50.00", "total_credit": "0.00", "net_amount": "50.00", "net_direction": "Debit" },
+        { "account_id": "poa-v1-a-revenue", "total_debit": "0.00", "total_credit": "500.00", "net_amount": "500.00", "net_direction": "Credit" }
+      ]
+    },
+    "profit_and_loss": {
+      "period_start": "2026-08-01",
+      "period_end": "2026-08-31",
+      "total_revenue": "500.00",
+      "total_expense": "50.00",
+      "net_income": "450.00",
+      "is_profit": true
+    },
+    "balance_sheet": {
+      "as_of": "2026-09-20",
+      "is_balanced": true,
+      "total_assets": "450.00",
+      "total_liabilities_and_equity": "450.00",
+      "cumulative_net_income_amount": "450.00",
+      "cumulative_net_income_direction": "Credit",
+      "asset_account_ids": ["poa-v1-a-bank", "poa-v1-a-savings", "poa-v1-a-ar"],
+      "liability_account_ids": [],
+      "equity_account_ids": []
+    },
+    "general_ledger_bank": {
+      "account_id": "poa-v1-a-bank",
+      "period_start": "2026-08-01",
+      "period_end": "2026-09-20",
+      "opening_balance_amount": "0.00",
+      "opening_balance_direction": null,
+      "closing_balance_amount": "270.00",
+      "closing_balance_direction": "Debit",
+      "entry_count": 4,
+      "entry_journal_ids_in_order": [
+        "poa-v1-a-journal-expense",
+        "poa-v1-a-journal-income",
+        "poa-v1-a-journal-transfer",
+        "poa-v1-a-journal-payment"
+      ]
+    },
+    "evidence_index": {
+      "period_start": "2026-08-01",
+      "period_end": "2026-08-31",
+      "entries": [
+        { "journal_id": "poa-v1-a-journal-expense", "has_evidence": true, "evidence_reference_count": 1 },
+        { "journal_id": "poa-v1-a-journal-income", "has_evidence": false, "evidence_reference_count": 0 },
+        { "journal_id": "poa-v1-a-journal-transfer", "has_evidence": false, "evidence_reference_count": 0 },
+        { "journal_id": "poa-v1-a-journal-invoice", "has_evidence": false, "evidence_reference_count": 0 }
+      ]
+    },
+    "aging": {
+      "as_of": "2026-09-20",
+      "grand_total": "80.00",
+      "bucket_totals": {
+        "current": "0.00",
+        "overdue_1_to_30": "80.00",
+        "overdue_31_to_60": "0.00",
+        "overdue_61_to_90": "0.00",
+        "overdue_91_plus": "0.00"
+      },
+      "lines": [
+        { "invoice_id": "poa-v1-a-invoice", "due_date": "2026-09-14", "outstanding_balance": "80.00", "bucket": "Overdue1To30" }
+      ]
+    },
+    "reconciliations": [
+      { "reconciliation_id": "poa-v1-a-reconciliation-checking", "state": "Completed", "difference": "0.00" },
+      { "reconciliation_id": "poa-v1-a-reconciliation-savings", "state": "Completed", "difference": "0.00" }
+    ]
+  },
+  "tenant_b": {
+    "trial_balance": {
+      "as_of": "2026-09-20",
+      "is_balanced": true,
+      "total_debit": "50.00",
+      "total_credit": "50.00",
+      "lines": [
+        { "account_id": "poa-v1-b-bank", "total_debit": "0.00", "total_credit": "50.00", "net_amount": "50.00", "net_direction": "Credit" },
+        { "account_id": "poa-v1-b-expense", "total_debit": "50.00", "total_credit": "0.00", "net_amount": "50.00", "net_direction": "Debit" }
+      ]
+    }
+  },
+  "isolation": {
+    "tenant_a_account_ids": ["poa-v1-a-bank", "poa-v1-a-savings", "poa-v1-a-ar", "poa-v1-a-expense", "poa-v1-a-revenue"],
+    "tenant_b_account_ids": ["poa-v1-b-bank", "poa-v1-b-expense"],
+    "rule": "Tenant A's Trial Balance/Balance Sheet/GL/Evidence Index/Aging must never reference a Tenant B account or Journal ID, and vice versa."
+  }
+}

@@ -1,7 +1,7 @@
 # AETS-012: Proof of Accuracy
 
 - Status: Draft
-- Version: 0.2.0
+- Version: 0.3.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -117,16 +117,24 @@ Every record MUST include a unique ID and UTC time; Git hash and tree status; da
 
 [ATS-012](tests/ATS-012-Proof-of-Accuracy-Test-Specification.md) defines the required tests. Neither it nor test code may mark this Draft certified.
 
-As of 2026-09-16, the certification harness's own domain-agnostic mechanism — Golden Dataset manifest parsing and digest-integrity verification, and the fail-closed `CertificationRecord` aggregation gate implementing `POA-012` — is implemented and proven with synthetic, explicitly-not-a-real-oracle fixtures (see [ATS-012 §5.1](tests/ATS-012-Proof-of-Accuracy-Test-Specification.md#51-certification-harness-infrastructure-only--no-dataset-no-certification)). This is infrastructure only: it does not create, approve, or imply a Golden Dataset, run any certification scenario, or move this Draft any closer to Active. Every §11 deferred decision remains exactly as deferred.
+As of 2026-09-16, the certification harness's own domain-agnostic mechanism — Golden Dataset manifest parsing and digest-integrity verification, and the fail-closed `CertificationRecord` aggregation gate implementing `POA-012` — is implemented and proven with synthetic, explicitly-not-a-real-oracle fixtures (see [ATS-012 §5.1](tests/ATS-012-Proof-of-Accuracy-Test-Specification.md#51-certification-harness-infrastructure-only--no-dataset-no-certification)).
+
+As of 2026-09-19, a first candidate Golden Dataset (`hore-my-poa-v1`, version `1.0.0`) exists under `apps/api/tests/Fixtures/ProofOfAccuracy/v1/` — a synthetic, self-authored, redistributable receipt and bank statements; a connected Tenant A scenario covering every §5.2 category (Expense with evidence, Income, Transfer, bank statement import → matching → a completed Reconciliation at exact RM0.00 difference, an issued Invoice partially paid via Payment + Allocation, Aging); and a colliding Tenant B scenario for isolation proof. Its `expected/accounting-results.json` oracle was computed by hand from the scenario's own declared amounts, before the scenario was ever executed (§5.1) — it carries an explicit `approved_by: null` marker and is a CTO proposal only, not an approved oracle.
+
+A `GoldenDatasetScenarioRunner`/`GoldenDatasetCertificationEvaluator` pair (`apps/api/app/Infrastructure/ProofOfAccuracy/`) executes this dataset exclusively through this codebase's own real domain services (never a direct database insert, §6.3) and diffs every resulting report against the oracle. The `proof-of-accuracy:certify` Artisan command runs this scenario from two independent `migrate:fresh` clean states, runs the dedicated real-PostgreSQL test `tests/Feature/ProofOfAccuracy/ProofOfAccuracyCertificationTest.php`, and assembles a `CertificationRecord`. As of this version, every mechanical criterion POA-001 through POA-010 has passed on a real run against real PostgreSQL (POA-011 and POA-012 are properties of the record/gate themselves, already proven per §10's prior entry). The resulting record's own `is_certified_passing` is — and by construction can only ever be — `false`, because `accounting_domain_reviewer_approved_by` is `null`: no Accounting Domain Reviewer has reviewed the dataset's canonical facts or approved its expected values. This remains true no matter how many times the command is re-run.
+
+None of this moves this document's own Status past Draft, and no §11 deferred decision is resolved by it — §11's "first dataset accounting oracle" bullet is updated below to reflect that a *candidate* now exists for review, not that review has happened.
 
 ## 11. Deferred decisions
 
-- First dataset accounting oracle and source artifacts, pending Accounting Domain Reviewer approval.
+- Accounting Domain Reviewer review and approval of the `hore-my-poa-v1` v1.0.0 candidate dataset's canonical facts and expected values (§10) — or a decision to revise/replace it first.
+- Certification-record storage location: proposed as git-tracked `docs/specifications/accounting/certification-records/`, pending review (not yet decided).
 - OCR/AI metrics, confidence thresholds, providers/models, and regression policy.
 - Certification retention and production release automation.
 - Coverage for capabilities still deferred by Active specifications.
 
 ## 12. Changelog
 
+- **0.3.0 (2026-09-19):** Records that a first candidate Golden Dataset (`hore-my-poa-v1` v1.0.0), its scenario runner/evaluator, and the `proof-of-accuracy:certify` command are implemented and that every mechanical criterion POA-001–POA-010 has passed against real PostgreSQL — see §10. `is_certified_passing` remains `false`; no Accounting Domain Reviewer has approved the dataset; this Draft's Status is unchanged.
 - **0.2.0 (2026-09-16):** Records that the certification harness's own domain-agnostic mechanism (manifest/integrity verification, fail-closed aggregation gate) is implemented and proven — see §10. No dataset, scenario, or certification claim is introduced; no §11 deferred decision is resolved.
 - **0.1.0 (2026-09-13):** Initial Draft. Defines connected coverage, exact acceptance criteria, PostgreSQL/repeatability requirements, certification evidence, and the explicit review gate. No implementation or certification claim is introduced.

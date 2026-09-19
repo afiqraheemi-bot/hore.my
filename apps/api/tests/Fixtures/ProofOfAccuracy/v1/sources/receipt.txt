@@ -1,0 +1,12 @@
+SYNTHETIC RECEIPT — NOT A REAL TRANSACTION (AETS-012 Golden Dataset v1)
+
+Vendor: Kedai Alat Tulis Contoh
+Date: 2026-08-05
+Item: Office supplies (stationery, printer paper)
+Amount: RM50.00
+Payment method: Bank transfer
+
+This is a self-authored, non-sensitive, redistributable artifact
+created solely to exercise the receipt-backed Expense path of the
+Proof of Accuracy certification (AETS-012 §5.2, §5.3). It does not
+represent a real purchase, a real vendor, or any real person's data.

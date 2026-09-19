@@ -1,0 +1,4 @@
+date,description,amount,direction,balance,reference
+2026-08-05,Office Supplies Payment,50.00,OUT,,REF-CHK-001
+2026-08-10,Consulting Deposit,300.00,IN,,REF-CHK-002
+2026-08-12,Transfer to Savings,100.00,OUT,,REF-CHK-003

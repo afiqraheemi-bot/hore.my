@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.5.0
+- Version: 0.6.0
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -115,7 +115,7 @@ The new `reconciliation_completion_snapshots` table (`BNK-017`, `BNK-T049`) has 
 | ID | State | Required proof | Invariant/reference |
 | --- | --- | --- | --- |
 | BNK-T053 | Deferred | Guided mapping of noncanonical statement formats. Out of this Draft's Active-version scope; does not gate Activation. | AETS-008 §12.5 |
-| BNK-T057 | Required | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. | AETS-012 Draft; cannot claim yet |
+| BNK-T057 | Required (implemented against a candidate dataset) | A connected golden statement reconciles exactly to approved source evidence, Journals, Trial Balance, and reports. As of 2026-09-19, this is implemented and passing against `hore-my-poa-v1` v1.0.0 — a real bank statement import → matching → completed Reconciliation at exact RM0.00 difference, reconciling exactly to Trial Balance/P&L/Balance Sheet/GL/Evidence Index/Aging (`tests/Feature/ProofOfAccuracy/ProofOfAccuracyCertificationTest.php`; AETS-012 §10, ATS-012 §5.2). Stays `Required`, not `Existing`, because the dataset is a CTO proposal, not yet Accounting Domain Reviewer-approved — this row cannot claim "approved source evidence" until that review lands. | AETS-012 Draft; candidate proof exists, approval outstanding |
 
 ## 4. Activation gate
 
@@ -129,6 +129,7 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.6.0 (2026-09-19):** Updates `BNK-T057`: now implemented and passing against AETS-012's `hore-my-poa-v1` v1.0.0 candidate dataset, closing the implementation gap named "blocked on AETS-012." Stays `Required` (not `Existing`) since the dataset is not yet Accounting Domain Reviewer-approved. No other row changed.
 - **0.5.0 (2026-09-16):** Moves `BNK-T055` to `Existing`: Income and Owner Equity Contribution candidates, and independent wrong-date/direction/Account/state/Tenant rejection, each with a dedicated test. Currency independence is not claimed — only MYR is supported anywhere in this system, so a currency-mismatch case is not meaningfully constructible. Only `BNK-T057` (blocked on AETS-012) and `BNK-T053` (deferred, out of scope) remain outstanding.
 - **0.4.0 (2026-09-16):** Moves `BNK-T045`–`BNK-T054` and `BNK-T058` (nine of the ten `BNK-014`–`BNK-020` proof items) to `Existing` with real executable evidence, following AETS-008 v0.3.0's implementation of every §12 decision. `BNK-T053` stays `Deferred` (out of scope, §12.5); `BNK-T055` and `BNK-T057` remain `Required` — the former is broader pre-existing matching-coverage work this round didn't touch, the latter blocked on AETS-012.
 - **0.3.0 (2026-09-16):** Follows AETS-008 v0.2.0's resolution of every §12 decision: retitles §3's required proofs against the now-decided `BNK-014`–`BNK-020` invariants instead of an unresolved policy, adds `BNK-T058` for the negative-balance fail-closed proof, and reclassifies `BNK-T053` (guided mapping) as `Deferred` since §12.5 places it out of this Draft's Active-version scope. No test in this document is newly `Existing`; all decided invariants remain unimplemented until their own proof lands.
