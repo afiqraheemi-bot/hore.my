@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createAccount, registerBankAccount, registerNewUser } from './support/fixtures'
+import { createAccount, createCustomer, registerBankAccount, registerNewUser } from './support/fixtures'
 
 /**
  * Real-browser proof of the Dashboard's read-only presentation over
@@ -110,5 +110,46 @@ test.describe('Dashboard', () => {
     await page.locator('text=View exact monthly figures').last().click()
     const cashFlowTable = page.getByRole('table').last()
     await expect(cashFlowTable).toContainText('RM500.00')
+  })
+
+  test('the overdue invoices attention item deep-links to the Aging Report tab, not the default Trial Balance', async ({
+    page,
+  }) => {
+    await registerNewUser(page)
+    await createAccount(page, '1100', 'Accounts Receivable', 'Asset')
+    await createAccount(page, '4100', 'Service Revenue', 'Revenue')
+    await createCustomer(page, 'Pustaka Azhar')
+
+    await page.goto('/invoices')
+    await page.getByRole('button', { name: /new invoice/i }).click()
+    await page.locator('form select').first().selectOption({ label: 'Pustaka Azhar' })
+    await page.locator('input[type="date"]').first().fill('2020-01-01')
+    await page.locator('form select').nth(1).selectOption({ label: 'Accounts Receivable' })
+    await page.locator('form select').nth(2).selectOption({ label: 'Service Revenue' })
+    await page.getByPlaceholder('Description').fill('Tudung')
+    await page.getByPlaceholder('Qty').fill('10')
+    await page.getByPlaceholder('Unit price').fill('26.90')
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/invoices') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /save as draft/i }).click(),
+    ])
+    await page.locator('input[type="date"]').last().fill('2020-01-01')
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/issue') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: 'Issue' }).click(),
+    ])
+
+    await page.goto('/dashboard')
+    const overdueLink = page.getByRole('link', { name: /overdue invoices/i })
+    await expect(overdueLink).toBeVisible()
+    await overdueLink.click()
+
+    await page.waitForURL(/\/reports\?tab=Aging(\+|%20)Report/)
+    await expect(page.getByRole('button', { name: 'Aging Report' })).toHaveClass(/border-accent/)
+    await expect(page.locator('table')).toContainText('RM 269.00')
   })
 })

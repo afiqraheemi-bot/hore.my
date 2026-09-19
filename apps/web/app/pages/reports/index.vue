@@ -4,6 +4,7 @@ import type { AccountSummary, ReportResult, ReportTab } from '~/types/reporting'
 definePageMeta({ middleware: 'auth' })
 
 const { request } = useApi()
+const route = useRoute()
 
 const tabs: ReportTab[] = [
   'Trial Balance',
@@ -14,7 +15,14 @@ const tabs: ReportTab[] = [
   'Aging Report',
   'Cash Flow',
 ]
-const activeTab = ref<ReportTab>('Trial Balance')
+
+// Deep-linkable from elsewhere in the app (e.g. the dashboard's
+// "Overdue invoices" attention item) via ?tab=<ReportTab> — falls
+// back to Trial Balance for a missing or unrecognized value rather
+// than landing on a blank/mismatched tab.
+const requestedTab = route.query.tab
+const initialTab = tabs.find((tab) => tab === requestedTab) ?? 'Trial Balance'
+const activeTab = ref<ReportTab>(initialTab)
 
 const today = new Date().toISOString().slice(0, 10)
 const monthStart = `${today.slice(0, 7)}-01`

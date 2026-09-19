@@ -281,7 +281,7 @@ onMounted(loadDashboard)
             </NuxtLink>
             <NuxtLink
               v-if="dashboard.attention.overdue_invoice_count"
-              to="/reports"
+              :to="{ path: '/reports', query: { tab: 'Aging Report' } }"
               class="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover"
             >
               <span class="text-sm text-ink">Overdue invoices</span>
