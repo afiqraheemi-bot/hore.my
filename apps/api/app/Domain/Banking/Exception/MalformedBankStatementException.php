@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Banking\Exception;
 
 use App\Domain\Banking\CsvBankStatementParser;
+use App\Domain\Banking\MaybankPdfBankStatementParser;
 
 /**
  * Thrown when an uploaded file does not conform to
@@ -37,5 +38,33 @@ final class MalformedBankStatementException extends \RuntimeException
     public static function forEmptyFile(): self
     {
         return new self('The uploaded file is empty.');
+    }
+
+    /**
+     * {@see MaybankPdfBankStatementParser}: a line
+     * that is neither a transaction row, a narrative continuation
+     * line, a balance marker, nor a recognized boilerplate marker.
+     * Fails closed rather than silently skipping unrecognized content.
+     */
+    public static function forUnrecognizedLine(int $lineNumber, string $line): self
+    {
+        return new self(sprintf('Line %d could not be recognized as a transaction, continuation, or known statement text: "%s"', $lineNumber, $line));
+    }
+
+    /**
+     * {@see MaybankPdfBankStatementParser}: the
+     * statement's own declared `ENDING BALANCE`/`TOTAL CREDIT`/`TOTAL
+     * DEBIT` do not reconcile against what was actually parsed —
+     * bounds the blast radius of any text-extraction misparse to a
+     * safe rejection rather than a silently wrong import.
+     */
+    public static function forTotalsMismatch(string $reason): self
+    {
+        return new self(sprintf('The statement\'s own declared totals do not reconcile with the parsed rows: %s', $reason));
+    }
+
+    public static function forUnreadablePdf(string $reason): self
+    {
+        return new self(sprintf('The uploaded PDF could not be read: %s', $reason));
     }
 }

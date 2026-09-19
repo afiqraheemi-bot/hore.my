@@ -29,6 +29,7 @@ use App\Domain\Banking\Exception\NoSuchMatchCandidateException;
 use App\Domain\Banking\MatchConfidence;
 use App\Domain\Banking\MatchingService;
 use App\Domain\Banking\MatchSourceType;
+use App\Domain\Banking\MaybankPdfBankStatementParser;
 use App\Domain\Banking\XlsxBankStatementParser;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Transactions\Expense\ExpenseAccountTypeValidator;
@@ -983,6 +984,7 @@ final class MatchingServiceIntegrationTest extends TestCase
             $connection,
             new CsvBankStatementParser,
             new XlsxBankStatementParser,
+            new MaybankPdfBankStatementParser,
             new ImportBatchRepository($connection),
             new BankTransactionRepository($connection),
         );

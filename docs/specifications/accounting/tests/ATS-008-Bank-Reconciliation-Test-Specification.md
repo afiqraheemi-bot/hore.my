@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.8.0
+- Version: 0.9.0
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -20,8 +20,8 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 | Invariant | Test IDs | Note |
 | --- | --- | --- |
 | `BNK-001` — Import has zero ledger effect | BNK-T059 | |
-| `BNK-002` — Money and bank direction are exact and unambiguous | BNK-T001, BNK-T038, BNK-T039 | Canonical direction (`MoneyIn`/`MoneyOut`) is additionally proven by the Bank Transaction migration test class's own CHECK-constraint and valid-insert proofs (§3.1's closing note), not a separate `BNK-TNNN` ID. |
-| `BNK-003` — A malformed statement has zero persistent effect | BNK-T004 | |
+| `BNK-002` — Money and bank direction are exact and unambiguous | BNK-T001, BNK-T038, BNK-T039, BNK-T061 | Canonical direction (`MoneyIn`/`MoneyOut`) is additionally proven by the Bank Transaction migration test class's own CHECK-constraint and valid-insert proofs (§3.1's closing note), not a separate `BNK-TNNN` ID. `BNK-T061` additionally proves this holds when a third format (Maybank PDF) must first translate its own amount-plus-sign encoding into the fixed schema's separate fields. |
+| `BNK-003` — A malformed statement has zero persistent effect | BNK-T004, BNK-T063, BNK-T064 | `BNK-T063`/`BNK-T064` extend this to Maybank PDF's own failure modes (a totals-mismatch cross-check, an unrecognized line) that CSV/XLSX have no equivalent of. |
 | `BNK-004` — Import Batch and inserted Bank Transactions commit atomically | BNK-T004, BNK-T007 | |
 | `BNK-005` — File replay and overlapping-row import cannot create duplicate Bank Transactions | BNK-T002, BNK-T003, BNK-T045, BNK-T046 | Single-process (`T002`/`T003`) and genuine concurrent (`T045`/`T046`) cases both covered. |
 | `BNK-006` — Every Banking relationship and operation is tenant-isolated | BNK-T005, BNK-T006, BNK-T026–BNK-T034, BNK-T056 | §3.4's entire section is this invariant's own dedicated evidence. |
@@ -56,6 +56,11 @@ Every `BNK-NNN` invariant in this matrix now maps to at least one `BNK-TNNN` exe
 | BNK-T006 | Existing | Identical input is independent between Bank Accounts. | `two_bank_accounts_with_identical_file_content_do_not_interfere` |
 | BNK-T007 | Existing | Forced transaction-row failure rolls back the whole import. | `a_forced_bank_transaction_insert_failure_rolls_back_the_entire_import` |
 | BNK-T059 | Existing | A fresh import and a replay both leave the `journals` table's row count for the Tenant exactly unchanged. | `test_import_leaves_the_journals_table_unchanged_for_a_fresh_import_and_a_replay` |
+| BNK-T061 | Existing | Maybank PDF: a well-formed statement with multi-line narrative continuation parses into the identical fixed schema, translating the amount-plus-trailing-sign encoding into separate amount/direction fields. | `test_parses_a_well_formed_statement_with_narrative_continuation` |
+| BNK-T062 | Existing | Maybank PDF: a transaction's narrative continuation lines spanning a page break are still attached to the correct row. | `test_a_transactions_continuation_spans_a_page_break` |
+| BNK-T063 | Existing | Maybank PDF: a statement whose own declared `ENDING BALANCE`/`TOTAL CREDIT`/`TOTAL DEBIT` do not reconcile with what was actually parsed is rejected in full. | `test_a_totals_mismatch_is_rejected` |
+| BNK-T064 | Existing | Maybank PDF: an unrecognized line (neither a transaction row, a continuation line, nor a known structural anchor) is rejected rather than silently skipped or misclassified. | `test_an_unrecognized_line_before_any_transaction_row_is_rejected`; `test_a_pdf_with_no_transaction_table_at_all_is_rejected` |
+| BNK-T065 | Existing | Maybank PDF: a real HTTP upload through `BankStatementImportController` resolves `.pdf` to `MaybankPdfBankStatementParser` and persists real Bank Transactions, proven against real PostgreSQL and (separately) a real browser. | `test_registering_a_bank_account_and_importing_a_maybank_pdf_statement_end_to_end` (API); `importing a Maybank PDF bank statement records real transactions` (E2E, `xlsx-and-pdf-export.spec.ts`) |
 
 ### 3.2 Matching
 
@@ -160,6 +165,7 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.9.0 (2026-09-19):** Adds `BNK-T061`–`BNK-T065` for Maybank PDF import (AETS-008 §12.10/§5.2): well-formed parse with narrative continuation, continuation spanning a page break, the totals-mismatch fail-closed check, unrecognized-line fail-closed, and a real HTTP/browser end-to-end proof. §2's traceability matrix updated for `BNK-002`/`BNK-003`. No other row changed.
 - **0.8.0 (2026-09-19):** Closes both gaps §2's traceability matrix found: `BNK-T059` (`journals` unchanged across a fresh import and a replay) and `BNK-T060` (`suggestFor()`/`confirm()` create no Journal) are now `Existing` with real executable tests, moved from §4 into §3.1/§3.2. Every accepted `BNK-NNN` invariant now maps to at least one `BNK-TNNN`. `BNK-T057` and Accounting Domain Reviewer sign-off remain the only Activation blockers.
 - **0.7.0 (2026-09-19):** Adds §2, the formal Traceability matrix AETS-008 §13's activation checklist named as outstanding ("ATS-008 updated from evidence inventory to complete normative traceability") — every `BNK-001`–`BNK-020` candidate invariant mapped to its `BNK-TNNN` evidence rows. Finds two genuine gaps in the process, `BNK-001` and `BNK-013`, neither previously named as required evidence; adds `BNK-T059`/`BNK-T060` to §4 to track them and updates §5's Activation gate accordingly. Renumbers former §2–§4 to §3–§5; no existing evidence row's State or Proof text changed.
 - **0.6.0 (2026-09-19):** Updates `BNK-T057`: now implemented and passing against AETS-012's `hore-my-poa-v1` v1.0.0 candidate dataset, closing the implementation gap named "blocked on AETS-012." Stays `Required` (not `Existing`) since the dataset is not yet Accounting Domain Reviewer-approved. No other row changed.

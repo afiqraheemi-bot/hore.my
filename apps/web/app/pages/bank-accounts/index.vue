@@ -367,8 +367,8 @@ onMounted(loadAll)
             <div class="flex-1">
               <AppDropzone
                 v-model="importFile"
-                accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                hint="CSV or XLSX: date,description,amount,direction,balance,reference"
+                accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,application/pdf"
+                hint="CSV/XLSX: date,description,amount,direction,balance,reference — or a Maybank PDF statement"
               />
             </div>
             <AppButton variant="primary" :disabled="importing || !importFile" @click="onImport">

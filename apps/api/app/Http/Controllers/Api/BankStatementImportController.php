@@ -17,16 +17,19 @@ use App\Infrastructure\Banking\BankAccountRepository;
 use Illuminate\Http\JsonResponse;
 
 /**
- * Uploads and imports a CSV or XLSX bank statement for one of the
- * Tenant's own BankAccounts (M17, SRS BNK-001/BNK-003/BNK-004; XLSX
- * added 2026-09-16, Import & Export, AETS-008 §5.1) — the first file
- * upload endpoint in this codebase, hence
+ * Uploads and imports a CSV, XLSX, or Maybank PDF bank statement for
+ * one of the Tenant's own BankAccounts (M17, SRS
+ * BNK-001/BNK-003/BNK-004; XLSX added 2026-09-16, Import & Export,
+ * AETS-008 §5.1; Maybank PDF added 2026-09-19, AETS-008 §12.10) — the
+ * first file upload endpoint in this codebase, hence
  * {@see ImportBankStatementRequest}'s own explicit extension/MIME/size
  * bounds (SEC-005) ahead of any parsing.
  *
  * **Format is resolved from the uploaded file's own extension, never
  * sniffed from its content** — mirrors
- * {@see BankStatementFileFormat}'s own docblock reasoning.
+ * {@see BankStatementFileFormat}'s own docblock reasoning. `.pdf`
+ * resolves unambiguously to `MaybankPdf` today because it is the only
+ * PDF format this codebase accepts yet.
  */
 final class BankStatementImportController extends Controller
 {
@@ -56,9 +59,11 @@ final class BankStatementImportController extends Controller
             return response()->json(['message' => 'The uploaded file could not be read.'], 422);
         }
 
-        $format = strtolower((string) $file->getClientOriginalExtension()) === 'xlsx'
-            ? BankStatementFileFormat::Xlsx
-            : BankStatementFileFormat::Csv;
+        $format = match (strtolower((string) $file->getClientOriginalExtension())) {
+            'xlsx' => BankStatementFileFormat::Xlsx,
+            'pdf' => BankStatementFileFormat::MaybankPdf,
+            default => BankStatementFileFormat::Csv,
+        };
 
         try {
             $result = $this->importService->import(

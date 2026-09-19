@@ -1,7 +1,7 @@
 # AETS-008: Bank Import, Matching & Reconciliation
 
 - Status: Draft
-- Version: 0.8.0
+- Version: 0.9.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer; Founder / Product Owner for the workflow decisions in §12 — **the Founder explicitly delegated §12's decisions to the CTO on 2026-09-16, in lieu of deciding each individually**; a qualified Accounting Domain Reviewer's independent sign-off on accounting correctness (distinct from the product/workflow judgment calls §12 required) remains outstanding and is still required before Activation (§13)
@@ -78,6 +78,14 @@ The database-level proof that concurrent identical imports never duplicate exist
 ### 5.1 Import format: XLSX added (2026-09-16)
 
 `BankStatementFileFormat::Xlsx` is a second accepted file format for the **identical** fixed v1 schema §5 already describes — never a second, divergent schema, and never SRS BNK-002's own still-deferred guided mapping of an *unrecognized* format (§12.5 unchanged, `BNK-T053` still deferred). `XlsxBankStatementParser` and the original `CsvBankStatementParser` both delegate header validation and row parsing to one shared `BankStatementRowParser`, so a CSV upload and an XLSX upload of "the same statement" always validate and normalize identically. Two cell-type quirks a plain-text CSV cannot exercise are normalized before that shared validation ever runs: a native Excel serial-date cell is converted to the identical `Y-m-d` string a text cell would already carry, and a native numeric amount/balance cell is reformatted to the Tenant Currency's own exact decimal scale. Format is resolved from the uploaded file's own extension at the HTTP boundary (`BankStatementImportController`), never sniffed from file content.
+
+### 5.2 Import format: Maybank PDF added (2026-09-19)
+
+`BankStatementFileFormat::MaybankPdf` is implemented (§12.10's own decision) — `MaybankPdfBankStatementParser` translates Maybank's own native PDF e-statement layout into the **identical** fixed v1 schema §5 describes, via the same shared `BankStatementRowParser` every other format already delegates to; never a second schema. Unlike XLSX, Maybank's own layout shares no cell-level structure with CSV (amount and direction are one column, a trailing `+`/`-` suffix on the magnitude, not the fixed schema's own separate `amount`/`direction` pair; a real bank reference/counterparty is spread across multiple narrative lines beneath each dated row, which may itself span a page break), so this parser's translation logic is materially larger than XLSX's own two-cell-quirk normalization, per §12.10's own accounting.
+
+The parser locates each page's transaction table by two fixed structural anchors (`"URUSNIAGA AKAUN"` to start, the bank's own name or `"ENDING BALANCE"` to end) rather than any finite text whitelist — the letterhead between those anchors contains the customer's own name and address, which cannot safely be enumerated. Every parsed statement is additionally cross-validated against its own declared `BEGINNING BALANCE`/`ENDING BALANCE`/`TOTAL CREDIT`/`TOTAL DEBIT`: any disagreement between what was actually parsed and what the bank's own statement declares fails the whole import closed, bounding the blast radius of any text-layout misparse. `.pdf` resolves unambiguously to this format at the HTTP boundary (`BankStatementImportController`) because it is the only PDF format accepted today.
+
+**Verified against exactly one real Maybank Islamic savings-account statement's layout**, shared directly in chat and never stored, committed, or logged — only its structural pattern informs the parser; every test fixture is a synthetic PDF built from scratch (`dompdf`, already a dependency). A different Maybank product or a redesigned template may use different fixed wording than this parser's anchors expect and will fail closed rather than misparse, pending its own observed layout.
 
 ## 6. Matching contract already evidenced
 
@@ -249,6 +257,7 @@ See `BNK-T053` (still `Deferred` for every format/bank this entry does not name)
 
 ## Changelog
 
+- **0.9.0 (2026-09-19):** Implements §12.10's Maybank half — §5.2 adds `BankStatementFileFormat::MaybankPdf` and `MaybankPdfBankStatementParser`, built and verified against one real Maybank Islamic statement's structure (never stored/committed) with synthetic test fixtures only. Real PostgreSQL/HTTP/browser tests pass; CIMB remains undecided-on-implementation, §12.10's own scope unchanged otherwise.
 - **0.8.0 (2026-09-19):** Adds §12.10 — Founder decision (direct chat) to reopen §12.5 narrowly: two dedicated fixed-layout PDF parsers for Maybank and CIMB statements, normalizing into the identical fixed v1 schema, never configurable mapping. §12.5 itself is unchanged for every other bank/format/e-wallet. Not yet implemented — blocked on real (or realistically redacted) sample statement layouts for both banks, and on adding a PDF text-extraction dependency. No `BNK-NNN` invariant changed; a new pair will be added once built and proven.
 - **0.7.0 (2026-09-19):** Closes `BNK-T059`/`BNK-T060` (ATS-008 v0.8.0) — `BNK-001` and `BNK-013` now each have a real executable test. Every accepted `BNK-NNN` invariant maps to executable evidence; Accounting Domain Reviewer sign-off is the sole remaining Activation blocker. No `BNK-NNN` invariant's meaning changed.
 - **0.6.0 (2026-09-19):** Records that ATS-008's full normative traceability is complete (ATS-008 v0.7.0, §2) — closing §13's remaining unchecked item. Two genuine gaps found in the process, `BNK-001` and `BNK-013`, are now named in §11 and tracked as `BNK-T059`/`BNK-T060`, joining Accounting Domain Reviewer sign-off as Activation blockers. No `BNK-NNN` invariant's meaning changed.

@@ -31,6 +31,7 @@ use App\Domain\Banking\Exception\ReconciliationNotBalancedException;
 use App\Domain\Banking\Exception\ReconciliationPeriodOverlapException;
 use App\Domain\Banking\Exception\ReconciliationReopenRequiresReasonException;
 use App\Domain\Banking\MatchingService;
+use App\Domain\Banking\MaybankPdfBankStatementParser;
 use App\Domain\Banking\Reconciliation;
 use App\Domain\Banking\ReconciliationService;
 use App\Domain\Banking\ReconciliationState;
@@ -159,6 +160,7 @@ final class ReconciliationServiceIntegrationTest extends TestCase
             $connection,
             new CsvBankStatementParser,
             new XlsxBankStatementParser,
+            new MaybankPdfBankStatementParser,
             new ImportBatchRepository($connection),
             new BankTransactionRepository($connection),
         );

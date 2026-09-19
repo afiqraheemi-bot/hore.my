@@ -20,4 +20,16 @@ enum BankStatementFileFormat
 {
     case Csv;
     case Xlsx;
+
+    /**
+     * A dedicated fixed-layout parser for Maybank's own native PDF
+     * e-statement (AETS-008 §12.10, decided 2026-09-19) — not a second
+     * schema and not configurable mapping; the identical fixed v1
+     * schema §5 already describes, translated from Maybank's own
+     * layout by {@see MaybankPdfBankStatementParser}. The only PDF
+     * format today, so `.pdf` unambiguously resolves to this case at
+     * the HTTP boundary; a second PDF-issuing bank will need an
+     * explicit disambiguation signal there, not content-sniffing.
+     */
+    case MaybankPdf;
 }

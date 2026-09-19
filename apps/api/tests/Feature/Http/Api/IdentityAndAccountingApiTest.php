@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Http\Api;
 
+use App\Domain\Banking\MaybankPdfBankStatementParser;
 use App\Domain\Banking\XlsxBankStatementParser;
 use App\Http\Controllers\Api\ExpenseController;
 use Carbon\CarbonImmutable;
+use Dompdf\Dompdf;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
@@ -2176,6 +2178,68 @@ final class IdentityAndAccountingApiTest extends TestCase
         $transactions->assertJsonCount(2, 'data');
         $transactions->assertJsonPath('data.0.description', 'Salary credit');
         $transactions->assertJsonPath('data.0.direction', 'MoneyIn');
+    }
+
+    /**
+     * AETS-008 §12.10 (decided 2026-09-19): the identical end-to-end
+     * import flow, resolved via a synthetic PDF built to exercise
+     * Maybank's own real statement layout (`BEGINNING BALANCE`,
+     * `DD/MM/YY` dates, an amount-plus-trailing-sign column, narrative
+     * continuation lines, and a closing `ENDING BALANCE`/`TOTAL
+     * CREDIT`/`TOTAL DEBIT` summary this parser cross-validates
+     * against) — never real bank data. `BankStatementImportController`
+     * picks {@see MaybankPdfBankStatementParser}
+     * from the uploaded file's own `.pdf` extension.
+     */
+    public function test_registering_a_bank_account_and_importing_a_maybank_pdf_statement_end_to_end(): void
+    {
+        $this->registerAndReturnCredentials('bank-import-maybank-pdf@example.my');
+        $bankAccountId = $this->createAccount('1010', 'Bank', 'Asset');
+
+        $registeredBankAccountId = $this->postJson('/api/v1/bank-accounts', [
+            'linked_account_id' => $bankAccountId,
+            'bank_name' => 'Maybank',
+            'account_number_last4' => '1234',
+        ])->json('id');
+
+        $html = '<html><body style="font-family: sans-serif; font-size: 10px;">'
+            .'<table style="width:100%; border-collapse: collapse;">'
+            .'<tr><td colspan="4">URUSNIAGA AKAUN/ 戶口進支項 /ACCOUNT TRANSACTIONS</td></tr>'
+            .'<tr><td>TARIKH MASUK</td><td>BUTIR URUSNIAGA</td><td>JUMLAH URUSNIAGA</td><td>BAKI PENYATA</td></tr>'
+            .'<tr><td colspan="4">進支日期 進支項說明 银碼 結單存餘</td></tr>'
+            .'<tr><td>ENTRY DATE</td><td>TRANSACTION DESCRIPTION</td><td>TRANSACTION AMOUNT</td><td>STATEMENT BALANCE</td></tr>'
+            .'<tr><td></td><td>BEGINNING BALANCE</td><td></td><td>3,000.00</td></tr>'
+            .'<tr><td>01/08/26</td><td>Salary credit</td><td>3000.00+</td><td>6,000.00</td></tr>'
+            .'<tr><td>02/08/26</td><td>Rent payment</td><td>1200.00-</td><td>4,800.00</td></tr>'
+            .'</table>'
+            .'<p>Maybank Islamic Berhad (787435-M)</p>'
+            .'<p>ENDING BALANCE : 4,800.00</p>'
+            .'<p>TOTAL CREDIT : 3000.00</p>'
+            .'<p>TOTAL DEBIT : 1200.00</p>'
+            .'</body></html>';
+
+        $dompdf = new Dompdf;
+        $dompdf->loadHtml($html);
+        $dompdf->render();
+        $pdfBytes = $dompdf->output();
+
+        $file = UploadedFile::fake()->createWithContent('statement.pdf', $pdfBytes);
+
+        $import = $this->post("/api/v1/bank-accounts/{$registeredBankAccountId}/import", ['statement' => $file]);
+
+        $import->assertStatus(201);
+        $import->assertJsonPath('row_count', 2);
+        $import->assertJsonPath('inserted_count', 2);
+        $import->assertJsonPath('duplicate_count', 0);
+        $import->assertJsonPath('is_new_import', true);
+
+        $transactions = $this->getJson("/api/v1/bank-accounts/{$registeredBankAccountId}/transactions");
+        $transactions->assertStatus(200);
+        $transactions->assertJsonCount(2, 'data');
+        $transactions->assertJsonPath('data.0.description', 'Salary credit');
+        $transactions->assertJsonPath('data.0.direction', 'MoneyIn');
+        $transactions->assertJsonPath('data.1.description', 'Rent payment');
+        $transactions->assertJsonPath('data.1.direction', 'MoneyOut');
     }
 
     public function test_reimporting_the_same_statement_file_replays_instead_of_duplicating(): void

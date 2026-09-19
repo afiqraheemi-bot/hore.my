@@ -175,4 +175,46 @@ test.describe('XLSX and PDF export/import', () => {
     await expect(page.getByText(/imported 1 new row/i)).toBeVisible()
     await expect(page.getByText('E2E XLSX import test')).toBeVisible()
   })
+
+  test('importing a Maybank PDF bank statement records real transactions', async ({ page }) => {
+    await registerNewUser(page)
+    await createAccount(page, '1000', 'Cash', 'Asset')
+
+    await page.goto('/bank-accounts')
+    await page.getByRole('button', { name: /register bank account/i }).click()
+    await page.locator('form select').first().selectOption({ label: 'Cash' })
+    await page.getByPlaceholder('Maybank').fill('Maybank')
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/bank-accounts') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^register$/i }).click(),
+    ])
+
+    await page.getByText('Maybank').click()
+
+    // A synthetic PDF (AETS-008 §12.10) built to exercise Maybank's own
+    // real statement layout — never real bank data. Generated once via
+    // dompdf and round-trip-verified against
+    // MaybankPdfBankStatementParser before being committed as a fixture.
+    const fixturePath = path.join(currentDir, 'support/fixtures-data/bank-statement-maybank.pdf')
+    const fixtureBytes = await fs.readFile(fixturePath)
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'statement.pdf',
+      mimeType: 'application/pdf',
+      buffer: fixtureBytes,
+    })
+
+    const [importResponse] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/import') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^import$/i }).click(),
+    ])
+
+    expect(importResponse.status()).toBe(201)
+    await expect(page.getByText(/imported 1 new row/i)).toBeVisible()
+    await expect(page.getByText('E2E Maybank PDF import test')).toBeVisible()
+  })
 })

@@ -64,6 +64,7 @@ final class BankStatementImportService
         private readonly ConnectionInterface $connection,
         private readonly CsvBankStatementParser $csvParser,
         private readonly XlsxBankStatementParser $xlsxParser,
+        private readonly MaybankPdfBankStatementParser $maybankPdfParser,
         private readonly ImportBatchRepository $importBatchRepository,
         private readonly BankTransactionRepository $bankTransactionRepository,
     ) {}
@@ -87,6 +88,7 @@ final class BankStatementImportService
         $rows = match ($format) {
             BankStatementFileFormat::Csv => $this->csvParser->parse($fileContent, $currency),
             BankStatementFileFormat::Xlsx => $this->xlsxParser->parse($fileContent, $currency),
+            BankStatementFileFormat::MaybankPdf => $this->maybankPdfParser->parse($fileContent, $currency),
         };
 
         return $this->connection->transaction(function () use ($tenantId, $bankAccountId, $originalFilename, $fileHash, $rows): BankStatementImportResult {
