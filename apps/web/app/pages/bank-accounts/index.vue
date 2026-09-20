@@ -49,6 +49,7 @@ interface BankTransaction {
   direction: 'MoneyIn' | 'MoneyOut'
   balance: string | null
   reference: string
+  matched: boolean
 }
 
 interface MatchSuggestion {
@@ -110,6 +111,157 @@ const suggestions = ref<MatchSuggestion[]>([])
 const confirmingId = ref<string | null>(null)
 const matchError = ref<string | null>(null)
 const matchMessage = ref<string | null>(null)
+
+// "Record directly" (Work Queue's own gap: importing a statement only
+// ever produced *evidence* to match against something already
+// recorded — never a shortcut to record it in the first place, so an
+// unmatched row with nothing else in the books to match against had
+// no path forward except re-typing it from scratch via Manual Entry).
+// Pre-fills amount/date straight from the BankTransaction (must stay
+// exact — see recordAccountOptions's own note on why); the user only
+// ever picks the one account the bank side doesn't already fix.
+type RecordType = 'Expense' | 'Income' | 'Transfer'
+const recordingTransactionId = ref<string | null>(null)
+const recordType = ref<RecordType>('Expense')
+const recordDescription = ref('')
+const recordAccountId = ref('')
+const recording = ref(false)
+const recordError = ref<string | null>(null)
+
+const recordingTransaction = computed(() =>
+  transactions.value.find((t) => t.id === recordingTransactionId.value),
+)
+
+const recordTypeOptions = computed((): { value: RecordType; label: string }[] =>
+  recordingTransaction.value?.direction === 'MoneyOut'
+    ? [
+        { value: 'Expense', label: 'Expense' },
+        { value: 'Transfer', label: 'Transfer' },
+      ]
+    : [
+        { value: 'Income', label: 'Income' },
+        { value: 'Transfer', label: 'Transfer' },
+      ],
+)
+
+const recordAccountLabel = computed(() =>
+  recordType.value === 'Transfer' ? 'Other account' : 'Category',
+)
+
+const recordAccountOptions = computed(() => {
+  const allowedTypes =
+    recordType.value === 'Expense'
+      ? ['Expense']
+      : recordType.value === 'Income'
+        ? ['Revenue']
+        : ['Asset', 'Liability']
+  const bankAccount = bankAccounts.value.find((b) => b.id === selectedBankAccountId.value)
+
+  // The bank's own linked Account never appears as the *user's* pick —
+  // only relevant for Transfer (Expense/Income accounts are a
+  // different Account Type entirely and would never coincide with it
+  // anyway), where it would otherwise offer an invalid transfer to
+  // itself.
+  return accounts.value
+    .filter((a) => allowedTypes.includes(a.account_type) && a.id !== bankAccount?.linked_account_id)
+    .map((a) => ({ value: a.id, label: a.account_name }))
+})
+
+function startRecording(transaction: BankTransaction) {
+  recordingTransactionId.value = transaction.id
+  recordType.value = transaction.direction === 'MoneyOut' ? 'Expense' : 'Income'
+  recordDescription.value = transaction.description
+  recordAccountId.value = ''
+  recordError.value = null
+}
+
+function cancelRecording() {
+  recordingTransactionId.value = null
+}
+
+function selectRecordType(type: RecordType) {
+  recordType.value = type
+  recordAccountId.value = ''
+}
+
+async function onRecordDirect() {
+  const transaction = recordingTransaction.value
+  const bankAccount = bankAccounts.value.find((b) => b.id === selectedBankAccountId.value)
+  if (!transaction || !bankAccount || !recordAccountId.value) return
+
+  recording.value = true
+  recordError.value = null
+  try {
+    const isOut = transaction.direction === 'MoneyOut'
+    const shared = {
+      amount: transaction.amount,
+      transaction_date: transaction.transaction_date,
+      description: recordDescription.value,
+    }
+
+    const endpoint =
+      recordType.value === 'Expense'
+        ? '/api/v1/expenses'
+        : recordType.value === 'Income'
+          ? '/api/v1/incomes'
+          : '/api/v1/transfers'
+
+    const body =
+      recordType.value === 'Expense'
+        ? {
+            ...shared,
+            expense_account_id: recordAccountId.value,
+            payment_account_id: bankAccount.linked_account_id,
+          }
+        : recordType.value === 'Income'
+          ? {
+              ...shared,
+              income_account_id: recordAccountId.value,
+              deposit_account_id: bankAccount.linked_account_id,
+            }
+          : {
+              ...shared,
+              source_account_id: isOut ? bankAccount.linked_account_id : recordAccountId.value,
+              destination_account_id: isOut ? recordAccountId.value : bankAccount.linked_account_id,
+            }
+
+    const created = await request<{ journal_id: string }>(endpoint, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body,
+    })
+
+    let message: string
+    try {
+      await request(`/api/v1/bank-transactions/${transaction.id}/confirm-match`, {
+        method: 'POST',
+        body: { journal_id: created.journal_id },
+      })
+      message = 'Recorded and matched.'
+    } catch {
+      // The entry now exists — a Posted Journal is never rolled back —
+      // but automatic matching failed (a genuine race, most likely).
+      // suggestFor() will find this same Journal as a valid candidate
+      // on its own, so the normal manual-confirm path below still
+      // works; only the automatic shortcut didn't complete.
+      message =
+        'Recorded, but automatic matching failed — check Match suggestions below to confirm it manually.'
+    }
+
+    recordingTransactionId.value = null
+
+    // `selectBankAccount()` itself resets `matchMessage` (its own
+    // stale-message-clearing behaviour) — so the just-computed message
+    // is re-applied after it, not before, mirroring `onImport()`'s own
+    // identical `importSummary` ordering.
+    if (selectedBankAccountId.value) await selectBankAccount(selectedBankAccountId.value)
+    matchMessage.value = message
+  } catch {
+    recordError.value = 'Failed to record this transaction. Check the account and try again.'
+  } finally {
+    recording.value = false
+  }
+}
 
 const reconciliations = ref<Reconciliation[]>([])
 const showReconciliationForm = ref(false)
@@ -405,6 +557,7 @@ onMounted(loadAll)
 
         <div>
           <h2 class="mb-2 text-sm font-medium text-ink-secondary">Transactions</h2>
+          <p v-if="recordError" class="mb-2 text-sm text-danger">{{ recordError }}</p>
           <EmptyState v-if="transactions.length === 0" title="No transactions imported yet" />
           <div v-else class="space-y-1.5">
             <AppCard v-for="transaction in transactions" :key="transaction.id" :padded="false">
@@ -437,6 +590,67 @@ onMounted(loadAll)
                 >
                   {{ transaction.direction === 'MoneyIn' ? '+' : '−' }}RM{{ transaction.amount }}
                 </p>
+                <AppButton
+                  v-if="!transaction.matched"
+                  size="sm"
+                  variant="ghost"
+                  @click="
+                    recordingTransactionId === transaction.id
+                      ? cancelRecording()
+                      : startRecording(transaction)
+                  "
+                >
+                  {{ recordingTransactionId === transaction.id ? 'Cancel' : 'Record directly' }}
+                </AppButton>
+              </div>
+
+              <div
+                v-if="recordingTransactionId === transaction.id"
+                class="space-y-3 border-t border-border px-4 py-3"
+              >
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p class="text-xs text-ink-tertiary">Amount</p>
+                    <p class="text-ink">RM{{ transaction.amount }}</p>
+                  </div>
+                  <div>
+                    <p class="text-xs text-ink-tertiary">Date</p>
+                    <p class="text-ink">{{ transaction.transaction_date }}</p>
+                  </div>
+                </div>
+                <AppField label="Description">
+                  <AppInput v-model="recordDescription" />
+                </AppField>
+                <div class="flex gap-2">
+                  <button
+                    v-for="option in recordTypeOptions"
+                    :key="option.value"
+                    type="button"
+                    class="rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+                    :class="
+                      recordType === option.value
+                        ? 'bg-accent text-accent-contrast'
+                        : 'bg-surface-secondary text-ink-secondary hover:bg-surface-hover'
+                    "
+                    @click="selectRecordType(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+                <AppField :label="recordAccountLabel">
+                  <AppSelect
+                    v-model="recordAccountId"
+                    :options="recordAccountOptions"
+                    placeholder="Select an account"
+                  />
+                </AppField>
+                <AppButton
+                  variant="primary"
+                  :disabled="recording || !recordAccountId"
+                  @click="onRecordDirect"
+                >
+                  {{ recording ? 'Recording…' : 'Record' }}
+                </AppButton>
               </div>
             </AppCard>
           </div>

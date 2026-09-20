@@ -2399,6 +2399,14 @@ final class IdentityAndAccountingApiTest extends TestCase
         $bankTransactionId = $suggestions->json('data.0.bank_transaction_id');
         $journalId = $suggestions->json('data.0.journal_id');
 
+        // Before confirmation, the transaction list itself already says
+        // this row is unmatched — the signal the Work Queue's own
+        // "record directly and auto-match" shortcut relies on to know
+        // which rows still need one.
+        $beforeConfirm = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/transactions");
+        $beforeConfirm->assertJsonPath('data.0.id', $bankTransactionId);
+        $beforeConfirm->assertJsonPath('data.0.matched', false);
+
         $confirm = $this->postJson("/api/v1/bank-transactions/{$bankTransactionId}/confirm-match", [
             'journal_id' => $journalId,
         ]);
@@ -2409,6 +2417,10 @@ final class IdentityAndAccountingApiTest extends TestCase
 
         // Confirmed matches never resurface as suggestions.
         $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/match-suggestions")->assertJsonCount(0, 'data');
+
+        // ...and the transaction list itself now reflects it too.
+        $afterConfirm = $this->getJson("/api/v1/bank-accounts/{$bankAccountId}/transactions");
+        $afterConfirm->assertJsonPath('data.0.matched', true);
     }
 
     /**

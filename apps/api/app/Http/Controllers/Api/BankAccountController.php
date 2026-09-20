@@ -18,6 +18,7 @@ use App\Http\Requests\Banking\StoreBankAccountRequest;
 use App\Http\Support\CurrentTenant;
 use App\Infrastructure\Banking\BankAccountRepository;
 use App\Infrastructure\Banking\BankTransactionRepository;
+use App\Infrastructure\Banking\MatchRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -35,6 +36,7 @@ final class BankAccountController extends Controller
         private readonly BankAccountLinkedAccountValidator $linkedAccountValidator,
         private readonly BankAccountRepository $bankAccountRepository,
         private readonly BankTransactionRepository $bankTransactionRepository,
+        private readonly MatchRepository $matchRepository,
     ) {}
 
     public function index(CurrentTenant $currentTenant): JsonResponse
@@ -100,6 +102,20 @@ final class BankAccountController extends Controller
 
         $transactions = $this->bankTransactionRepository->findByBankAccount($currentTenant->id(), $id);
 
+        // Which of these already has a confirmed Match — the same
+        // lookup {@see \App\Domain\Banking\MatchingService::suggestFor()}
+        // already uses to exclude an already-matched BankTransaction
+        // from its own suggestions, reused here so the frontend can
+        // tell an unmatched row apart from a matched one (previously
+        // impossible: this list carried no such signal at all).
+        $matchedIds = array_flip(array_map(
+            static fn ($matchedId): string => $matchedId->toString(),
+            $this->matchRepository->matchedBankTransactionIds(
+                $currentTenant->id(),
+                array_map(static fn ($transaction) => $transaction->id(), $transactions),
+            ),
+        ));
+
         return response()->json(['data' => array_map(static fn ($transaction): array => [
             'id' => $transaction->id()->toString(),
             'transaction_date' => $transaction->transactionDate()->format('Y-m-d'),
@@ -108,6 +124,7 @@ final class BankAccountController extends Controller
             'direction' => $transaction->direction()->name,
             'balance' => $transaction->balance()?->toDecimalString(),
             'reference' => $transaction->reference(),
+            'matched' => isset($matchedIds[$transaction->id()->toString()]),
         ], $transactions)]);
     }
 

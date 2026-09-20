@@ -217,4 +217,75 @@ test.describe('XLSX and PDF export/import', () => {
     await expect(page.getByText(/imported 1 new row/i)).toBeVisible()
     await expect(page.getByText('E2E Maybank PDF import test')).toBeVisible()
   })
+
+  test('recording an unmatched bank transaction directly posts it and confirms the match automatically', async ({
+    page,
+  }) => {
+    await registerNewUser(page)
+    await createAccount(page, '1000', 'Bank', 'Asset')
+    await createAccount(page, '5000', 'Office Supplies', 'Expense')
+
+    await page.goto('/bank-accounts')
+    await page.getByRole('button', { name: /register bank account/i }).click()
+    await page.locator('form select').first().selectOption({ label: 'Bank' })
+    await page.getByPlaceholder('Maybank').fill('Maybank')
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/bank-accounts') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^register$/i }).click(),
+    ])
+    await page.getByText('Maybank').click()
+
+    // A transaction nothing in the books matches yet — the exact real
+    // scenario this shortcut exists for (Work Queue's own gap: import
+    // alone never created a path to record it, only to verify a
+    // pre-existing entry).
+    const csv =
+      'date,description,amount,direction,balance,reference\n2026-09-01,Card payment - office supplies,88.50,OUT,,\n'
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'statement.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(csv),
+    })
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/import') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^import$/i }).click(),
+    ])
+
+    await expect(page.getByText('No unmatched suggestions right now')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Record directly' }).click()
+
+    // Amount and date come straight from the statement, never retyped.
+    await expect(page.getByText('RM88.50', { exact: true })).toBeVisible()
+    await expect(page.getByText('2026-09-01').last()).toBeVisible()
+
+    const accountSelect = page.locator('select').last()
+    await accountSelect.selectOption({ label: 'Office Supplies' })
+
+    const [expenseResponse, confirmResponse] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/expenses') && res.request().method() === 'POST',
+      ),
+      page.waitForResponse(
+        (res) => res.url().includes('/confirm-match') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^record$/i }).click(),
+    ])
+
+    expect(expenseResponse.status()).toBe(201)
+    expect(confirmResponse.status()).toBe(201)
+    await expect(page.getByText('Recorded and matched.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Record directly' })).not.toBeVisible()
+
+    // Posted for real, not just locally reflected — same figure, same
+    // period, via the Trial Balance report.
+    await page.goto('/reports')
+    await page.getByRole('button', { name: 'Trial Balance' }).click()
+    await page.getByRole('button', { name: 'Run report' }).click()
+    await expect(page.locator('table')).toContainText('88.50')
+  })
 })
