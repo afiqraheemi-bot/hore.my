@@ -70,11 +70,13 @@ test.describe('Quotations', () => {
     await expect(page.getByText('Consulting')).toBeVisible()
     await expect(page.getByText('RM300.00').first()).toBeVisible()
 
-    // Links straight to the specific converted Invoice's own detail
-    // page — never the generic list, which cannot tell two Invoices
-    // apart once a Tenant has more than one.
+    // Deep-links to (and highlights) the specific converted Invoice
+    // within the Invoices list — never just the generic list with no
+    // way to tell two Invoices apart, but also not dropped straight
+    // onto the standalone Details page (Founder preference: seeing it
+    // in context of the rest of the list is the expected flow here).
     await page.getByRole('link', { name: /view invoice/i }).click()
-    await expect(page).toHaveURL(/\/invoices\/[^/?]+$/)
+    await expect(page).toHaveURL(/\/invoices\?highlight=.+/)
     await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('RM300.00').first()).toBeVisible()
   })

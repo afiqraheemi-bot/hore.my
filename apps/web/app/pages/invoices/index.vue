@@ -185,8 +185,24 @@ function customerName(id: string): string {
   return customers.value.find((c) => c.id === id)?.name ?? id.slice(0, 8)
 }
 
+// `?highlight=<invoice_id>` (Quotations' own "View invoice" link, once
+// it converts) — scrolls to and rings the specific Invoice within
+// this flat list, rather than dropping the user onto the standalone
+// Details page: seeing it in context of the rest of the list is the
+// preferred flow here (Founder feedback, 2026-09-21).
+const highlightedInvoiceId = computed(() =>
+  typeof route.query.highlight === 'string' ? route.query.highlight : null,
+)
+
 onMounted(async () => {
   await Promise.all([loadInvoices(), loadCustomers(), loadAccounts()])
+
+  if (highlightedInvoiceId.value) {
+    await nextTick()
+    document
+      .getElementById(`invoice-${highlightedInvoiceId.value}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 })
 </script>
 
@@ -270,7 +286,16 @@ onMounted(async () => {
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
     <EmptyState v-else-if="invoices.length === 0" title="No invoices yet" />
     <div v-else class="space-y-2">
-      <AppCard v-for="invoice in invoices" :key="invoice.id">
+      <AppCard
+        v-for="invoice in invoices"
+        :id="`invoice-${invoice.id}`"
+        :key="invoice.id"
+        :class="
+          highlightedInvoiceId === invoice.id
+            ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
+            : ''
+        "
+      >
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">

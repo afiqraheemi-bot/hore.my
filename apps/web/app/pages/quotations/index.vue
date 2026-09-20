@@ -387,7 +387,7 @@ onMounted(async () => {
               v-else-if="quotation.status === 'Converted' && quotation.converted_invoice_id"
             >
               <NuxtLink
-                :to="`/invoices/${quotation.converted_invoice_id}`"
+                :to="`/invoices?highlight=${quotation.converted_invoice_id}`"
                 class="text-xs text-accent underline"
               >
                 View invoice
