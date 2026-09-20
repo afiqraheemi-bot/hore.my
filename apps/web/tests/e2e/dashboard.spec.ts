@@ -18,7 +18,10 @@ test.describe('Dashboard', () => {
 
     await expect(page.getByText('RM0.00').first()).toBeVisible()
     await expect(page.getByText('Nothing recorded in the last 6 months')).toBeVisible()
-    await expect(page.getByText('All caught up')).toBeVisible()
+    // Nothing needs attention — the indicator collapses away entirely
+    // rather than sitting in the page as an empty "all clear" banner
+    // (Founder feedback, 2026-09-21: it drew the eye for no reason).
+    await expect(page.locator('header summary')).not.toBeVisible()
   })
 
   test('reflects a recorded Income and Expense in the KPI cards and trend chart', async ({
@@ -149,6 +152,10 @@ test.describe('Dashboard', () => {
     ])
 
     await page.goto('/dashboard')
+    // The attention indicator collapses to a small icon+count in the
+    // page header — its two items sit behind a click, not always
+    // visible inline (Founder feedback, 2026-09-21).
+    await page.locator('header summary').click()
     const overdueLink = page.getByRole('link', { name: /overdue invoices/i })
     await expect(overdueLink).toBeVisible()
     await overdueLink.click()

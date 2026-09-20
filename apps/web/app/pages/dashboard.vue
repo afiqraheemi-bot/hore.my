@@ -165,7 +165,40 @@ onMounted(loadDashboard)
 
 <template>
   <div class="mx-auto max-w-4xl space-y-6 sm:space-y-8">
-    <header class="pt-2 text-center sm:pt-4">
+    <header class="relative pt-2 text-center sm:pt-4">
+      <details v-if="dashboard && attentionCount" class="absolute right-0 top-2 text-left">
+        <summary
+          class="flex cursor-pointer list-none items-center gap-1 rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning [&::-webkit-details-marker]:hidden"
+          :aria-label="`Needs your attention: ${attentionCount} item${attentionCount === 1 ? '' : 's'}`"
+        >
+          <AppIcon name="alert" :size="13" />
+          {{ attentionCount }}
+        </summary>
+        <div
+          class="absolute right-0 z-10 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-surface shadow-lg"
+        >
+          <NuxtLink
+            v-if="dashboard.attention.task_count"
+            to="/?filter=attention"
+            class="flex items-center justify-between gap-4 px-4 py-3 text-sm transition-colors hover:bg-surface-hover"
+          >
+            <span class="text-ink">Tasks to review</span>
+            <span class="tabular-nums text-ink-secondary">{{
+              dashboard.attention.task_count
+            }}</span>
+          </NuxtLink>
+          <NuxtLink
+            v-if="dashboard.attention.overdue_invoice_count"
+            :to="{ path: '/reports', query: { tab: 'Aging Report' } }"
+            class="flex items-center justify-between gap-4 border-t border-border px-4 py-3 text-sm transition-colors hover:bg-surface-hover"
+          >
+            <span class="text-ink">Overdue invoices</span>
+            <span class="tabular-nums text-ink-secondary">{{
+              formatMyr(dashboard.attention.overdue_invoice_total)
+            }}</span>
+          </NuxtLink>
+        </div>
+      </details>
       <h1 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
         Your financial overview
       </h1>
@@ -246,56 +279,6 @@ onMounted(loadDashboard)
               </p>
               <p class="mt-1 text-[11px] text-ink-tertiary">Financial position today</p>
             </div>
-          </div>
-        </AppCard>
-      </section>
-
-      <section aria-labelledby="attention-heading">
-        <AppCard :padded="false" class="overflow-hidden rounded-[1.5rem] border-border-strong">
-          <div class="flex items-center justify-between gap-4 px-5 py-4">
-            <h2
-              id="attention-heading"
-              class="flex items-center gap-2 text-sm font-medium text-ink-secondary"
-            >
-              <AppIcon
-                :name="attentionCount ? 'alert' : 'check'"
-                :size="15"
-                :class="attentionCount ? 'text-warning' : 'text-success'"
-              />
-              Needs your attention
-            </h2>
-            <span
-              v-if="attentionCount"
-              class="rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium tabular-nums text-warning"
-            >
-              {{ attentionCount }}
-            </span>
-            <span v-else class="text-xs font-medium text-success">All caught up</span>
-          </div>
-
-          <div v-if="attentionCount" class="divide-y divide-border border-t border-border">
-            <NuxtLink
-              v-if="dashboard.attention.task_count"
-              to="/?filter=attention"
-              class="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover"
-            >
-              <span class="text-sm text-ink">Tasks to review</span>
-              <span class="flex items-center gap-2 text-sm tabular-nums text-ink-secondary">
-                {{ dashboard.attention.task_count }}
-                <AppIcon name="chevron-left" :size="14" class="rotate-180" />
-              </span>
-            </NuxtLink>
-            <NuxtLink
-              v-if="dashboard.attention.overdue_invoice_count"
-              :to="{ path: '/reports', query: { tab: 'Aging Report' } }"
-              class="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover"
-            >
-              <span class="text-sm text-ink">Overdue invoices</span>
-              <span class="flex items-center gap-2 text-sm tabular-nums text-ink-secondary">
-                {{ formatMyr(dashboard.attention.overdue_invoice_total) }}
-                <AppIcon name="chevron-left" :size="14" class="rotate-180" />
-              </span>
-            </NuxtLink>
           </div>
         </AppCard>
       </section>
