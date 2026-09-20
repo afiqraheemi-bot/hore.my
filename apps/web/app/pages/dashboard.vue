@@ -179,11 +179,7 @@ onMounted(loadDashboard)
     </header>
 
     <template v-if="loading">
-      <div
-        class="animate-pulse space-y-4"
-        role="status"
-        aria-label="Loading financial overview"
-      >
+      <div class="animate-pulse space-y-4" role="status" aria-label="Loading financial overview">
         <div class="h-28 rounded-3xl bg-surface-tertiary" />
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div v-for="item in 4" :key="item" class="h-28 rounded-2xl bg-surface-tertiary" />
@@ -257,7 +253,15 @@ onMounted(loadDashboard)
       <section aria-labelledby="attention-heading">
         <AppCard :padded="false" class="overflow-hidden rounded-[1.5rem] border-border-strong">
           <div class="flex items-center justify-between gap-4 px-5 py-4">
-            <h2 id="attention-heading" class="text-sm font-semibold text-ink">
+            <h2
+              id="attention-heading"
+              class="flex items-center gap-2 text-sm font-medium text-ink-secondary"
+            >
+              <AppIcon
+                :name="attentionCount ? 'alert' : 'check'"
+                :size="15"
+                :class="attentionCount ? 'text-warning' : 'text-success'"
+              />
               Needs your attention
             </h2>
             <span
@@ -266,9 +270,7 @@ onMounted(loadDashboard)
             >
               {{ attentionCount }}
             </span>
-            <span v-else class="flex items-center gap-1.5 text-xs font-medium text-success">
-              <AppIcon name="check" :size="14" /> All caught up
-            </span>
+            <span v-else class="text-xs font-medium text-success">All caught up</span>
           </div>
 
           <div v-if="attentionCount" class="divide-y divide-border border-t border-border">
