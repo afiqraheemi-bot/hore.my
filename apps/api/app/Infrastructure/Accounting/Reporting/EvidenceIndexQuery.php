@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Accounting\Reporting;
 
+use App\Domain\Accounting\Journal\JournalDirection;
 use App\Domain\Accounting\Journal\JournalId;
+use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Accounting\Reporting\EvidenceIndex;
 use App\Domain\Accounting\Reporting\EvidenceIndexEntry;
 use App\Domain\Shared\Tenancy\TenantId;
+use App\Infrastructure\Accounting\Money\MoneyPersistenceAdapter;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Collection;
 
@@ -29,11 +32,17 @@ final class EvidenceIndexQuery
 
     private const EVIDENCE_LINK_TABLE = 'journal_evidence_links';
 
+    private const LINE_TABLE = 'journal_lines';
+
     private const POSTED_STATE = 'Posted';
+
+    private readonly MoneyPersistenceAdapter $money;
 
     public function __construct(
         private readonly ConnectionInterface $connection,
-    ) {}
+    ) {
+        $this->money = new MoneyPersistenceAdapter;
+    }
 
     public function forPeriod(TenantId $tenantId, \DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): EvidenceIndex
     {
@@ -57,6 +66,7 @@ final class EvidenceIndexQuery
         /** @var list<string> $journalIds */
         $journalIds = $rows->pluck('journal_id')->unique()->values()->all();
         $evidenceByJournalId = $this->fetchEvidenceReferences($tenantId, $journalIds);
+        $amountByJournalId = $this->fetchAmounts($tenantId, $journalIds);
 
         $entries = [];
 
@@ -65,11 +75,44 @@ final class EvidenceIndexQuery
                 JournalId::of($row->journal_id),
                 new \DateTimeImmutable($row->financial_date),
                 SourceReference::of($row->source),
+                $amountByJournalId[$row->journal_id],
                 $evidenceByJournalId[$row->journal_id] ?? [],
             );
         }
 
         return new EvidenceIndex($tenantId, $periodStart, $periodEnd, $entries);
+    }
+
+    /**
+     * A Journal's own amount, for display — every Posted Journal is
+     * balanced (AETS-002), so the sum of its Debit lines always equals
+     * the sum of its Credit lines; summing the Debit side alone is
+     * therefore sufficient to represent "how much this Journal moved."
+     *
+     * @param  list<string>  $journalIds
+     * @return array<string, Money>
+     */
+    private function fetchAmounts(TenantId $tenantId, array $journalIds): array
+    {
+        if ($journalIds === []) {
+            return [];
+        }
+
+        /** @var Collection<int, object{journal_id: string, total: int|string, currency: string}> $rows */
+        $rows = $this->connection->table(self::LINE_TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->whereIn('journal_id', $journalIds)
+            ->where('direction', JournalDirection::Debit->name)
+            ->groupBy('journal_id', 'currency')
+            ->get(['journal_id', 'currency', $this->connection->raw('SUM(amount) as total')]);
+
+        $byJournalId = [];
+
+        foreach ($rows as $row) {
+            $byJournalId[$row->journal_id] = $this->money->fromPersisted((string) $row->total, $row->currency);
+        }
+
+        return $byJournalId;
     }
 
     /**

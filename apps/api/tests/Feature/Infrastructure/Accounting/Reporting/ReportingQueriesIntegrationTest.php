@@ -536,10 +536,12 @@ final class ReportingQueriesIntegrationTest extends TestCase
         $expenseEntry = $this->findEvidenceEntry($index->entries(), $expenseResult->expense()->journalId()->toString());
         $this->assertFalse($expenseEntry->hasEvidence());
         $this->assertSame([], $expenseEntry->evidenceReferences());
+        $this->assertSame('50.00', $expenseEntry->amount()->toDecimalString());
 
         $incomeEntry = $this->findEvidenceEntry($index->entries(), $incomeResult->income()->journalId()->toString());
         $this->assertTrue($incomeEntry->hasEvidence());
         $this->assertSame(['invoice-0001'], $incomeEntry->evidenceReferences());
+        $this->assertSame('200.00', $incomeEntry->amount()->toDecimalString());
     }
 
     public function test_source_description_lookup_resolves_the_real_expense_and_income_description(): void

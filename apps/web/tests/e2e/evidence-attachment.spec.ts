@@ -53,6 +53,11 @@ test.describe('Evidence attachment', () => {
     const evidenceLink = page.getByRole('link', { name: /evidence/i }).first()
     await expect(evidenceLink).toBeVisible()
 
+    // The amount the Founder specifically asked for (2026-09-21) — this
+    // feed previously showed description/date/evidence only, never how
+    // much the transaction was for.
+    await expect(page.getByText('RM42.50', { exact: true })).toBeVisible()
+
     // The badge is a real link to the originally-uploaded file, not
     // just a decorative "attached" indicator — clicking it (`target=
     // "_blank"`, opening a second tab in the same authenticated
@@ -79,6 +84,7 @@ test.describe('Evidence attachment', () => {
     const reportEvidenceLink = page.getByRole('link', { name: /1 attached/i })
     await expect(reportEvidenceLink).toBeVisible()
     expect(await reportEvidenceLink.getAttribute('href')).toMatch(/\/api\/v1\/evidence\/.+/)
+    await expect(page.getByText('RM 42.50').first()).toBeVisible()
 
     await page.getByRole('button', { name: 'General Ledger' }).click()
     await page.getByRole('button', { name: 'Run report' }).click()

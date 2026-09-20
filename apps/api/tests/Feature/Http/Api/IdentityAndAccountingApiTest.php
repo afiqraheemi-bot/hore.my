@@ -1652,6 +1652,8 @@ final class IdentityAndAccountingApiTest extends TestCase
         $evidenceIndex = $this->getJson('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31');
         $evidenceIndex->assertStatus(200);
         $evidenceIndex->assertJsonCount(2, 'entries');
+        $evidenceIndex->assertJsonPath('entries.0.amount', '50.00');
+        $evidenceIndex->assertJsonPath('entries.1.amount', '200.00');
     }
 
     public function test_dashboard_uses_exact_malaysia_calendar_month_boundaries(): void

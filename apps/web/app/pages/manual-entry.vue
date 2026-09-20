@@ -11,6 +11,7 @@ interface EvidenceEntry {
   journal_id: string
   financial_date: string
   source: string
+  amount: string
   has_evidence: boolean
   evidence_references: string[]
   description: string | null
@@ -126,6 +127,7 @@ onMounted(loadActivity)
                   >{{ formatRelativeDate(entry.financial_date) }}
                 </p>
               </div>
+              <p class="shrink-0 text-sm font-medium text-ink">RM{{ entry.amount }}</p>
               <a
                 v-if="entry.evidence_references.length > 0"
                 :href="evidenceUrl(entry.evidence_references[0]!)"

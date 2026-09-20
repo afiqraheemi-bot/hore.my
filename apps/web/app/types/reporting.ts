@@ -80,6 +80,7 @@ export interface EvidenceIndexEntryResult {
   journal_id: string
   financial_date: string
   source: string
+  amount: string
   has_evidence: boolean
   evidence_references: string[]
 }

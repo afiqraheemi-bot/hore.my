@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Domain\Accounting\Reporting;
 
 use App\Domain\Accounting\Journal\JournalId;
+use App\Domain\Accounting\Money\Money;
 use App\Domain\Accounting\Posting\SourceReference;
 
 /**
  * One Posted Journal's Evidence-linkage status for the Evidence Index
- * (AETS-009 §10, SRS RPT-008) — its Source reference and every linked
- * Evidence Reference (AETS-010 §8–§9), `[]` when none.
+ * (AETS-009 §10, SRS RPT-008) — its Source reference, its own balanced
+ * amount (AETS-009 v1.10.0 — presentation of an already-guaranteed-
+ * correct value, no new computation), and every linked Evidence
+ * Reference (AETS-010 §8–§9), `[]` when none.
  *
  * **An empty list is reported plainly, never flagged as a defect.**
  * Per AETS-010 §9, a Journal with no independent evidence of its own
@@ -26,6 +29,7 @@ final class EvidenceIndexEntry
         private readonly JournalId $journalId,
         private readonly \DateTimeImmutable $financialDate,
         private readonly SourceReference $source,
+        private readonly Money $amount,
         private readonly array $evidenceReferences,
     ) {}
 
@@ -42,6 +46,11 @@ final class EvidenceIndexEntry
     public function source(): SourceReference
     {
         return $this->source;
+    }
+
+    public function amount(): Money
+    {
+        return $this->amount;
     }
 
     /**

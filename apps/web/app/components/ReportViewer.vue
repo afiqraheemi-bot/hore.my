@@ -450,6 +450,7 @@ function words(value: string): string {
                 <th class="px-4 py-3 font-medium">Date</th>
                 <th class="px-4 py-3 font-medium">Source</th>
                 <th class="px-4 py-3 font-medium">Journal</th>
+                <th class="px-4 py-3 text-right font-medium">Amount</th>
                 <th class="px-4 py-3 text-center font-medium">Evidence</th>
               </tr>
             </thead>
@@ -459,6 +460,9 @@ function words(value: string): string {
                 <td class="px-4 py-3 font-medium capitalize text-ink">{{ words(entry.source) }}</td>
                 <td class="px-4 py-3 font-mono text-xs text-ink-tertiary">
                   {{ shortId(entry.journal_id) }}
+                </td>
+                <td class="px-4 py-3 text-right tabular-nums text-ink">
+                  {{ money(entry.amount) }}
                 </td>
                 <td class="px-4 py-3 text-center">
                   <a
@@ -475,7 +479,7 @@ function words(value: string): string {
                 </td>
               </tr>
               <tr v-if="!evidenceIndex.entries.length">
-                <td colspan="4" class="px-4 py-10 text-center text-ink-tertiary">
+                <td colspan="5" class="px-4 py-10 text-center text-ink-tertiary">
                   No transactions in this period.
                 </td>
               </tr>

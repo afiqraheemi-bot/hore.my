@@ -772,6 +772,7 @@ final class ReportingController extends Controller
                 $entry->financialDate()->format('Y-m-d'),
                 $descriptions[$source] ?? $source,
                 $sourceType,
+                $entry->amount()->toDecimalString(),
                 $entry->hasEvidence() ? 'Yes' : 'No',
             ];
         }, $index->entries());
@@ -789,6 +790,7 @@ final class ReportingController extends Controller
                     ['label' => 'Date', 'align' => 'left'],
                     ['label' => 'Description', 'align' => 'left'],
                     ['label' => 'Source Type', 'align' => 'left'],
+                    ['label' => 'Amount', 'align' => 'right'],
                     ['label' => 'Evidence', 'align' => 'left'],
                 ],
                 'rows' => $rows,
@@ -822,11 +824,12 @@ final class ReportingController extends Controller
     private function evidenceIndexCsvRows(EvidenceIndex $index): array
     {
         return [
-            ['Journal ID', 'Financial Date', 'Source', 'Has Evidence', 'Evidence References'],
+            ['Journal ID', 'Financial Date', 'Source', 'Amount', 'Has Evidence', 'Evidence References'],
             array_map(static fn (EvidenceIndexEntry $entry): array => [
                 $entry->journalId()->toString(),
                 $entry->financialDate()->format('Y-m-d'),
                 $entry->source()->toString(),
+                $entry->amount()->toDecimalString(),
                 $entry->hasEvidence() ? 'Yes' : 'No',
                 implode('; ', $entry->evidenceReferences()),
             ], $index->entries()),
@@ -985,6 +988,7 @@ final class ReportingController extends Controller
                 'journal_id' => $entry->journalId()->toString(),
                 'financial_date' => $entry->financialDate()->format('Y-m-d'),
                 'source' => $entry->source()->toString(),
+                'amount' => $entry->amount()->toDecimalString(),
                 'has_evidence' => $entry->hasEvidence(),
                 'evidence_references' => $entry->evidenceReferences(),
                 'description' => $descriptions[$entry->source()->toString()] ?? null,
