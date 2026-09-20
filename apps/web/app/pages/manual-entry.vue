@@ -35,25 +35,22 @@ function describeSource(source: string): {
   return SOURCE_LABELS[prefix] ?? { label: prefix || 'Record', icon: 'chart' }
 }
 
-function formatRelativeDate(dateString: string): string {
-  const date = new Date(`${dateString}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const diffDays = Math.round((today.getTime() - date.getTime()) / 86_400_000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays > 1 && diffDays < 7) return `${diffDays} days ago`
-  return date.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
 const { request } = useApi()
 const { user } = useAuth()
 
 const entries = ref<EvidenceEntry[]>([])
 const loading = ref(true)
 
+// Caps the calm, at-a-glance list at a fixed height regardless of how
+// much a tenant has recorded — "Show more" reveals the rest a page at
+// a time rather than dumping every entry from the last 60 days at once.
+const VISIBLE_STEP = 8
+const visibleCount = ref(VISIBLE_STEP)
+const visibleEntries = computed(() => entries.value.slice(0, visibleCount.value))
+
 async function loadActivity() {
   loading.value = true
+  visibleCount.value = VISIBLE_STEP
   try {
     const periodEnd = new Date().toISOString().slice(0, 10)
     const periodStart = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10)
@@ -100,7 +97,7 @@ onMounted(loadActivity)
         description="Use the composer above to record your first expense, income, or transfer."
       />
       <ul v-else class="space-y-1.5">
-        <li v-for="entry in entries" :key="entry.journal_id">
+        <li v-for="entry in visibleEntries" :key="entry.journal_id">
           <AppCard :padded="false" hoverable>
             <div class="flex items-center gap-3 px-4 py-3">
               <span
@@ -119,11 +116,19 @@ onMounted(loadActivity)
               <AppBadge v-if="entry.has_evidence" tone="success">
                 <AppIcon name="paperclip" :size="11" /> Evidence
               </AppBadge>
-              <AppBadge v-else tone="neutral">No evidence</AppBadge>
             </div>
           </AppCard>
         </li>
       </ul>
+
+      <button
+        v-if="visibleCount < entries.length"
+        type="button"
+        class="mt-3 w-full text-center text-sm font-medium text-ink-tertiary hover:text-ink"
+        @click="visibleCount += VISIBLE_STEP"
+      >
+        Show {{ Math.min(VISIBLE_STEP, entries.length - visibleCount) }} more
+      </button>
     </div>
   </div>
 </template>

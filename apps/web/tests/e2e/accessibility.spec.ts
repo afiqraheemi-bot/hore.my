@@ -76,7 +76,7 @@ test.describe('Accessibility (WCAG 2.2 AA)', () => {
       page.getByRole('button', { name: /submit for review/i }).click(),
     ])
 
-    await page.getByRole('link', { name: /^task /i }).first().click()
+    await page.getByRole('link', { name: /stationery/i }).click()
     await page.waitForURL(/\/tasks\/.+/)
     await assertNoViolations(page)
   })

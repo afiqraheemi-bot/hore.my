@@ -19,6 +19,12 @@ interface Account {
   account_type: string
 }
 
+interface TaskSummary {
+  command_type: string
+  amount: string
+  description: string
+}
+
 interface Task {
   id: string
   state: string
@@ -26,6 +32,7 @@ interface Task {
   completed_at: string | null
   result_journal_id: string | null
   failure_reason: string | null
+  summary: TaskSummary | null
 }
 
 type QueueFilter = 'attention' | 'progress' | 'completed' | 'all'
@@ -205,9 +212,6 @@ function tasksForFilter(filter: QueueFilter): Task[] {
 }
 
 const filteredTasks = computed(() => tasksForFilter(queueFilter.value))
-const selectedFilterLabel = computed(
-  () => queueFilters.find((filter) => filter.key === queueFilter.value)?.label ?? 'All tasks',
-)
 const emptyFilterTitle = computed(() => {
   if (queueFilter.value === 'attention') return 'Nothing needs attention'
   if (queueFilter.value === 'progress') return 'Nothing in progress'
@@ -286,6 +290,18 @@ onUnmounted(() => {
 async function loadAccounts() {
   const data = await request<{ data: Account[] }>('/api/v1/accounts')
   accounts.value = data.data
+}
+
+const commandTypeIcon: Record<string, TaskType['icon']> = {
+  Expense: 'receipt',
+  Income: 'wallet',
+  Transfer: 'bank',
+  CapitalContribution: 'building',
+  OwnerDrawing: 'chart',
+}
+
+function iconForTask(task: Task): TaskType['icon'] {
+  return commandTypeIcon[task.summary?.command_type ?? ''] ?? 'tasks'
 }
 
 function selectType(type: TaskType) {
@@ -591,13 +607,30 @@ onMounted(async () => {
     </div>
 
     <section aria-labelledby="your-work-heading">
-      <div class="mb-4">
+      <div class="mb-4 flex items-center justify-between gap-3">
         <h2 id="your-work-heading" class="text-xl font-semibold tracking-tight text-ink">
           Your work
         </h2>
-        <p class="mt-1 text-sm text-ink-tertiary">
-          Tasks are ordered by their latest submission time.
-        </p>
+        <div class="flex items-center gap-2">
+          <span
+            v-if="isPolling"
+            class="relative flex h-2 w-2"
+            role="status"
+            aria-label="Updating automatically"
+          >
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          </span>
+          <button
+            v-if="!loading"
+            type="button"
+            aria-label="Refresh"
+            class="flex h-7 w-7 items-center justify-center rounded-full text-ink-tertiary transition-colors hover:bg-surface-hover hover:text-ink"
+            @click="loadTasks"
+          >
+            <AppIcon name="refresh" :size="14" />
+          </button>
+        </div>
       </div>
 
       <div class="relative mb-4">
@@ -641,33 +674,6 @@ onMounted(async () => {
       </div>
 
       <div class="overflow-hidden rounded-[1.5rem] border border-border bg-surface">
-        <div
-          class="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-5"
-        >
-          <div class="flex items-center gap-2">
-            <h3 class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-tertiary">
-              {{ selectedFilterLabel }}
-            </h3>
-            <span
-              v-if="isPolling"
-              class="relative flex h-2 w-2"
-              role="status"
-              aria-label="Updating automatically"
-            >
-              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
-              <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
-            </span>
-          </div>
-          <button
-            v-if="!loading"
-            type="button"
-            class="text-sm font-medium text-ink-secondary hover:text-ink"
-            @click="loadTasks"
-          >
-            Refresh
-          </button>
-        </div>
-
         <div v-if="loading" class="px-5 py-12 text-center text-sm text-ink-tertiary">Loading…</div>
         <div v-else-if="error" class="px-5 py-12 text-center text-sm text-danger">
           {{ error }}
@@ -695,12 +701,15 @@ onMounted(async () => {
               <span
                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
               >
-                <AppIcon name="tasks" :size="16" />
+                <AppIcon :name="iconForTask(task)" :size="16" />
               </span>
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-ink">Task {{ task.id.slice(0, 8) }}</p>
-                <p class="text-xs text-ink-tertiary">
-                  {{ new Date(task.created_at).toLocaleString() }}
+                <p class="truncate text-sm font-medium text-ink">
+                  {{ task.summary?.description || 'Task' }}
+                </p>
+                <p class="truncate text-xs text-ink-tertiary">
+                  <template v-if="task.summary">RM{{ task.summary.amount }} · </template
+                  >{{ formatRelativeDate(task.created_at.slice(0, 10)) }}
                 </p>
               </div>
               <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>

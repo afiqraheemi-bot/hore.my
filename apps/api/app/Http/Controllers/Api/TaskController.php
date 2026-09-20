@@ -20,6 +20,7 @@ use App\Domain\Workspace\Exception\TaskNotFoundException;
 use App\Domain\Workspace\Exception\TaskSubmissionConflictException;
 use App\Domain\Workspace\Proposal;
 use App\Domain\Workspace\Task;
+use App\Domain\Workspace\TaskDraft;
 use App\Domain\Workspace\TaskId;
 use App\Domain\Workspace\TaskService;
 use App\Domain\Workspace\TaskTransition;
@@ -59,7 +60,20 @@ final class TaskController extends Controller
     {
         $tasks = $this->taskRepository->findByTenant($currentTenant->id());
 
-        return response()->json(['data' => array_map(fn (Task $task): array => $this->toArray($task, $currentTenant), $tasks)]);
+        // Bulk-fetched once for the whole list rather than per Task
+        // (`toArray()`'s single-Task call sites below fetch their own
+        // instead) — the Work Queue list needs a `summary` per row so
+        // it can show what a Task is actually about instead of just
+        // its id, and doing that per-row here would be an N+1 query
+        // against `proposals`/`task_drafts` for every Task the tenant
+        // has ever submitted.
+        $proposalsByTask = $this->proposalRepository->getCurrentForTenant($currentTenant->id());
+        $draftsByTask = $this->taskDraftRepository->findAllForTenant($currentTenant->id());
+
+        return response()->json(['data' => array_map(
+            fn (Task $task): array => $this->toArray($task, $currentTenant, proposalsByTask: $proposalsByTask, draftsByTask: $draftsByTask),
+            $tasks,
+        )]);
     }
 
     public function store(StoreTaskRequest $request, CurrentTenant $currentTenant): JsonResponse
@@ -246,10 +260,20 @@ final class TaskController extends Controller
     }
 
     /**
+     * @param  array<string, Proposal>|null  $proposalsByTask  Pre-fetched, keyed by Task id — pass when
+     *                                                         mapping many Tasks at once ({@see index()}) to
+     *                                                         avoid an N+1 query; omit to fetch this one
+     *                                                         Task's own Proposal directly.
+     * @param  array<string, TaskDraft>|null  $draftsByTask  Same, for `task_drafts`.
      * @return array<string, mixed>
      */
-    private function toArray(Task $task, CurrentTenant $currentTenant, bool $includeDetail = false): array
-    {
+    private function toArray(
+        Task $task,
+        CurrentTenant $currentTenant,
+        bool $includeDetail = false,
+        ?array $proposalsByTask = null,
+        ?array $draftsByTask = null,
+    ): array {
         $data = [
             'id' => $task->id()->toString(),
             'state' => $task->state()->name,
@@ -260,18 +284,39 @@ final class TaskController extends Controller
             'supersedes_task_id' => $task->supersedesTaskId()?->toString(),
         ];
 
+        $proposal = $proposalsByTask !== null
+            ? ($proposalsByTask[$task->id()->toString()] ?? null)
+            : $this->currentProposalOrNull($currentTenant, $task->id());
+
+        $draft = $proposal !== null
+            ? null
+            : ($draftsByTask !== null
+                ? ($draftsByTask[$task->id()->toString()] ?? null)
+                : $this->taskDraftRepository->findByTask($currentTenant->id(), $task->id()));
+
+        // A short, list-safe summary of what this Task is actually
+        // about — every Task has exactly one of these two once
+        // submitted, so this is never both-null in practice, only
+        // possibly null for a Task somehow observed mid-write.
+        $data['summary'] = match (true) {
+            $proposal !== null => [
+                'command_type' => $proposal->commandType()->name,
+                'amount' => $proposal->amount()->toDecimalString(),
+                'description' => $proposal->description(),
+            ],
+            $draft !== null => [
+                'command_type' => $draft->commandType()->name,
+                'amount' => $draft->amount()->toDecimalString(),
+                'description' => $draft->description(),
+            ],
+            default => null,
+        };
+
         if (! $includeDetail) {
             return $data;
         }
 
-        try {
-            $proposal = $this->proposalRepository->getCurrentForTask($currentTenant->id(), $task->id());
-            $data['proposal'] = $this->proposalToArray($proposal);
-        } catch (ProposalNotFoundException) {
-            $data['proposal'] = null;
-        }
-
-        $draft = $this->taskDraftRepository->findByTask($currentTenant->id(), $task->id());
+        $data['proposal'] = $proposal !== null ? $this->proposalToArray($proposal) : null;
         $data['draft'] = $draft === null ? null : [
             'command_type' => $draft->commandType()->name,
             'amount' => $draft->amount()->toDecimalString(),
@@ -292,6 +337,15 @@ final class TaskController extends Controller
         );
 
         return $data;
+    }
+
+    private function currentProposalOrNull(CurrentTenant $currentTenant, TaskId $taskId): ?Proposal
+    {
+        try {
+            return $this->proposalRepository->getCurrentForTask($currentTenant->id(), $taskId);
+        } catch (ProposalNotFoundException) {
+            return null;
+        }
     }
 
     /**

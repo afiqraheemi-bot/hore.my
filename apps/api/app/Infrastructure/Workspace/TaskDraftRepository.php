@@ -9,6 +9,7 @@ use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Workspace\CommandType;
 use App\Domain\Workspace\TaskDraft;
 use App\Domain\Workspace\TaskId;
+use App\Http\Controllers\Api\TaskController;
 use App\Infrastructure\Accounting\Money\MoneyPersistenceAdapter;
 use Illuminate\Database\ConnectionInterface;
 
@@ -52,6 +53,29 @@ final class TaskDraftRepository
             ->first();
 
         return $row === null ? null : $this->fromPersisted($row);
+    }
+
+    /**
+     * Every Draft the tenant has, in one query — the Work Queue list's
+     * own need (see {@see TaskController::index()})
+     * to avoid issuing {@see findByTask()} once per Task.
+     *
+     * @return array<string, TaskDraft> keyed by Task id
+     */
+    public function findAllForTenant(TenantId $tenantId): array
+    {
+        /** @var list<object{tenant_id: string, task_id: string, command_type: string, amount: int|string, currency: string, transaction_date: string, description: string, evidence_reference: string|null, created_at: string}> $rows */
+        $rows = $this->connection->table(self::TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->get()
+            ->all();
+
+        $drafts = [];
+        foreach ($rows as $row) {
+            $drafts[$row->task_id] = $this->fromPersisted($row);
+        }
+
+        return $drafts;
     }
 
     /**

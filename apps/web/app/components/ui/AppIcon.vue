@@ -30,6 +30,7 @@ const props = defineProps<{
     | 'chevron-down'
     | 'logout'
     | 'download'
+    | 'refresh'
     | 'calendar'
     | 'search'
     | 'dots'
@@ -142,6 +143,10 @@ const size = props.size ?? 20
     <template v-else-if="name === 'download'">
       <path d="M12 3v13M7 11l5 5 5-5" />
       <path d="M5 21h14" />
+    </template>
+    <template v-else-if="name === 'refresh'">
+      <path d="M3 12a9 9 0 0115.5-6.36M21 12a9 9 0 01-15.5 6.36" />
+      <path d="M18 3v5h-5M6 21v-5h5" />
     </template>
     <template v-else-if="name === 'calendar'">
       <rect x="3" y="5" width="18" height="16" rx="2" />

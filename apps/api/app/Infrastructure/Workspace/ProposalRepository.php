@@ -14,6 +14,7 @@ use App\Domain\Workspace\Proposal;
 use App\Domain\Workspace\ProposalId;
 use App\Domain\Workspace\ProposalProducerType;
 use App\Domain\Workspace\TaskId;
+use App\Http\Controllers\Api\TaskController;
 use App\Infrastructure\Accounting\Money\MoneyPersistenceAdapter;
 use Illuminate\Database\ConnectionInterface;
 
@@ -91,6 +92,32 @@ final class ProposalRepository
         }
 
         return $this->fromPersisted($row);
+    }
+
+    /**
+     * The current Proposal for every Task the tenant has, in one query
+     * — the same "most recent row per task_id is authoritative" rule
+     * as {@see getCurrentForTask()}, applied to the whole tenant rather
+     * than issuing that query once per Task (the Work Queue list's own
+     * need — see {@see TaskController::index()}).
+     *
+     * @return array<string, Proposal> keyed by Task id
+     */
+    public function getCurrentForTenant(TenantId $tenantId): array
+    {
+        /** @var list<object{tenant_id: string, proposal_id: string, task_id: string, command_type: string, amount: int|string, currency: string, transaction_date: string, primary_account_id: string, secondary_account_id: string, description: string, evidence_reference: string|null, confidence: float|string|null, producer_reference: string, producer_type: string, created_at: string}> $rows */
+        $rows = $this->connection->table(self::TABLE)
+            ->where('tenant_id', $tenantId->toString())
+            ->orderByDesc('created_at')
+            ->get()
+            ->all();
+
+        $current = [];
+        foreach ($rows as $row) {
+            $current[$row->task_id] ??= $this->fromPersisted($row);
+        }
+
+        return $current;
     }
 
     /**
