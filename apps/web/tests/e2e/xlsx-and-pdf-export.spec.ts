@@ -134,6 +134,72 @@ test.describe('XLSX and PDF export/import', () => {
     expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
   })
 
+  test("an Invoice's Details page shows its payment history and outstanding balance", async ({
+    page,
+  }) => {
+    await registerNewUser(page)
+    await createCustomer(page, 'Kedai Runcit Aminah')
+    await createAccount(page, '1100', 'Accounts Receivable', 'Asset')
+    await createAccount(page, '4100', 'Service Revenue', 'Revenue')
+    await createAccount(page, '1000', 'Bank', 'Asset')
+
+    await page.goto('/invoices')
+    await page.getByRole('button', { name: /new invoice/i }).click()
+    await page.locator('form select').first().selectOption({ label: 'Kedai Runcit Aminah' })
+    await page.locator('input[type="date"]').first().fill('2026-12-31')
+    await page.locator('form select').nth(1).selectOption({ label: 'Accounts Receivable' })
+    await page.locator('form select').nth(2).selectOption({ label: 'Service Revenue' })
+    await page.getByPlaceholder('Description').fill('Consulting')
+    await page.getByPlaceholder('Qty').fill('1')
+    await page.getByPlaceholder('Unit price').fill('250.00')
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/invoices') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /save as draft/i }).click(),
+    ])
+
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/issue')),
+      page.getByRole('button', { name: /^issue$/i }).click(),
+    ])
+
+    await page.goto('/payments')
+    await page.getByRole('button', { name: /record payment/i }).click()
+    await page.locator('form select').nth(0).selectOption({ label: 'Kedai Runcit Aminah' })
+    await page.getByPlaceholder('300.00').fill('100.00')
+    await page.locator('input[type="date"]').fill('2026-09-17')
+    await page.locator('form select').nth(1).selectOption({ label: 'Bank' })
+    await page.locator('form select').nth(2).selectOption({ label: 'Accounts Receivable' })
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/payments') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /^record$/i }).click(),
+    ])
+
+    await page.getByRole('button', { name: 'Allocate' }).click()
+    // The only outstanding Invoice for this fresh Tenant — option 0 is
+    // the unselectable "Select an outstanding invoice" placeholder.
+    // Not inside a <form> (the Record-payment form above has already
+    // closed), so `getByLabel` is used rather than `form select`.
+    await page.getByLabel('Invoice').selectOption({ index: 1 })
+    await page.getByLabel('Amount').fill('100.00')
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/allocations')),
+      page.getByRole('button', { name: 'Confirm' }).click(),
+    ])
+    await expect(page.getByText('Unallocated RM0.00')).toBeVisible()
+
+    await page.goto('/invoices')
+    await page.getByRole('link', { name: 'Details' }).click()
+    await expect(page).toHaveURL(/\/invoices\/[^/?]+$/)
+    await expect(page.getByText('Outstanding:')).toBeVisible()
+    await expect(page.getByText('RM150.00').first()).toBeVisible()
+    await expect(page.getByText('2026-09-17')).toBeVisible()
+    await expect(page.getByText('RM100.00').first()).toBeVisible()
+  })
+
   test('importing an XLSX bank statement records real transactions', async ({ page }) => {
     await registerNewUser(page)
     await createAccount(page, '1000', 'Cash', 'Asset')

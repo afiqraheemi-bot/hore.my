@@ -387,7 +387,7 @@ onMounted(async () => {
               v-else-if="quotation.status === 'Converted' && quotation.converted_invoice_id"
             >
               <NuxtLink
-                :to="`/invoices?highlight=${quotation.converted_invoice_id}`"
+                :to="`/invoices/${quotation.converted_invoice_id}`"
                 class="text-xs text-accent underline"
               >
                 View invoice
@@ -399,6 +399,9 @@ onMounted(async () => {
                 <AppIcon name="download" :size="14" /> PDF
               </AppButton>
             </a>
+            <NuxtLink :to="`/quotations/${quotation.id}`" class="text-xs text-accent underline">
+              Details
+            </NuxtLink>
           </div>
         </div>
 
@@ -438,16 +441,12 @@ onMounted(async () => {
           </div>
         </div>
 
-        <ul
+        <p
           v-if="quotation.lines.length > 0"
-          class="mt-3 space-y-1 border-t border-border pt-3 text-xs text-ink-tertiary"
+          class="mt-3 border-t border-border pt-3 text-xs text-ink-tertiary"
         >
-          <li v-for="(line, i) in quotation.lines" :key="i">
-            {{ line.description }} — {{ line.quantity }} × RM{{ line.unit_price }} = RM{{
-              line.line_amount
-            }}
-          </li>
-        </ul>
+          {{ quotation.lines.length }} {{ quotation.lines.length === 1 ? 'item' : 'items' }}
+        </p>
       </AppCard>
     </div>
   </div>

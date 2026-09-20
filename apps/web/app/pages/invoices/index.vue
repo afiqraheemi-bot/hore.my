@@ -185,24 +185,8 @@ function customerName(id: string): string {
   return customers.value.find((c) => c.id === id)?.name ?? id.slice(0, 8)
 }
 
-// `?highlight=<invoice_id>` (Quotations' own "View invoice" link, once
-// it converts) — this page has no per-invoice detail route, only this
-// flat list, so landing here needs to visibly point at the *one*
-// invoice the user actually came for rather than leaving them to scan
-// an undifferentiated list themselves.
-const highlightedInvoiceId = computed(() =>
-  typeof route.query.highlight === 'string' ? route.query.highlight : null,
-)
-
 onMounted(async () => {
   await Promise.all([loadInvoices(), loadCustomers(), loadAccounts()])
-
-  if (highlightedInvoiceId.value) {
-    await nextTick()
-    document
-      .getElementById(`invoice-${highlightedInvoiceId.value}`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
 })
 </script>
 
@@ -286,16 +270,7 @@ onMounted(async () => {
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
     <EmptyState v-else-if="invoices.length === 0" title="No invoices yet" />
     <div v-else class="space-y-2">
-      <AppCard
-        v-for="invoice in invoices"
-        :id="`invoice-${invoice.id}`"
-        :key="invoice.id"
-        :class="
-          highlightedInvoiceId === invoice.id
-            ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
-            : ''
-        "
-      >
+      <AppCard v-for="invoice in invoices" :key="invoice.id">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
@@ -334,18 +309,17 @@ onMounted(async () => {
                 <AppIcon name="download" :size="14" /> PDF
               </AppButton>
             </a>
+            <NuxtLink :to="`/invoices/${invoice.id}`" class="text-xs text-accent underline">
+              Details
+            </NuxtLink>
           </div>
         </div>
-        <ul
+        <p
           v-if="invoice.lines.length > 0"
-          class="mt-3 space-y-1 border-t border-border pt-3 text-xs text-ink-tertiary"
+          class="mt-3 border-t border-border pt-3 text-xs text-ink-tertiary"
         >
-          <li v-for="(line, i) in invoice.lines" :key="i">
-            {{ line.description }} — {{ line.quantity }} × RM{{ line.unit_price }} = RM{{
-              line.line_amount
-            }}
-          </li>
-        </ul>
+          {{ invoice.lines.length }} {{ invoice.lines.length === 1 ? 'item' : 'items' }}
+        </p>
       </AppCard>
     </div>
   </div>

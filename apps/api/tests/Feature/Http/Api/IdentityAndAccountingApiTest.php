@@ -431,6 +431,70 @@ final class IdentityAndAccountingApiTest extends TestCase
         $trialBalance->assertStatus(200);
     }
 
+    public function test_a_draft_invoice_detail_carries_no_payment_fields(): void
+    {
+        $this->registerAndReturnCredentials('invoice-detail-draft@example.my');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $draft = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-12-31',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $revenueId,
+            'lines' => [['description' => 'Consulting', 'quantity' => 1, 'unit_price' => '100.00']],
+        ]);
+        $draft->assertStatus(201);
+        $invoiceId = $draft->json('id');
+
+        $detail = $this->getJson("/api/v1/invoices/{$invoiceId}");
+        $detail->assertStatus(200);
+        $detail->assertJsonMissingPath('outstanding_balance');
+        $detail->assertJsonMissingPath('payments');
+    }
+
+    public function test_an_issued_invoice_detail_reports_its_payment_history_and_outstanding_balance(): void
+    {
+        $this->registerAndReturnCredentials('invoice-detail-issued@example.my');
+        $bankId = $this->createAccount('1000', 'Bank', 'Asset');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $revenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+        $customerId = $this->createCustomer('Kedai Runcit Aminah');
+
+        $invoiceId = $this->issueInvoice($customerId, $receivableId, $revenueId, '300.00');
+
+        $unpaidDetail = $this->getJson("/api/v1/invoices/{$invoiceId}");
+        $unpaidDetail->assertStatus(200);
+        $unpaidDetail->assertJsonPath('outstanding_balance', '300.00');
+        $unpaidDetail->assertJsonCount(0, 'payments');
+
+        $paymentResponse = $this->postJson('/api/v1/payments', [
+            'customer_id' => $customerId,
+            'amount' => '120.00',
+            'payment_date' => '2026-09-08',
+            'deposit_account_id' => $bankId,
+            'receivable_account_id' => $receivableId,
+            'reference' => 'REF-DETAIL-001',
+        ], ['Idempotency-Key' => 'key-invoice-detail-payment-0001']);
+        $paymentResponse->assertStatus(201);
+        $paymentId = $paymentResponse->json('id');
+
+        $this->postJson("/api/v1/payments/{$paymentId}/allocations", [
+            'invoice_id' => $invoiceId,
+            'amount' => '120.00',
+        ])->assertStatus(201);
+
+        $paidDetail = $this->getJson("/api/v1/invoices/{$invoiceId}");
+        $paidDetail->assertStatus(200);
+        $paidDetail->assertJsonPath('outstanding_balance', '180.00');
+        $paidDetail->assertJsonCount(1, 'payments');
+        $paidDetail->assertJsonPath('payments.0.payment_id', $paymentId);
+        $paidDetail->assertJsonPath('payments.0.amount', '120.00');
+        $paidDetail->assertJsonPath('payments.0.payment_date', '2026-09-08');
+        $paidDetail->assertJsonPath('payments.0.reference', 'REF-DETAIL-001');
+    }
+
     public function test_issuing_an_invoice_without_an_idempotency_key_is_rejected(): void
     {
         $this->registerAndReturnCredentials('invoice-no-key@example.my');

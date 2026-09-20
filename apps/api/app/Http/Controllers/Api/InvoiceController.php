@@ -29,6 +29,9 @@ use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Invoicing\InvoiceIssuingService;
 use App\Domain\Invoicing\InvoiceLine;
 use App\Domain\Invoicing\InvoiceStatus;
+use App\Domain\Payments\AllocationService;
+use App\Domain\Payments\Payment;
+use App\Domain\Payments\PaymentAllocation;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Invoicing\IssueInvoiceRequest;
 use App\Http\Requests\Invoicing\StoreInvoiceRequest;
@@ -39,6 +42,8 @@ use App\Http\Support\DocumentPartyFormatter;
 use App\Http\Support\DocumentPdfBuilder;
 use App\Infrastructure\Customers\CustomerRepository;
 use App\Infrastructure\Invoicing\InvoiceRepository;
+use App\Infrastructure\Payments\PaymentAllocationRepository;
+use App\Infrastructure\Payments\PaymentRepository;
 use App\Models\BusinessProfile;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -62,6 +67,9 @@ final class InvoiceController extends Controller
         private readonly CustomerRepository $customerRepository,
         private readonly InvoiceAccountTypeValidator $accountTypeValidator,
         private readonly InvoiceIssuingService $issuingService,
+        private readonly AllocationService $allocationService,
+        private readonly PaymentAllocationRepository $allocationRepository,
+        private readonly PaymentRepository $paymentRepository,
     ) {}
 
     public function index(CurrentTenant $currentTenant): JsonResponse
@@ -71,6 +79,14 @@ final class InvoiceController extends Controller
         return response()->json(['data' => array_map(fn (Invoice $i): array => $this->toArray($i), $invoices)]);
     }
 
+    /**
+     * Unlike {@see index()}, also resolves payment history and the
+     * live outstanding balance for an Issued Invoice (M21 data,
+     * previously unexposed anywhere) — deliberately not folded into
+     * the shared {@see toArray()} used by every other action here, so
+     * listing a Tenant's Invoices never pays for N extra allocation
+     * queries it never asked for.
+     */
     public function show(CurrentTenant $currentTenant, string $invoiceId): JsonResponse
     {
         $invoice = $this->invoiceRepository->findById($currentTenant->id(), InvoiceId::of($invoiceId));
@@ -79,7 +95,35 @@ final class InvoiceController extends Controller
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
 
-        return response()->json($this->toArray($invoice));
+        $data = $this->toArray($invoice);
+
+        if ($invoice->status() === InvoiceStatus::Issued) {
+            $allocations = $this->allocationRepository->findByInvoice($currentTenant->id(), $invoice->id());
+
+            $data['outstanding_balance'] = $this->allocationService
+                ->outstandingBalanceFor($currentTenant->id(), $invoice->id(), $invoice->totalAmount())
+                ->toDecimalString();
+            $data['payments'] = array_values(array_filter(array_map(
+                function (PaymentAllocation $allocation) use ($currentTenant): ?array {
+                    $payment = $this->paymentRepository->findById($currentTenant->id(), $allocation->paymentId());
+
+                    if ($payment === null) {
+                        return null;
+                    }
+
+                    return [
+                        'allocation_id' => $allocation->id()->toString(),
+                        'payment_id' => $payment->id()->toString(),
+                        'amount' => $allocation->amount()->toDecimalString(),
+                        'payment_date' => $payment->paymentDate()->format('Y-m-d'),
+                        'reference' => $payment->reference(),
+                    ];
+                },
+                $allocations,
+            )));
+        }
+
+        return response()->json($data);
     }
 
     public function store(StoreInvoiceRequest $request, CurrentTenant $currentTenant): JsonResponse
