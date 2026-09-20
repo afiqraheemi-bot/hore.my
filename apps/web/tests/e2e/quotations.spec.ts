@@ -63,8 +63,11 @@ test.describe('Quotations', () => {
 
     await expect(page.getByText('Converted', { exact: true })).toBeVisible()
 
+    // Deep-links to (and highlights) the specific converted Invoice —
+    // never just the generic list, which cannot tell the two apart
+    // once a Tenant has more than one.
     await page.getByRole('link', { name: /view invoice/i }).click()
-    await expect(page).toHaveURL(/\/invoices$/)
+    await expect(page).toHaveURL(/\/invoices\?highlight=.+/)
     await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('RM300.00').first()).toBeVisible()
   })

@@ -383,8 +383,13 @@ onMounted(async () => {
               </AppButton>
             </template>
 
-            <template v-else-if="quotation.status === 'Converted'">
-              <NuxtLink :to="`/invoices`" class="text-xs text-accent underline">
+            <template
+              v-else-if="quotation.status === 'Converted' && quotation.converted_invoice_id"
+            >
+              <NuxtLink
+                :to="`/invoices?highlight=${quotation.converted_invoice_id}`"
+                class="text-xs text-accent underline"
+              >
                 View invoice
               </NuxtLink>
             </template>
