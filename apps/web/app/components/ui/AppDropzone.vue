@@ -42,6 +42,8 @@ function clear() {
   emit('update:modelValue', null)
   if (inputRef.value) inputRef.value.value = ''
 }
+
+defineExpose({ pickFile })
 </script>
 
 <template>

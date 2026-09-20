@@ -179,7 +179,11 @@ onMounted(loadDashboard)
     </header>
 
     <template v-if="loading">
-      <div class="animate-pulse space-y-4" aria-label="Loading financial overview">
+      <div
+        class="animate-pulse space-y-4"
+        role="status"
+        aria-label="Loading financial overview"
+      >
         <div class="h-28 rounded-3xl bg-surface-tertiary" />
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div v-for="item in 4" :key="item" class="h-28 rounded-2xl bg-surface-tertiary" />

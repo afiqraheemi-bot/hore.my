@@ -194,13 +194,51 @@ async function load() {
   } finally {
     loading.value = false
   }
+  schedulePolling()
 }
+
+/**
+ * A Task in one of these states can advance on its own — a queue
+ * worker is (or is about to be) acting on it — so this page polls
+ * quietly rather than requiring a manual reload to notice
+ * (HORE_MY_MASTER_CONTEXT.md §5, "progressive responses"). States that
+ * only change on an authenticated human's own action here (NeedsReview,
+ * NeedsInformation, Approved's stalled-resume case) are excluded: there
+ * is nothing happening in the background to reveal.
+ */
+const pollingStates = new Set(['Received', 'Processing', 'Executing'])
+let pollHandle: ReturnType<typeof setInterval> | undefined
+const isPolling = ref(false)
+
+function schedulePolling() {
+  if (pollHandle || !task.value || !pollingStates.has(task.value.state)) return
+
+  isPolling.value = true
+  pollHandle = setInterval(async () => {
+    if (!task.value || !pollingStates.has(task.value.state)) {
+      clearInterval(pollHandle)
+      pollHandle = undefined
+      isPolling.value = false
+      return
+    }
+    try {
+      task.value = await request<TaskDetail>(`/api/v1/tasks/${taskId}`)
+    } catch {
+      // Keep the last known state; the next tick tries again.
+    }
+  }, 3000)
+}
+
+onUnmounted(() => {
+  if (pollHandle) clearInterval(pollHandle)
+})
 
 async function approve() {
   actionError.value = null
   acting.value = true
   try {
     task.value = await request<TaskDetail>(`/api/v1/tasks/${taskId}/approve`, { method: 'POST' })
+    schedulePolling()
   } catch {
     actionError.value = 'Could not approve this Task — it may have already been acted on.'
     await load()
@@ -214,6 +252,7 @@ async function resume() {
   acting.value = true
   try {
     task.value = await request<TaskDetail>(`/api/v1/tasks/${taskId}/resume`, { method: 'POST' })
+    schedulePolling()
   } catch {
     actionError.value = 'Could not resume this Task.'
     await load()
@@ -341,7 +380,18 @@ onMounted(load)
               Submitted {{ new Date(task.created_at).toLocaleString() }}
             </p>
           </div>
-          <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
+          <div class="flex items-center gap-2">
+            <span
+              v-if="isPolling"
+              class="relative flex h-2 w-2"
+              role="status"
+              aria-label="Updating automatically"
+            >
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+              <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+            </span>
+            <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
+          </div>
         </div>
         <p v-if="task.supersedes_task_id" class="mt-3 text-sm text-ink-tertiary">
           Correction of
@@ -432,6 +482,10 @@ onMounted(load)
           <div>
             <dt class="text-ink-tertiary">Producer</dt>
             <dd class="text-ink">{{ task.proposal.producer_type }}</dd>
+          </div>
+          <div v-if="task.proposal.confidence !== null">
+            <dt class="text-ink-tertiary">Confidence</dt>
+            <dd class="text-ink">{{ Math.round(task.proposal.confidence * 100) }}%</dd>
           </div>
           <div>
             <dt class="text-ink-tertiary">Primary account</dt>

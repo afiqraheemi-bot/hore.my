@@ -153,6 +153,10 @@ const {
   updateScrollFade: updateQueueFilterFade,
 } = useHorizontalScrollFade()
 
+const composerAnchorRef = ref<HTMLElement | null>(null)
+const amountInputRef = ref<HTMLInputElement | null>(null)
+const dropzoneRef = ref<{ pickFile: () => void } | null>(null)
+
 const amount = ref('')
 const transactionDate = ref(new Date().toISOString().slice(0, 10))
 const compactTransactionDate = computed(() => {
@@ -240,7 +244,44 @@ async function loadTasks() {
   } finally {
     loading.value = false
   }
+  schedulePolling()
 }
+
+/**
+ * The same "a queue worker may still be acting on this" states as
+ * `tasks/[id].vue` — polls the list quietly so a Task moving out of
+ * Processing/Executing (or being picked up from Received) is reflected
+ * without a manual refresh (HORE_MY_MASTER_CONTEXT.md §5, "progressive
+ * responses").
+ */
+const livePollingStates = new Set(['Received', 'Processing', 'Executing'])
+let pollHandle: ReturnType<typeof setInterval> | undefined
+const isPolling = ref(false)
+
+function schedulePolling() {
+  if (pollHandle) return
+  if (!tasks.value.some((task) => livePollingStates.has(task.state))) return
+
+  isPolling.value = true
+  pollHandle = setInterval(async () => {
+    if (!tasks.value.some((task) => livePollingStates.has(task.state))) {
+      clearInterval(pollHandle)
+      pollHandle = undefined
+      isPolling.value = false
+      return
+    }
+    try {
+      const data = await request<{ data: Task[] }>('/api/v1/tasks')
+      tasks.value = data.data
+    } catch {
+      // Keep the last known list; the next tick tries again.
+    }
+  }, 3000)
+}
+
+onUnmounted(() => {
+  if (pollHandle) clearInterval(pollHandle)
+})
 
 async function loadAccounts() {
   const data = await request<{ data: Account[] }>('/api/v1/accounts')
@@ -255,6 +296,60 @@ function selectType(type: TaskType) {
   submitError.value = null
   expanded.value = true
 }
+
+/**
+ * One-click shortcuts into the composer/nav below, named after
+ * HORE_MY_MASTER_CONTEXT.md §5's own quick-action list. "Record
+ * income/expense" and "Review transactions" both land on content
+ * already on this page (the composer's type tabs, the Work Queue's own
+ * filters) rather than duplicating it elsewhere.
+ */
+interface QuickAction {
+  key: string
+  label: string
+  icon: 'receipt' | 'bank' | 'wallet' | 'send' | 'tasks' | 'chart'
+  to?: string
+  run?: () => void
+}
+
+function focusComposer(type: TaskType) {
+  selectType(type)
+  nextTick(() => {
+    composerAnchorRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    amountInputRef.value?.focus()
+  })
+}
+
+function quickUploadReceipt() {
+  selectType(types.find((type) => type.key === 'expense')!)
+  nextTick(() => {
+    composerAnchorRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    dropzoneRef.value?.pickFile()
+  })
+}
+
+function quickReviewTransactions() {
+  queueFilter.value = 'attention'
+  nextTick(() => {
+    document
+      .getElementById('your-work-heading')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+const quickActions: QuickAction[] = [
+  { key: 'upload-receipt', label: 'Upload receipt', icon: 'receipt', run: quickUploadReceipt },
+  { key: 'import-bank', label: 'Import bank statement', icon: 'bank', to: '/bank-accounts' },
+  {
+    key: 'record',
+    label: 'New transaction',
+    icon: 'wallet',
+    run: () => focusComposer(types.find((type) => type.key === 'income')!),
+  },
+  { key: 'create-invoice', label: 'Create invoice', icon: 'send', to: '/invoices?new=1' },
+  { key: 'review', label: 'Review transactions', icon: 'tasks', run: quickReviewTransactions },
+  { key: 'reports', label: 'View reports', icon: 'chart', to: '/reports' },
+]
 
 async function uploadEvidenceIfAttached(): Promise<string | undefined> {
   if (!evidenceFile.value) return undefined
@@ -325,6 +420,29 @@ onMounted(async () => {
       <p class="mt-1 text-sm text-ink-tertiary">What would you like to get done today?</p>
     </div>
 
+    <nav aria-label="Quick actions" class="flex flex-wrap justify-center gap-2">
+      <template v-for="action in quickActions" :key="action.key">
+        <NuxtLink
+          v-if="action.to"
+          :to="action.to"
+          class="flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-ink"
+        >
+          <AppIcon :name="action.icon" :size="14" />
+          {{ action.label }}
+        </NuxtLink>
+        <button
+          v-else
+          type="button"
+          class="flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-ink"
+          @click="action.run?.()"
+        >
+          <AppIcon :name="action.icon" :size="14" />
+          {{ action.label }}
+        </button>
+      </template>
+    </nav>
+
+    <div ref="composerAnchorRef">
     <AppCard
       :padded="false"
       class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
@@ -366,6 +484,7 @@ onMounted(async () => {
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <span class="text-lg font-medium text-ink-tertiary">RM</span>
             <input
+              ref="amountInputRef"
               v-model="amount"
               aria-label="Amount"
               placeholder="0.00"
@@ -445,6 +564,7 @@ onMounted(async () => {
           <div class="sm:col-span-2">
             <AppField label="Receipt or invoice (optional)">
               <AppDropzone
+                ref="dropzoneRef"
                 v-model="evidenceFile"
                 accept="image/jpeg,image/png,image/webp,application/pdf"
                 hint="JPG, PNG, WEBP, or PDF — up to 10MB"
@@ -468,6 +588,7 @@ onMounted(async () => {
         </div>
       </form>
     </AppCard>
+    </div>
 
     <section aria-labelledby="your-work-heading">
       <div class="mb-4">
@@ -523,9 +644,20 @@ onMounted(async () => {
         <div
           class="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-5"
         >
-          <h3 class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-tertiary">
-            {{ selectedFilterLabel }}
-          </h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-tertiary">
+              {{ selectedFilterLabel }}
+            </h3>
+            <span
+              v-if="isPolling"
+              class="relative flex h-2 w-2"
+              role="status"
+              aria-label="Updating automatically"
+            >
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+              <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+            </span>
+          </div>
           <button
             v-if="!loading"
             type="button"

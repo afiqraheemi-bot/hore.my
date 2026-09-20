@@ -16,6 +16,8 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'en' },
+      title: 'hore.my',
+      titleTemplate: (chunk) => (chunk ? `${chunk} · hore.my` : 'hore.my'),
       // PWA basics (installable app, no offline-caching sophistication):
       // a static manifest + a hand-written service worker
       // (app/plugins/pwa.client.ts registers it), not the

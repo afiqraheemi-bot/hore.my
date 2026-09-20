@@ -35,6 +35,7 @@ interface Account {
 }
 
 const { request } = useApi()
+const route = useRoute()
 
 /**
  * AETS-017: a direct link to the Invoice's own PDF endpoint — a plain
@@ -55,7 +56,10 @@ const accounts = ref<Account[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-const showForm = ref(false)
+// `?new=1` (the Work Queue's "Create invoice" quick action) opens the
+// form immediately, matching the same query-driven-deep-link
+// convention already used by /reports?tab= and /payments?customer_id=.
+const showForm = ref(route.query.new !== undefined)
 const customerId = ref('')
 const dueDate = ref('')
 const receivableAccountId = ref('')
