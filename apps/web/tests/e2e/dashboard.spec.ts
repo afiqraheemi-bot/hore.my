@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { createAccount, createCustomer, registerBankAccount, registerNewUser } from './support/fixtures'
+import {
+  createAccount,
+  createCustomer,
+  registerBankAccount,
+  registerNewUser,
+} from './support/fixtures'
 
 /**
  * Real-browser proof of the Dashboard's read-only presentation over
