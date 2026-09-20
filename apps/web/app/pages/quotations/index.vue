@@ -318,7 +318,9 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <p class="font-medium text-ink">{{ quotation.quotation_number ?? 'Draft' }}</p>
+              <p class="font-medium text-ink">
+                {{ quotation.quotation_number ?? 'Draft quotation' }}
+              </p>
               <AppBadge :tone="statusTone[quotation.status]">{{ quotation.status }}</AppBadge>
             </div>
             <p class="mt-0.5 text-sm text-ink-tertiary">
