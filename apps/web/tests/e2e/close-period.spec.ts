@@ -13,6 +13,13 @@ test.describe('Close Period', () => {
   test('closing the current period zeroes revenue into retained earnings and advances the watermark', async ({
     page,
   }) => {
+    // Always "today" rather than a fixed calendar date — a hardcoded
+    // past date eventually falls before a transaction dated "today"
+    // (manual-entry's own default), which the real backend rejects,
+    // making this spec silently stale as time passes rather than
+    // testing the same flow indefinitely.
+    const today = new Date().toISOString().slice(0, 10)
+
     await registerNewUser(page)
     await createAccount(page, '1000', 'Cash', 'Asset')
     await createAccount(page, '4000', 'Consulting Revenue', 'Revenue')
@@ -37,7 +44,7 @@ test.describe('Close Period', () => {
     await expect(page.getByText('never')).toBeVisible()
 
     page.once('dialog', (dialog) => dialog.accept())
-    await page.locator('input[type="date"]').last().fill('2026-09-17')
+    await page.locator('input[type="date"]').last().fill(today)
     await page
       .getByLabel('Retained Earnings account (Equity)')
       .selectOption({ label: '3900 — Retained Earnings' })
@@ -49,14 +56,14 @@ test.describe('Close Period', () => {
       page.getByRole('button', { name: 'Close Period' }).click(),
     ])
 
-    await expect(page.getByText('Books closed through 2026-09-17.')).toBeVisible()
-    await expect(page.getByText('2026-09-17').last()).toBeVisible()
+    await expect(page.getByText(`Books closed through ${today}.`)).toBeVisible()
+    await expect(page.getByText(today).last()).toBeVisible()
 
     // Reloading the page proves the watermark is real server state, not
     // merely a local success message.
     await page.reload()
     await expect(page.getByText('Books currently closed through:')).toBeVisible()
-    await expect(page.getByText('2026-09-17')).toBeVisible()
+    await expect(page.getByText(today)).toBeVisible()
 
     // The "unclosed books" convention (AETS-009 §8) now sees the real
     // closing Journal instead of computing Cumulative Net Income itself
