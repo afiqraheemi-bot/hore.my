@@ -8,8 +8,10 @@ use App\Domain\Accounting\Money\Currency;
 use App\Domain\Banking\BankTransactionDirection;
 use App\Domain\Banking\Exception\MalformedBankStatementException;
 use App\Domain\Banking\MaybankPdfBankStatementParser;
+use App\Infrastructure\Banking\QpdfDecryptor;
 use Dompdf\Dompdf;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 /**
  * Covers {@see MaybankPdfBankStatementParser} (AETS-008 §12.10) —
@@ -120,7 +122,93 @@ final class MaybankPdfBankStatementParserTest extends TestCase
         $this->parser->parse($pdf, $this->myr);
     }
 
+    /**
+     * The real-world case that surfaced this test: a genuine Maybank
+     * statement PDF failed with "Secured pdf file are currently not
+     * supported" — `smalot/pdfparser` has no decryption support of its
+     * own, but the bank's own PDF is permissions-only encrypted with
+     * an *empty* user password (opens with no prompt in any real PDF
+     * viewer). {@see QpdfDecryptor} strips
+     * this transparently before parsing — this parses identically to
+     * the unencrypted fixture in the first test above.
+     */
+    public function test_a_statement_encrypted_with_an_empty_user_password_still_parses(): void
+    {
+        $pdf = $this->buildPdf($this->page([
+            $this->row('', 'BEGINNING BALANCE', '', '', '1,000.00'),
+            $this->row('01/07/20', 'SALE DEBIT', '15.00', '-', '985.00'),
+            $this->row('02/07/20', 'TRANSFER FROM A/C', '200.00', '+', '1,185.00'),
+        ]).$this->summary('1,185.00', '200.00', '15.00'));
+
+        $encrypted = $this->encryptWithEmptyUserPassword($pdf);
+        $this->assertNotSame($pdf, $encrypted, 'the fixture must actually be encrypted for this test to prove anything');
+
+        $rows = $this->parser->parse($encrypted, $this->myr);
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('SALE DEBIT', $rows[0]->description());
+        $this->assertSame(BankTransactionDirection::MoneyIn, $rows[1]->direction());
+    }
+
+    /**
+     * A PDF locked with a genuine, non-empty password is honestly
+     * unrecoverable (`qpdf` cannot guess a password it was never
+     * given) — but this is a distinct, actionable failure from the
+     * opaque original "Secured pdf file are currently not supported."
+     */
+    public function test_a_statement_locked_with_a_real_password_is_rejected_with_actionable_guidance(): void
+    {
+        $pdf = $this->buildPdf($this->page([
+            $this->row('', 'BEGINNING BALANCE', '', '', '1,000.00'),
+            $this->row('01/07/20', 'SALE DEBIT', '15.00', '-', '985.00'),
+        ]).$this->summary('985.00', '0.00', '15.00'));
+
+        $locked = $this->encryptWithRealPassword($pdf, 'super-secret-password');
+
+        try {
+            $this->parser->parse($locked, $this->myr);
+            $this->fail('Expected MalformedBankStatementException.');
+        } catch (MalformedBankStatementException $e) {
+            $this->assertStringContainsString('password', $e->getMessage());
+        }
+    }
+
     // --- Synthetic fixture builders ------------------------------------
+
+    private function encryptWithEmptyUserPassword(string $pdfBytes): string
+    {
+        return $this->encryptViaQpdf($pdfBytes, '', 'owner-password-not-secret', '256');
+    }
+
+    private function encryptWithRealPassword(string $pdfBytes, string $userPassword): string
+    {
+        return $this->encryptViaQpdf($pdfBytes, $userPassword, 'owner-password-not-secret', '256');
+    }
+
+    private function encryptViaQpdf(string $pdfBytes, string $userPassword, string $ownerPassword, string $keyLength): string
+    {
+        $inputPath = tempnam(sys_get_temp_dir(), 'maybank-pdf-test-in-');
+        $outputPath = tempnam(sys_get_temp_dir(), 'maybank-pdf-test-out-');
+
+        try {
+            file_put_contents($inputPath, $pdfBytes);
+
+            $process = new Process(['qpdf', '--encrypt', $userPassword, $ownerPassword, $keyLength, '--', $inputPath, $outputPath]);
+            $process->run();
+
+            if (! $process->isSuccessful()) {
+                $this->markTestSkipped('qpdf is not available or failed to encrypt the test fixture: '.$process->getErrorOutput());
+            }
+
+            $encrypted = file_get_contents($outputPath);
+            $this->assertIsString($encrypted);
+
+            return $encrypted;
+        } finally {
+            @unlink($inputPath);
+            @unlink($outputPath);
+        }
+    }
 
     private function row(string $date, string $description, string $amount, string $sign, string $balance): string
     {

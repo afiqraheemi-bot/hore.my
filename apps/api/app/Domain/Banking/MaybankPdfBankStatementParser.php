@@ -9,6 +9,7 @@ use App\Domain\Accounting\Money\Exception\InvalidMoneyAmountException;
 use App\Domain\Accounting\Money\Exception\UnresolvedMoneySignPolicyException;
 use App\Domain\Accounting\Money\Money;
 use App\Domain\Banking\Exception\MalformedBankStatementException;
+use App\Infrastructure\Banking\QpdfDecryptor;
 use Smalot\PdfParser\Parser as PdfTextParser;
 
 /**
@@ -19,6 +20,15 @@ use Smalot\PdfParser\Parser as PdfTextParser;
  * never a second schema and never configurable mapping (§12.5
  * otherwise unchanged).
  *
+ * **Transparently handles the common encrypted-PDF case.** A real
+ * uploaded Maybank statement surfaced "Secured pdf file are currently
+ * not supported" — the bank's own PDF is permissions-only encrypted
+ * with an empty user password (opens with no prompt in any viewer),
+ * which `smalot/pdfparser` cannot decode at all on its own.
+ * {@see QpdfDecryptor} strips this before parsing ever runs; see its
+ * own docblock for what is, and is not, recoverable this way.
+ *
+
  * **Built and verified against exactly one real Maybank Islamic
  * savings-account e-statement's layout.** A different Maybank product
  * (conventional current/savings vs. Islamic), a redesigned statement
@@ -78,9 +88,12 @@ final class MaybankPdfBankStatementParser
 
     private readonly BankStatementRowParser $rowParser;
 
+    private readonly QpdfDecryptor $qpdfDecryptor;
+
     public function __construct()
     {
         $this->rowParser = new BankStatementRowParser;
+        $this->qpdfDecryptor = new QpdfDecryptor;
     }
 
     /**
@@ -94,6 +107,8 @@ final class MaybankPdfBankStatementParser
      */
     public function parse(string $fileContent, Currency $currency): array
     {
+        $fileContent = $this->qpdfDecryptor->decrypt($fileContent);
+
         try {
             $document = (new PdfTextParser)->parseContent($fileContent);
         } catch (\Throwable $e) {

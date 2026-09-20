@@ -6,6 +6,7 @@ namespace App\Domain\Banking\Exception;
 
 use App\Domain\Banking\CsvBankStatementParser;
 use App\Domain\Banking\MaybankPdfBankStatementParser;
+use App\Infrastructure\Banking\QpdfDecryptor;
 
 /**
  * Thrown when an uploaded file does not conform to
@@ -66,5 +67,17 @@ final class MalformedBankStatementException extends \RuntimeException
     public static function forUnreadablePdf(string $reason): self
     {
         return new self(sprintf('The uploaded PDF could not be read: %s', $reason));
+    }
+
+    /**
+     * {@see QpdfDecryptor}: the PDF is
+     * locked with a genuine (non-empty) user password `qpdf` cannot
+     * guess — distinct from the far more common case of a
+     * permissions-only-encrypted, empty-password bank statement PDF,
+     * which is decrypted transparently and never reaches this path.
+     */
+    public static function forPasswordProtectedPdf(): self
+    {
+        return new self('The uploaded PDF is locked with a password. Please remove the password (or save/print a copy without one) before uploading it here.');
     }
 }

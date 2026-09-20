@@ -23,6 +23,18 @@ FROM php:8.5.10-cli
 # `phpoffice/phpspreadsheet` (Import & Export: XLSX bank statement
 # import, XLSX report export) — hence `libpng-dev`/`libjpeg-dev`
 # (build-time) and `docker-php-ext-install ... gd` below.
+#
+# `qpdf` (a real system binary, not a Composer package): AETS-008
+# §12.10's Maybank PDF import needs it because `smalot/pdfparser`
+# (composer.json) has *no* PDF-decryption support of its own at
+# all — confirmed by reading its source directly. Most real bank
+# statement PDFs (Maybank's own included) are encrypted with
+# permissions-only restrictions and an *empty* user password — they
+# open instantly in any PDF viewer with no password prompt — which
+# `qpdf --decrypt` strips transparently with no password argument
+# needed ({@see App\Infrastructure\Banking\QpdfDecryptor}). This is
+# the one system-binary dependency in this image; every other PDF
+# concern (Dompdf output, text extraction) stays pure-PHP.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpq-dev \
@@ -32,6 +44,7 @@ RUN apt-get update \
         libjpeg-dev \
         unzip \
         curl \
+        qpdf \
         $PHPIZE_DEPS \
     && docker-php-ext-configure gd --with-jpeg \
     && docker-php-ext-install pdo_pgsql mbstring pcntl posix zip gd \

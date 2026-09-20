@@ -1,7 +1,7 @@
 # ATS-008: Bank Import, Matching & Reconciliation Test Specification
 
 - Status: Draft
-- Version: 0.9.0
+- Version: 0.9.1
 - Effective date: Not effective — pending AETS-008 activation
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer
@@ -20,8 +20,8 @@ Every `BNK-NNN` candidate invariant AETS-008 §9 names, mapped to the `BNK-TNNN`
 | Invariant | Test IDs | Note |
 | --- | --- | --- |
 | `BNK-001` — Import has zero ledger effect | BNK-T059 | |
-| `BNK-002` — Money and bank direction are exact and unambiguous | BNK-T001, BNK-T038, BNK-T039, BNK-T061 | Canonical direction (`MoneyIn`/`MoneyOut`) is additionally proven by the Bank Transaction migration test class's own CHECK-constraint and valid-insert proofs (§3.1's closing note), not a separate `BNK-TNNN` ID. `BNK-T061` additionally proves this holds when a third format (Maybank PDF) must first translate its own amount-plus-sign encoding into the fixed schema's separate fields. |
-| `BNK-003` — A malformed statement has zero persistent effect | BNK-T004, BNK-T063, BNK-T064 | `BNK-T063`/`BNK-T064` extend this to Maybank PDF's own failure modes (a totals-mismatch cross-check, an unrecognized line) that CSV/XLSX have no equivalent of. |
+| `BNK-002` — Money and bank direction are exact and unambiguous | BNK-T001, BNK-T038, BNK-T039, BNK-T061, BNK-T066 | Canonical direction (`MoneyIn`/`MoneyOut`) is additionally proven by the Bank Transaction migration test class's own CHECK-constraint and valid-insert proofs (§3.1's closing note), not a separate `BNK-TNNN` ID. `BNK-T061` additionally proves this holds when a third format (Maybank PDF) must first translate its own amount-plus-sign encoding into the fixed schema's separate fields. `BNK-T066` proves it holds unchanged when that same PDF is also empty-user-password encrypted, the overwhelmingly common real-world case. |
+| `BNK-003` — A malformed statement has zero persistent effect | BNK-T004, BNK-T063, BNK-T064, BNK-T067 | `BNK-T063`/`BNK-T064` extend this to Maybank PDF's own failure modes (a totals-mismatch cross-check, an unrecognized line) that CSV/XLSX have no equivalent of. `BNK-T067` extends it to a PDF locked with a genuine password `qpdf` cannot guess. |
 | `BNK-004` — Import Batch and inserted Bank Transactions commit atomically | BNK-T004, BNK-T007 | |
 | `BNK-005` — File replay and overlapping-row import cannot create duplicate Bank Transactions | BNK-T002, BNK-T003, BNK-T045, BNK-T046 | Single-process (`T002`/`T003`) and genuine concurrent (`T045`/`T046`) cases both covered. |
 | `BNK-006` — Every Banking relationship and operation is tenant-isolated | BNK-T005, BNK-T006, BNK-T026–BNK-T034, BNK-T056 | §3.4's entire section is this invariant's own dedicated evidence. |
@@ -61,6 +61,8 @@ Every `BNK-NNN` invariant in this matrix now maps to at least one `BNK-TNNN` exe
 | BNK-T063 | Existing | Maybank PDF: a statement whose own declared `ENDING BALANCE`/`TOTAL CREDIT`/`TOTAL DEBIT` do not reconcile with what was actually parsed is rejected in full. | `test_a_totals_mismatch_is_rejected` |
 | BNK-T064 | Existing | Maybank PDF: an unrecognized line (neither a transaction row, a continuation line, nor a known structural anchor) is rejected rather than silently skipped or misclassified. | `test_an_unrecognized_line_before_any_transaction_row_is_rejected`; `test_a_pdf_with_no_transaction_table_at_all_is_rejected` |
 | BNK-T065 | Existing | Maybank PDF: a real HTTP upload through `BankStatementImportController` resolves `.pdf` to `MaybankPdfBankStatementParser` and persists real Bank Transactions, proven against real PostgreSQL and (separately) a real browser. | `test_registering_a_bank_account_and_importing_a_maybank_pdf_statement_end_to_end` (API); `importing a Maybank PDF bank statement records real transactions` (E2E, `xlsx-and-pdf-export.spec.ts`) |
+| BNK-T066 | Existing | Maybank PDF: a statement encrypted with an empty user password (the overwhelmingly common real-world case for bank-issued statement PDFs) still parses, identically to its unencrypted original — `smalot/pdfparser` has no decryption support of its own; `QpdfDecryptor` strips this transparently first. | `test_a_statement_encrypted_with_an_empty_user_password_still_parses` |
+| BNK-T067 | Existing | Maybank PDF: a statement locked with a genuine, non-empty password is rejected with actionable guidance (distinct from the prior opaque "Secured pdf file are currently not supported" error) — `qpdf` cannot guess a password it was never given. | `test_a_statement_locked_with_a_real_password_is_rejected_with_actionable_guidance` |
 
 ### 3.2 Matching
 
@@ -165,6 +167,7 @@ ATS-008 may become `Active` only when:
 
 ## Changelog
 
+- **0.9.1 (2026-09-20):** Companion update to AETS-008 v0.9.1's real-usage bug fix — adds `BNK-T066` (a statement encrypted with an empty user password still parses, via the new `QpdfDecryptor`) and `BNK-T067` (a statement locked with a genuine password is rejected with actionable guidance). Extends the `BNK-002` and `BNK-003` traceability rows (§2) accordingly. No existing test ID's prior coverage changed.
 - **0.9.0 (2026-09-19):** Adds `BNK-T061`–`BNK-T065` for Maybank PDF import (AETS-008 §12.10/§5.2): well-formed parse with narrative continuation, continuation spanning a page break, the totals-mismatch fail-closed check, unrecognized-line fail-closed, and a real HTTP/browser end-to-end proof. §2's traceability matrix updated for `BNK-002`/`BNK-003`. No other row changed.
 - **0.8.0 (2026-09-19):** Closes both gaps §2's traceability matrix found: `BNK-T059` (`journals` unchanged across a fresh import and a replay) and `BNK-T060` (`suggestFor()`/`confirm()` create no Journal) are now `Existing` with real executable tests, moved from §4 into §3.1/§3.2. Every accepted `BNK-NNN` invariant now maps to at least one `BNK-TNNN`. `BNK-T057` and Accounting Domain Reviewer sign-off remain the only Activation blockers.
 - **0.7.0 (2026-09-19):** Adds §2, the formal Traceability matrix AETS-008 §13's activation checklist named as outstanding ("ATS-008 updated from evidence inventory to complete normative traceability") — every `BNK-001`–`BNK-020` candidate invariant mapped to its `BNK-TNNN` evidence rows. Finds two genuine gaps in the process, `BNK-001` and `BNK-013`, neither previously named as required evidence; adds `BNK-T059`/`BNK-T060` to §4 to track them and updates §5's Activation gate accordingly. Renumbers former §2–§4 to §3–§5; no existing evidence row's State or Proof text changed.
