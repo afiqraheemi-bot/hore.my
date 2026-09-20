@@ -76,9 +76,23 @@ final class MaybankPdfBankStatementParser
 
     private const HEADER_LINES_TO_SKIP_AFTER_START = 3;
 
-    private const TRANSACTION_LINE_PATTERN = '/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+([\d,]+\.\d{2})([+-])\s+([\d,]+\.\d{2})$/u';
+    /**
+     * The whitespace around every boundary here is `\s*` (optional),
+     * never `\s+` (required) — a real Maybank statement's own text
+     * extraction was directly observed to omit the space at some
+     * column boundaries entirely (`"01/01/26IBK FUND TFR..."`, no gap
+     * after the date; `"66.60-257.05"`, no gap after the sign) despite
+     * every synthetic dompdf-rendered test fixture always producing
+     * one. The date's fixed `DD/MM/YY` width and the amount/balance's
+     * own `\d+\.\d{2}` decimal shape already delimit these boundaries
+     * unambiguously without relying on whitespace being present at
+     * all — relaxing `\s+` to `\s*` costs nothing for a statement that
+     * *does* space these out (a `\s+` match already satisfies `\s*`)
+     * while fixing the real statement that does not.
+     */
+    private const TRANSACTION_LINE_PATTERN = '/^(\d{2}\/\d{2}\/\d{2})\s*(.+?)\s*([\d,]+\.\d{2})([+-])\s*([\d,]+\.\d{2})$/u';
 
-    private const BEGINNING_BALANCE_PATTERN = '/^BEGINNING BALANCE\s+([\d,]+\.\d{2})$/u';
+    private const BEGINNING_BALANCE_PATTERN = '/^BEGINNING BALANCE\s*([\d,]+\.\d{2})$/u';
 
     private const ENDING_BALANCE_PATTERN = '/^ENDING BALANCE\s*:\s*([\d,]+\.\d{2})$/u';
 
@@ -265,7 +279,7 @@ final class MaybankPdfBankStatementParser
                     $rows[] = $current;
                 }
 
-                $current = [$matches[1], $matches[2], $matches[3], $matches[4], $matches[5], []];
+                $current = [$matches[1], trim($matches[2]), $matches[3], $matches[4], $matches[5], []];
 
                 continue;
             }

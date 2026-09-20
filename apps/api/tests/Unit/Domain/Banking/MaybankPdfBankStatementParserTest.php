@@ -66,6 +66,35 @@ final class MaybankPdfBankStatementParserTest extends TestCase
         $this->assertSame('', $rows[1]->reference());
     }
 
+    /**
+     * A real user-uploaded statement failed with "Line 1 could not be
+     * recognized..." on a line smalot/pdfparser's own text extraction
+     * rendered as `01/01/26IBK FUND TFR FR A/C 66.60-257.05` — no
+     * space at all between the date and the description, nor between
+     * the sign and the balance, despite every synthetic dompdf-built
+     * fixture elsewhere in this file always producing one. Built via
+     * {@see rawZoneLine()} (one contiguous text run, not separate
+     * table cells) specifically to reproduce that exact missing-space
+     * condition, not the normal spaced-out case every other test here
+     * already covers.
+     */
+    public function test_a_transaction_line_with_no_whitespace_at_column_boundaries_still_parses(): void
+    {
+        $pdf = $this->buildPdf($this->page([
+            $this->row('', 'BEGINNING BALANCE', '', '', '323.65'),
+            $this->rawZoneLine('01/01/26IBK FUND TFR FR A/C 66.60-257.05'),
+        ]).$this->summary('257.05', '0.00', '66.60'));
+
+        $rows = $this->parser->parse($pdf, $this->myr);
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('2026-01-01', $rows[0]->transactionDate()->format('Y-m-d'));
+        $this->assertSame('IBK FUND TFR FR A/C', $rows[0]->description());
+        $this->assertSame('66.60', $rows[0]->amount()->toDecimalString());
+        $this->assertSame(BankTransactionDirection::MoneyOut, $rows[0]->direction());
+        $this->assertSame('257.05', $rows[0]->balance()?->toDecimalString());
+    }
+
     public function test_a_transactions_continuation_spans_a_page_break(): void
     {
         $pageOne = $this->page([
@@ -215,6 +244,19 @@ final class MaybankPdfBankStatementParserTest extends TestCase
         $amountCell = $amount === '' ? '' : $amount.$sign;
 
         return sprintf('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>', $date, $description, $amountCell, $balance);
+    }
+
+    /**
+     * A zone line as one contiguous text run (a single cell spanning
+     * every column), rather than {@see row()}'s own separate `<td>`
+     * cells — dompdf/smalot's own extraction reliably inserts a gap
+     * between adjacent cells, which every other fixture in this file
+     * relies on; this helper exists specifically to construct a line
+     * with no gap at all at a given boundary, verbatim.
+     */
+    private function rawZoneLine(string $line): string
+    {
+        return sprintf('<tr><td colspan="4">%s</td></tr>', $line);
     }
 
     private function narrative(string $text): string
