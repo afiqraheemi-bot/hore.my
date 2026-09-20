@@ -140,6 +140,15 @@ const taskId = route.params.id as string
 
 const { request } = useApi()
 
+/** Mirrors `invoices/index.vue`'s own `pdfUrl()` — a same-site GET
+ * carries the Sanctum SPA session cookie, so no blob/fetch plumbing
+ * is needed to open the originally-uploaded receipt/document. */
+function evidenceUrl(evidenceId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/evidence/${evidenceId}`
+}
+
 const task = ref<TaskDetail | null>(null)
 const accounts = ref<Account[]>([])
 const loading = ref(true)
@@ -387,7 +396,9 @@ onMounted(load)
               role="status"
               aria-label="Updating automatically"
             >
-              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+              <span
+                class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75"
+              />
               <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
             </span>
             <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
@@ -424,6 +435,19 @@ onMounted(load)
           <div class="sm:col-span-2">
             <dt class="text-ink-tertiary">Description</dt>
             <dd class="text-ink">{{ task.draft.description }}</dd>
+          </div>
+          <div v-if="task.draft.evidence_reference">
+            <dt class="text-ink-tertiary">Evidence</dt>
+            <dd class="text-ink">
+              <a
+                :href="evidenceUrl(task.draft.evidence_reference)"
+                target="_blank"
+                rel="noopener"
+                class="text-accent underline"
+              >
+                View evidence
+              </a>
+            </dd>
           </div>
         </dl>
 
@@ -498,6 +522,19 @@ onMounted(load)
           <div class="sm:col-span-2">
             <dt class="text-ink-tertiary">Description</dt>
             <dd class="text-ink">{{ task.proposal.description }}</dd>
+          </div>
+          <div v-if="task.proposal.evidence_reference">
+            <dt class="text-ink-tertiary">Evidence</dt>
+            <dd class="text-ink">
+              <a
+                :href="evidenceUrl(task.proposal.evidence_reference)"
+                target="_blank"
+                rel="noopener"
+                class="text-accent underline"
+              >
+                View evidence
+              </a>
+            </dd>
           </div>
         </dl>
       </AppCard>

@@ -40,6 +40,15 @@ function describeSource(source: string): {
 const { request } = useApi()
 const { user } = useAuth()
 
+/** Mirrors `invoices/index.vue`'s own `pdfUrl()` — a same-site GET
+ * carries the Sanctum SPA session cookie, so no blob/fetch plumbing
+ * is needed to open the originally-uploaded receipt/document. */
+function evidenceUrl(evidenceId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/evidence/${evidenceId}`
+}
+
 const entries = ref<EvidenceEntry[]>([])
 const loading = ref(true)
 
@@ -113,14 +122,20 @@ onMounted(loadActivity)
                 </p>
                 <p class="truncate text-xs text-ink-tertiary">
                   <template v-if="entry.description"
-                    >{{ describeSource(entry.source).label }} ·
-                  </template
+                    >{{ describeSource(entry.source).label }} · </template
                   >{{ formatRelativeDate(entry.financial_date) }}
                 </p>
               </div>
-              <AppBadge v-if="entry.has_evidence" tone="success">
-                <AppIcon name="paperclip" :size="11" /> Evidence
-              </AppBadge>
+              <a
+                v-if="entry.evidence_references.length > 0"
+                :href="evidenceUrl(entry.evidence_references[0]!)"
+                target="_blank"
+                rel="noopener"
+              >
+                <AppBadge tone="success">
+                  <AppIcon name="paperclip" :size="11" /> Evidence
+                </AppBadge>
+              </a>
             </div>
           </AppCard>
         </li>

@@ -107,6 +107,15 @@ function shortId(value: string): string {
   return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value
 }
 
+/** Mirrors `invoices/index.vue`'s own `pdfUrl()` — a same-site GET
+ * carries the Sanctum SPA session cookie, so no blob/fetch plumbing
+ * is needed to open the originally-uploaded receipt/document. */
+function evidenceUrl(evidenceId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/evidence/${evidenceId}`
+}
+
 function words(value: string): string {
   return value.replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
 }
@@ -383,9 +392,15 @@ function words(value: string): string {
                   {{ entry.direction === 'Credit' ? money(entry.amount) : '—' }}
                 </td>
                 <td class="px-4 py-3 text-center">
-                  <AppBadge :tone="entry.evidence_references.length ? 'success' : 'neutral'">
-                    {{ entry.evidence_references.length || 'None' }}
-                  </AppBadge>
+                  <a
+                    v-if="entry.evidence_references.length > 0"
+                    :href="evidenceUrl(entry.evidence_references[0]!)"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <AppBadge tone="success">{{ entry.evidence_references.length }}</AppBadge>
+                  </a>
+                  <AppBadge v-else tone="neutral">None</AppBadge>
                 </td>
               </tr>
               <tr v-if="!generalLedger.entries.length">
@@ -446,13 +461,17 @@ function words(value: string): string {
                   {{ shortId(entry.journal_id) }}
                 </td>
                 <td class="px-4 py-3 text-center">
-                  <AppBadge :tone="entry.has_evidence ? 'success' : 'warning'">
-                    {{
-                      entry.has_evidence
-                        ? `${entry.evidence_references.length} attached`
-                        : 'Missing'
-                    }}
-                  </AppBadge>
+                  <a
+                    v-if="entry.has_evidence"
+                    :href="evidenceUrl(entry.evidence_references[0]!)"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <AppBadge tone="success"
+                      >{{ entry.evidence_references.length }} attached</AppBadge
+                    >
+                  </a>
+                  <AppBadge v-else tone="warning">Missing</AppBadge>
                 </td>
               </tr>
               <tr v-if="!evidenceIndex.entries.length">

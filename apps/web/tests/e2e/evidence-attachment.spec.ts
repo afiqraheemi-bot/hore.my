@@ -50,6 +50,40 @@ test.describe('Evidence attachment', () => {
 
     // The Recent Activity feed (Evidence Index, AETS-010) reflects the
     // real linkage — not merely that the upload endpoint returned 201.
-    await expect(page.getByText('Evidence').first()).toBeVisible()
+    const evidenceLink = page.getByRole('link', { name: /evidence/i }).first()
+    await expect(evidenceLink).toBeVisible()
+
+    // The badge is a real link to the originally-uploaded file, not
+    // just a decorative "attached" indicator — clicking it (`target=
+    // "_blank"`, opening a second tab in the same authenticated
+    // context) must return the actual receipt, not a 404. Listening
+    // at the BrowserContext level (rather than on a `page` handle
+    // obtained after the click) avoids racing the new tab's own
+    // near-instant response for a 67-byte PNG.
+    const evidenceHref = await evidenceLink.getAttribute('href')
+    expect(evidenceHref).toMatch(/\/api\/v1\/evidence\/.+/)
+    const [evidenceResponse] = await Promise.all([
+      page.context().waitForEvent('response', (res) => res.url() === evidenceHref),
+      evidenceLink.click(),
+    ])
+    expect(evidenceResponse.status()).toBe(200)
+    expect(evidenceResponse.headers()['content-type']).toBe('image/png')
+
+    // Same underlying data, a different renderer (`ReportViewer.vue`) —
+    // both the Evidence Index and General Ledger report tabs surface
+    // the identical `evidence_references` the API already returns, so
+    // this must work there too, not only on Recent Activity.
+    await page.goto('/reports')
+    await page.getByRole('button', { name: 'Evidence Index' }).click()
+    await page.getByRole('button', { name: 'Run report' }).click()
+    const reportEvidenceLink = page.getByRole('link', { name: /1 attached/i })
+    await expect(reportEvidenceLink).toBeVisible()
+    expect(await reportEvidenceLink.getAttribute('href')).toMatch(/\/api\/v1\/evidence\/.+/)
+
+    await page.getByRole('button', { name: 'General Ledger' }).click()
+    await page.getByRole('button', { name: 'Run report' }).click()
+    const glEvidenceLink = page.locator('table').getByRole('link').first()
+    await expect(glEvidenceLink).toBeVisible()
+    expect(await glEvidenceLink.getAttribute('href')).toMatch(/\/api\/v1\/evidence\/.+/)
   })
 })

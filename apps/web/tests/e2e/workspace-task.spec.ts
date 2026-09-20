@@ -58,6 +58,51 @@ test.describe('Work Queue and Human Confirmation', () => {
     await expect(page.getByRole('button', { name: /confirm and post/i })).toBeVisible()
   })
 
+  test("a Task submitted with a receipt shows a working 'View evidence' link on its own detail page", async ({
+    page,
+  }) => {
+    await page.goto('/tasks')
+    await page.locator('input[inputmode="decimal"]').fill('42.50')
+    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
+    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
+    await page.getByPlaceholder('What was this for?').fill('E2E: with receipt')
+
+    const minimalPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    )
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'receipt.png',
+      mimeType: 'image/png',
+      buffer: minimalPng,
+    })
+
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
+      ),
+      page.getByRole('button', { name: /submit for review/i }).click(),
+    ])
+
+    await page.locator('a[href^="/tasks/"]').first().click()
+    await expect(page.getByText('NeedsReview', { exact: true })).toBeVisible()
+
+    const evidenceLink = page.getByRole('link', { name: /view evidence/i })
+    await expect(evidenceLink).toBeVisible()
+    const evidenceHref = await evidenceLink.getAttribute('href')
+    expect(evidenceHref).toMatch(/\/api\/v1\/evidence\/.+/)
+
+    // Listening at the BrowserContext level (rather than on a `page`
+    // handle obtained after the click) avoids racing the new tab's
+    // own near-instant response for a 67-byte PNG.
+    const [evidenceResponse] = await Promise.all([
+      page.context().waitForEvent('response', (res) => res.url() === evidenceHref),
+      evidenceLink.click(),
+    ])
+    expect(evidenceResponse.status()).toBe(200)
+    expect(evidenceResponse.headers()['content-type']).toBe('image/png')
+  })
+
   test('confirming a Task posts a Journal and shows the full transition history', async ({
     page,
   }) => {
