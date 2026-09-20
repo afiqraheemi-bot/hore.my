@@ -386,11 +386,8 @@ onMounted(async () => {
             <template
               v-else-if="quotation.status === 'Converted' && quotation.converted_invoice_id"
             >
-              <NuxtLink
-                :to="`/invoices?highlight=${quotation.converted_invoice_id}`"
-                class="text-xs text-accent underline"
-              >
-                View invoice
+              <NuxtLink :to="`/invoices?highlight=${quotation.converted_invoice_id}`">
+                <AppButton size="sm" variant="ghost">View invoice</AppButton>
               </NuxtLink>
             </template>
 
@@ -399,8 +396,8 @@ onMounted(async () => {
                 <AppIcon name="download" :size="14" /> PDF
               </AppButton>
             </a>
-            <NuxtLink :to="`/quotations/${quotation.id}`" class="text-xs text-accent underline">
-              Details
+            <NuxtLink :to="`/quotations/${quotation.id}`">
+              <AppButton size="sm" variant="ghost">Details</AppButton>
             </NuxtLink>
           </div>
         </div>

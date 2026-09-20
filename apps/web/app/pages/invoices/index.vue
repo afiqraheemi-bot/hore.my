@@ -334,8 +334,8 @@ onMounted(async () => {
                 <AppIcon name="download" :size="14" /> PDF
               </AppButton>
             </a>
-            <NuxtLink :to="`/invoices/${invoice.id}`" class="text-xs text-accent underline">
-              Details
+            <NuxtLink :to="`/invoices/${invoice.id}`">
+              <AppButton size="sm" variant="ghost">Details</AppButton>
             </NuxtLink>
           </div>
         </div>
