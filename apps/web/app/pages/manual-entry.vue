@@ -13,6 +13,7 @@ interface EvidenceEntry {
   source: string
   has_evidence: boolean
   evidence_references: string[]
+  description: string | null
 }
 
 const SOURCE_LABELS: Record<
@@ -25,6 +26,7 @@ const SOURCE_LABELS: Record<
   invoice: { label: 'Invoice issued', icon: 'receipt' },
   payment: { label: 'Payment received', icon: 'wallet' },
   'owner-equity': { label: 'Owner equity', icon: 'building' },
+  'period-closing': { label: 'Books closed', icon: 'chart' },
 }
 
 function describeSource(source: string): {
@@ -107,10 +109,13 @@ onMounted(loadActivity)
               </span>
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-medium text-ink">
-                  {{ describeSource(entry.source).label }}
+                  {{ entry.description || describeSource(entry.source).label }}
                 </p>
-                <p class="text-xs text-ink-tertiary">
-                  {{ formatRelativeDate(entry.financial_date) }}
+                <p class="truncate text-xs text-ink-tertiary">
+                  <template v-if="entry.description"
+                    >{{ describeSource(entry.source).label }} ·
+                  </template
+                  >{{ formatRelativeDate(entry.financial_date) }}
                 </p>
               </div>
               <AppBadge v-if="entry.has_evidence" tone="success">

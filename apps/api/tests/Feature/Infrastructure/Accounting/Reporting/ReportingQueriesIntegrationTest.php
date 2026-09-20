@@ -53,6 +53,7 @@ use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
 use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
+use App\Infrastructure\Accounting\Reporting\SourceDescriptionLookup;
 use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
 use App\Infrastructure\Transactions\Expense\ExpenseRepository;
 use App\Infrastructure\Transactions\Income\IncomeRepository;
@@ -134,6 +135,8 @@ final class ReportingQueriesIntegrationTest extends TestCase
 
     private EvidenceIndexQuery $evidenceIndexQuery;
 
+    private SourceDescriptionLookup $sourceDescriptionLookup;
+
     private JournalCorrectionTransactionalExecutor $correctionExecutor;
 
     private TenantId $tenantA;
@@ -190,6 +193,7 @@ final class ReportingQueriesIntegrationTest extends TestCase
         $this->balanceSheetQuery = new BalanceSheetQuery($aggregator, $this->profitAndLossQuery);
         $this->generalLedgerQuery = new GeneralLedgerQuery($connection, $aggregator);
         $this->evidenceIndexQuery = new EvidenceIndexQuery($connection);
+        $this->sourceDescriptionLookup = new SourceDescriptionLookup($connection);
 
         $this->tenantA = TenantId::of('tenant-0001');
         $this->tenantB = TenantId::of('tenant-0002');
@@ -493,6 +497,37 @@ final class ReportingQueriesIntegrationTest extends TestCase
         $incomeEntry = $this->findEvidenceEntry($index->entries(), $incomeResult->income()->journalId()->toString());
         $this->assertTrue($incomeEntry->hasEvidence());
         $this->assertSame(['invoice-0001'], $incomeEntry->evidenceReferences());
+    }
+
+    public function test_source_description_lookup_resolves_the_real_expense_and_income_description(): void
+    {
+        $expenseResult = $this->postGoldenExpense();
+        $incomeResult = $this->postGoldenIncome();
+
+        $index = $this->evidenceIndexQuery->forPeriod(
+            $this->tenantA,
+            new \DateTimeImmutable('2026-08-01'),
+            new \DateTimeImmutable('2026-08-31'),
+        );
+
+        $sources = array_map(static fn (EvidenceIndexEntry $entry): SourceReference => $entry->source(), $index->entries());
+        $descriptions = $this->sourceDescriptionLookup->forSources($this->tenantA, $sources);
+
+        $expenseEntry = $this->findEvidenceEntry($index->entries(), $expenseResult->expense()->journalId()->toString());
+        $incomeEntry = $this->findEvidenceEntry($index->entries(), $incomeResult->income()->journalId()->toString());
+
+        $this->assertSame('Office supplies', $descriptions[$expenseEntry->source()->toString()] ?? null);
+        $this->assertSame('Consulting revenue', $descriptions[$incomeEntry->source()->toString()] ?? null);
+    }
+
+    public function test_source_description_lookup_never_fabricates_a_description_for_an_unresolvable_source(): void
+    {
+        $descriptions = $this->sourceDescriptionLookup->forSources(
+            $this->tenantA,
+            [SourceReference::of('period-closing:2026-08-31'), SourceReference::of('expense:no-such-expense')],
+        );
+
+        $this->assertSame([], $descriptions);
     }
 
     // --- Fixtures and helpers ------------------------------------------

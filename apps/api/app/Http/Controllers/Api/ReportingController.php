@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
+use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Accounting\Reporting\AccountBalance;
 use App\Domain\Accounting\Reporting\BalanceSheet;
 use App\Domain\Accounting\Reporting\CashFlowLine;
@@ -35,6 +36,7 @@ use App\Infrastructure\Accounting\Reporting\CashFlowStatementQuery;
 use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
+use App\Infrastructure\Accounting\Reporting\SourceDescriptionLookup;
 use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
 use App\Infrastructure\Invoicing\Reporting\AgingReportQuery;
 use App\Models\BusinessProfile;
@@ -89,6 +91,7 @@ final class ReportingController extends Controller
         private readonly EvidenceIndexQuery $evidenceIndexQuery,
         private readonly AgingReportQuery $agingReportQuery,
         private readonly CashFlowStatementQuery $cashFlowStatementQuery,
+        private readonly SourceDescriptionLookup $sourceDescriptionLookup,
     ) {}
 
     public function trialBalance(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
@@ -181,7 +184,7 @@ final class ReportingController extends Controller
             return $this->buildExport($format, sprintf('evidence-index-%s-to-%s', $index->periodStart()->format('Y-m-d'), $index->periodEnd()->format('Y-m-d')), $header, $rows);
         }
 
-        return response()->json($this->evidenceIndexToArray($index));
+        return response()->json($this->evidenceIndexToArray($index, $currentTenant));
     }
 
     public function agingReport(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
@@ -729,17 +732,23 @@ final class ReportingController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function evidenceIndexToArray(EvidenceIndex $index): array
+    private function evidenceIndexToArray(EvidenceIndex $index, CurrentTenant $currentTenant): array
     {
+        $descriptions = $this->sourceDescriptionLookup->forSources(
+            $currentTenant->id(),
+            array_map(static fn (EvidenceIndexEntry $entry): SourceReference => $entry->source(), $index->entries()),
+        );
+
         return [
             'period_start' => $index->periodStart()->format('Y-m-d'),
             'period_end' => $index->periodEnd()->format('Y-m-d'),
-            'entries' => array_map(static fn (EvidenceIndexEntry $entry): array => [
+            'entries' => array_map(fn (EvidenceIndexEntry $entry): array => [
                 'journal_id' => $entry->journalId()->toString(),
                 'financial_date' => $entry->financialDate()->format('Y-m-d'),
                 'source' => $entry->source()->toString(),
                 'has_evidence' => $entry->hasEvidence(),
                 'evidence_references' => $entry->evidenceReferences(),
+                'description' => $descriptions[$entry->source()->toString()] ?? null,
             ], $index->entries()),
         ];
     }

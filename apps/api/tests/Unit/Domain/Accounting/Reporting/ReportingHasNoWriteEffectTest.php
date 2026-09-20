@@ -9,6 +9,7 @@ use App\Infrastructure\Accounting\Reporting\BalanceSheetQuery;
 use App\Infrastructure\Accounting\Reporting\EvidenceIndexQuery;
 use App\Infrastructure\Accounting\Reporting\GeneralLedgerQuery;
 use App\Infrastructure\Accounting\Reporting\ProfitAndLossQuery;
+use App\Infrastructure\Accounting\Reporting\SourceDescriptionLookup;
 use App\Infrastructure\Accounting\Reporting\TrialBalanceQuery;
 use App\Infrastructure\Invoicing\Reporting\AgingReportQuery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -45,6 +46,7 @@ final class ReportingHasNoWriteEffectTest extends TestCase
             GeneralLedgerQuery::class,
             EvidenceIndexQuery::class,
             AgingReportQuery::class,
+            SourceDescriptionLookup::class,
         ];
 
         $cases = [];
@@ -55,6 +57,9 @@ final class ReportingHasNoWriteEffectTest extends TestCase
         return $cases;
     }
 
+    /**
+     * @param  class-string  $class
+     */
     #[DataProvider('reportingQueryClasses')]
     public function test_no_write_operation_against_any_production_table(string $class): void
     {
