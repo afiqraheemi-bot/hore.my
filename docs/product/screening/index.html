@@ -212,6 +212,7 @@
             <span class="pill good">Accounting foundation tersedia</span>
             <span class="pill good">Human confirmation tersedia</span>
             <span class="pill good">Cash Flow &amp; PWA foundation tersedia</span>
+            <span class="pill good">AI Native Workspace shell (§5) siap &amp; teruji</span>
             <span class="pill partial">Banking &amp; Proof of Accuracy menunggu domain sign-off</span>
             <span class="pill good">Backup/restore drill terbukti</span>
             <span class="pill partial">AI & OCR belum lengkap</span>
@@ -296,7 +297,7 @@
         <section id="reality">
           <div class="section-head">
             <div><span class="kicker">05 · Reality check</span><h2>Coverage accounting micro SME</h2></div>
-            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>3a69f3d</code>. Status “ada” tidak bermaksud production-ready.</p>
+            <p>Semakan terus terhadap routes, domain, controllers, migrations dan UI pada baseline <code>ed4ffc5</code>. Status “ada” tidak bermaksud production-ready.</p>
           </div>
           <div class="status-strip" style="margin: 0 0 18px">
             <span class="pill good">✅ Ada &amp; functional</span>
@@ -346,7 +347,7 @@
               <tr>
                 <td>8</td><td>Input mudah</td>
                 <td><span class="status-badge good">✅ Functional</span></td>
-                <td>Universal web composer, Manual Entry dan evidence upload menyediakan input ringkas. Telegram bot dan AI/OCR interpretation belum tersedia.</td>
+                <td>Universal web composer, Manual Entry, evidence upload dan 6 quick actions bernama (upload resit, import statement bank, transaksi baharu, cipta invois, semak transaksi, lihat laporan) menyediakan input ringkas. Telegram bot dan AI/OCR interpretation belum tersedia.</td>
               </tr>
               <tr>
                 <td>9</td><td>Hidden double-entry ledger</td>
@@ -384,6 +385,9 @@
                 <li>Import statement bank PDF Maybank — parser khusus bank (bukan mapping generik), disahkan terhadap PostgreSQL sebenar, HTTP dan browser sebenar</li>
                 <li>Task → Proposal → confirmation termasuk NeedsInformation</li>
                 <li>Exact-money double-entry dengan traceability dan correction chain</li>
+                <li>AI Native Workspace shell (§5) lengkap: 6 quick actions bernama, confidence display sedia (dorman menunggu producer AI), live-update pulse yang terbukti berfungsi (menunggu proses async sebenar), automated WCAG 2.2 AA (axe-core) — 5 defek kontras/ARIA/title sebenar ditemui &amp; dibaiki</li>
+                <li>Work Queue &amp; Recent Activity dikemas: baris kini papar perkara sebenar (bukan ID mentah/label generik), badge "No evidence" yang bising dibuang, senarai dihad dengan "Show more"</li>
+                <li>Description sebenar untuk Recent Activity merentasi kesemua 6 jenis sumber (expense/income/transfer/owner-equity/invoice/payment), disahkan live</li>
               </ul>
             </div>
             <div class="future">
@@ -409,7 +413,7 @@
         <section id="engineering-progress">
           <div class="section-head">
             <div><span class="kicker">06 · Engineering truth</span><h2>Progress yang boleh dibuktikan</h2></div>
-            <p>Snapshot ini merujuk keadaan committed pada <code>3a69f3d</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
+            <p>Snapshot ini merujuk keadaan committed pada <code>ed4ffc5</code>. “Dibina”, “diuji”, “diluluskan” dan “production-ready” tidak dianggap sinonim.</p>
           </div>
           <div class="progress-grid">
             <article class="progress-card">
@@ -455,6 +459,11 @@
                 <td>Universal composer, evidence upload, NeedsInformation, edit/supersede serta E2E flow tersedia. AI/OCR proposal generation belum lengkap.</td>
               </tr>
               <tr>
+                <td>AI Native Workspace shell (§5)</td>
+                <td><span class="status-badge good">Shell complete</span></td>
+                <td>11/12 elemen §5 hijau dan diuji live: sidebar, composer, drag-and-drop, task-based history, kad kewangan berstruktur, tindakan tersedia, tema, quick actions, WCAG 2.2 AA automated. "Progressive responses" kod betul dan terbukti (mock test) tetapi dorman — backend Task kekal sengaja sinkron (satu transaksi/request), akan hidup automatik apabila proses async sebenar (AI Accounting Assistant) wujud.</td>
+              </tr>
+              <tr>
                 <td>AI, OCR &amp; automation</td>
                 <td><span class="status-badge pending">Incomplete</span></td>
                 <td>AI kekal cadangan/interpretasi sahaja dan tiada kuasa posting. Provider workflow, OCR dan evaluation belum menjadi pengalaman produk lengkap.</td>
@@ -469,7 +478,7 @@
 
           <div class="callout" style="margin-top: 18px">
             <strong>Gate seterusnya</strong>
-            Tutup gap tax/accountant completeness, multi-user foundation, governed AI/OCR dan channel capture tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review dan observability; backup/restore drill kini selesai.
+            AI Native Workspace shell (§5) kini lengkap. Tutup gap tax/accountant completeness, multi-user foundation, governed AI/OCR dan channel capture tanpa melemahkan Accounting Core. Production readiness masih memerlukan semakan bebas, security review dan observability; backup/restore drill kini selesai.
           </div>
         </section>
 
@@ -488,7 +497,7 @@
         </section>
 
         <footer>
-          <p><strong>hore.my Product Screening</strong> · Snapshot 19 September 2026 · committed baseline <code>3a69f3d</code></p>
+          <p><strong>hore.my Product Screening</strong> · Snapshot 20 September 2026 · committed baseline <code>ed4ffc5</code></p>
           <p>Dokumen penerangan interaktif. Untuk keputusan normatif, rujuk Founder instruction, project references, ADR, AETS dan WTS mengikut precedence rasmi repository.</p>
         </footer>
       </main>
