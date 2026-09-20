@@ -31,6 +31,7 @@ use App\Domain\Accounting\Posting\ReverseJournalCommand;
 use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Accounting\Reporting\AccountBalance;
 use App\Domain\Accounting\Reporting\EvidenceIndexEntry;
+use App\Domain\Accounting\Reporting\GeneralLedgerRunningBalance;
 use App\Domain\Shared\Tenancy\TenantId;
 use App\Domain\Transactions\Expense\ExpenseAccountTypeValidator;
 use App\Domain\Transactions\Expense\ExpenseId;
@@ -473,6 +474,48 @@ final class ReportingQueriesIntegrationTest extends TestCase
 
         $this->assertSame('150.00', $activity->closingBalance()->amount()->toDecimalString());
         $this->assertSame(JournalDirection::Debit, $activity->closingBalance()->direction());
+    }
+
+    // --- General Ledger running balance (AETS-009 §21, `RPT-020`) ------------
+
+    public function test_general_ledger_running_balance_ties_out_to_the_closing_balance(): void
+    {
+        $expenseResult = $this->postGoldenExpense();
+        $incomeResult = $this->postGoldenIncome();
+
+        $activity = $this->generalLedgerQuery->forAccountAndPeriod(
+            $this->tenantA,
+            AccountId::of('account-cash'),
+            new \DateTimeImmutable('2026-08-01'),
+            new \DateTimeImmutable('2026-08-31'),
+        );
+
+        $this->assertCount(2, $activity->entries());
+
+        $balances = GeneralLedgerRunningBalance::forEntries($activity->openingBalance(), $activity->entries());
+
+        $this->assertCount(2, $balances);
+
+        // Expense (2026-08-10) hits Cash on the Credit side: opening 0.00 -> 50.00 Cr.
+        $this->assertSame('50.00', $balances[0]->amount()->toDecimalString());
+        $this->assertSame(JournalDirection::Credit, $balances[0]->direction());
+
+        // Income (2026-08-15) hits Cash on the Debit side, outweighing the
+        // running Credit balance: 200.00 - 50.00 = 150.00 Dr.
+        $this->assertSame('150.00', $balances[1]->amount()->toDecimalString());
+        $this->assertSame(JournalDirection::Debit, $balances[1]->direction());
+
+        // The tie-out itself (`RPT-020`): the last row's running balance
+        // exactly equals the activity's own already-computed closing
+        // balance, even though the two are computed two entirely
+        // different ways (incremental accumulation here vs. a direct
+        // as-of aggregate query in `AccountBalanceAggregator`).
+        $lastBalance = $balances[count($balances) - 1];
+        $this->assertSame($activity->closingBalance()->amount()->toDecimalString(), $lastBalance->amount()->toDecimalString());
+        $this->assertSame($activity->closingBalance()->direction(), $lastBalance->direction());
+
+        $this->assertTrue($expenseResult->expense()->journalId()->equals(JournalId::of('journal-expense-0001')));
+        $this->assertTrue($incomeResult->income()->journalId()->equals(JournalId::of('journal-income-0001')));
     }
 
     // --- Evidence Index accuracy ---------------------------------------------

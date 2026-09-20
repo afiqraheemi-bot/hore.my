@@ -1689,14 +1689,73 @@ final class IdentityAndAccountingApiTest extends TestCase
         $balanceSheetPdf->assertStatus(200);
         $balanceSheetPdf->assertHeader('Content-Type', 'application/pdf');
         $this->assertStringStartsWith('%PDF-', (string) $balanceSheetPdf->getContent());
+    }
 
-        // format=pdf is meaningless for Evidence Index (shares PeriodRequest's
-        // validation schema with Profit & Loss for other reasons) — it
-        // silently falls back to JSON, exactly like any other unrecognized
-        // format value.
-        $evidenceIndexWithPdfFormat = $this->get('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31&format=pdf');
-        $evidenceIndexWithPdfFormat->assertStatus(200);
-        $evidenceIndexWithPdfFormat->assertHeader('Content-Type', 'application/json');
+    /**
+     * AETS-009 §21 (extended v1.9.0) — Trial Balance, General Ledger,
+     * Aging Report, and Evidence Index each gain a real PDF, resolving
+     * the deferral §2.2 previously stated for these four specifically.
+     */
+    public function test_trial_balance_general_ledger_aging_report_and_evidence_index_can_be_downloaded_as_pdf(): void
+    {
+        $this->registerAndReturnCredentials('report-pdf-extended@example.my');
+
+        $cashId = $this->createAccount('1000', 'Cash', 'Asset');
+        $officeSuppliesId = $this->createAccount('5000', 'Office Supplies', 'Expense');
+        $revenueId = $this->createAccount('4000', 'Consulting Revenue', 'Revenue');
+        $receivableId = $this->createAccount('1100', 'Accounts Receivable', 'Asset');
+        $serviceRevenueId = $this->createAccount('4100', 'Service Revenue', 'Revenue');
+
+        $this->postJson('/api/v1/expenses', [
+            'amount' => '50.00',
+            'transaction_date' => '2026-08-10',
+            'expense_account_id' => $officeSuppliesId,
+            'payment_account_id' => $cashId,
+            'description' => 'Office supplies',
+        ], ['Idempotency-Key' => 'key-report-pdf-extended-expense-0001'])->assertStatus(201);
+
+        $this->postJson('/api/v1/incomes', [
+            'amount' => '200.00',
+            'transaction_date' => '2026-08-15',
+            'income_account_id' => $revenueId,
+            'deposit_account_id' => $cashId,
+            'description' => 'Consulting revenue',
+        ], ['Idempotency-Key' => 'key-report-pdf-extended-income-0001'])->assertStatus(201);
+
+        $customerId = $this->createCustomer('Kedai Ah Chong');
+        $draftInvoice = $this->postJson('/api/v1/invoices', [
+            'customer_id' => $customerId,
+            'due_date' => '2026-08-20',
+            'receivable_account_id' => $receivableId,
+            'revenue_account_id' => $serviceRevenueId,
+            'lines' => [
+                ['description' => 'Tudung', 'quantity' => 10, 'unit_price' => '26.90'],
+            ],
+        ]);
+        $draftInvoice->assertStatus(201);
+        $invoiceId = $draftInvoice->json('id');
+        $this->postJson("/api/v1/invoices/{$invoiceId}/issue", ['issue_date' => '2026-08-20'], ['Idempotency-Key' => 'key-report-pdf-extended-issue-0001'])
+            ->assertStatus(201);
+
+        $trialBalancePdf = $this->get('/api/v1/reports/trial-balance?as_of=2026-08-31&format=pdf');
+        $trialBalancePdf->assertStatus(200);
+        $trialBalancePdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $trialBalancePdf->getContent());
+
+        $generalLedgerPdf = $this->get("/api/v1/reports/general-ledger?account_id={$cashId}&period_start=2026-08-01&period_end=2026-08-31&format=pdf");
+        $generalLedgerPdf->assertStatus(200);
+        $generalLedgerPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $generalLedgerPdf->getContent());
+
+        $agingReportPdf = $this->get('/api/v1/reports/aging?as_of=2026-08-31&format=pdf');
+        $agingReportPdf->assertStatus(200);
+        $agingReportPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $agingReportPdf->getContent());
+
+        $evidenceIndexPdf = $this->get('/api/v1/reports/evidence-index?period_start=2026-08-01&period_end=2026-08-31&format=pdf');
+        $evidenceIndexPdf->assertStatus(200);
+        $evidenceIndexPdf->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', (string) $evidenceIndexPdf->getContent());
     }
 
     // --- Cash Flow Statement (AETS-009 §22) ---------------------------------

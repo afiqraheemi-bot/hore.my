@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Domain\Accounting\ChartOfAccounts\AccountId;
+use App\Domain\Accounting\Journal\JournalDirection;
 use App\Domain\Accounting\Posting\SourceReference;
 use App\Domain\Accounting\Reporting\AccountBalance;
 use App\Domain\Accounting\Reporting\BalanceSheet;
@@ -14,6 +15,7 @@ use App\Domain\Accounting\Reporting\EvidenceIndex;
 use App\Domain\Accounting\Reporting\EvidenceIndexEntry;
 use App\Domain\Accounting\Reporting\GeneralLedgerAccountActivity;
 use App\Domain\Accounting\Reporting\GeneralLedgerEntry;
+use App\Domain\Accounting\Reporting\GeneralLedgerRunningBalance;
 use App\Domain\Accounting\Reporting\NetBalance;
 use App\Domain\Accounting\Reporting\ProfitAndLossStatement;
 use App\Domain\Accounting\Reporting\TrialBalance;
@@ -97,6 +99,11 @@ final class ReportingController extends Controller
     public function trialBalance(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
     {
         $trialBalance = $this->trialBalanceQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->trialBalancePdf($trialBalance, $currentTenant);
+        }
+
         $format = $this->requestedExportFormat($request);
 
         if ($format !== null) {
@@ -158,6 +165,11 @@ final class ReportingController extends Controller
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
         );
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->generalLedgerPdf($activity, $currentTenant);
+        }
+
         $format = $this->requestedExportFormat($request);
 
         if ($format !== null) {
@@ -176,6 +188,11 @@ final class ReportingController extends Controller
             new \DateTimeImmutable($request->string('period_start')->toString()),
             new \DateTimeImmutable($request->string('period_end')->toString()),
         );
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->evidenceIndexPdf($index, $currentTenant);
+        }
+
         $format = $this->requestedExportFormat($request);
 
         if ($format !== null) {
@@ -190,6 +207,11 @@ final class ReportingController extends Controller
     public function agingReport(AsOfDateRequest $request, CurrentTenant $currentTenant): Response
     {
         $report = $this->agingReportQuery->asOf($currentTenant->id(), new \DateTimeImmutable($request->string('as_of')->toString()));
+
+        if ($request->string('format')->toString() === 'pdf') {
+            return $this->agingReportPdf($report, $currentTenant);
+        }
+
         $format = $this->requestedExportFormat($request);
 
         if ($format !== null) {
@@ -556,6 +578,223 @@ final class ReportingController extends Controller
         $amount = $balance->amount()->toDecimalString();
 
         return $balance->direction()?->name === 'Credit' ? sprintf('-%s', $amount) : $amount;
+    }
+
+    /**
+     * AETS-009 §21 (extended v1.9.0) — Trial Balance's own real
+     * Debit/Credit columns (`AccountBalance::totalDebit()`/
+     * `totalCredit()`), unlike the collapsed single net amount
+     * `financial-statement.blade.php` uses for P&L/Balance Sheet.
+     */
+    private function trialBalancePdf(TrialBalance $trialBalance, CurrentTenant $currentTenant): Response
+    {
+        $accountNames = $this->accountNamesByTenant($currentTenant->id());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+
+        $rows = array_map(fn (AccountBalance $line): array => [
+            $accountNames[$line->accountId()->toString()] ?? $line->accountId()->toString(),
+            $line->accountType()->name,
+            $line->totalDebit()->toDecimalString(),
+            $line->totalCredit()->toDecimalString(),
+        ], $trialBalance->lines());
+
+        return DocumentPdfBuilder::build(
+            sprintf('trial-balance-%s.pdf', $trialBalance->asOfDate()->format('Y-m-d')),
+            'pdf.tabular-report',
+            [
+                'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+                'reportTitle' => 'TRIAL BALANCE',
+                'periodLabel' => sprintf('As of %s', $trialBalance->asOfDate()->format('d M Y')),
+                'columns' => [
+                    ['label' => 'Account', 'align' => 'left'],
+                    ['label' => 'Type', 'align' => 'left'],
+                    ['label' => 'Debit', 'align' => 'right'],
+                    ['label' => 'Credit', 'align' => 'right'],
+                ],
+                'rows' => $rows,
+                'noteLines' => [$trialBalance->isBalanced() ? 'Balanced: Yes' : 'Balanced: No'],
+                'summaryLines' => [
+                    ['label' => 'Total Debit', 'amount' => $trialBalance->totalDebit()->toDecimalString(), 'emphasized' => true],
+                    ['label' => 'Total Credit', 'amount' => $trialBalance->totalCredit()->toDecimalString(), 'emphasized' => true],
+                ],
+            ],
+        );
+    }
+
+    /**
+     * AETS-009 §21/`RPT-020` (v1.9.0) — the one genuinely new derived
+     * value across all four reports this section adds: a per-row
+     * running balance. `GeneralLedgerEntry` carries none, and
+     * {@see GeneralLedgerQuery} computes opening/closing balances
+     * independently rather than by walking entries — so this method
+     * accumulates each entry's already-computed amount+direction onto
+     * the previous row's balance, starting from the activity's own
+     * `openingBalance()`, in the exact chronological order
+     * `entries()` already returns them. The final row MUST tie out
+     * exactly to `closingBalance()` — proven by
+     * `ReportingQueriesIntegrationTest` (RPT-020), never merely
+     * assumed.
+     */
+    private function generalLedgerPdf(GeneralLedgerAccountActivity $activity, CurrentTenant $currentTenant): Response
+    {
+        $accountNames = $this->accountNamesByTenant($currentTenant->id());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+        $accountName = $accountNames[$activity->accountId()->toString()] ?? $activity->accountId()->toString();
+
+        $descriptions = $this->sourceDescriptionLookup->forSources(
+            $currentTenant->id(),
+            array_map(static fn (GeneralLedgerEntry $entry): SourceReference => $entry->source(), $activity->entries()),
+        );
+
+        $runningBalances = GeneralLedgerRunningBalance::forEntries($activity->openingBalance(), $activity->entries());
+
+        $rows = [];
+        foreach ($activity->entries() as $i => $entry) {
+            $rows[] = [
+                $entry->financialDate()->format('Y-m-d'),
+                $descriptions[$entry->source()->toString()] ?? $entry->source()->toString(),
+                $entry->direction()->name,
+                $entry->amount()->toDecimalString(),
+                $this->formattedNetBalance($runningBalances[$i]),
+            ];
+        }
+
+        return DocumentPdfBuilder::build(
+            sprintf('general-ledger-%s-%s-to-%s.pdf', $activity->accountId()->toString(), $activity->periodStart()->format('Y-m-d'), $activity->periodEnd()->format('Y-m-d')),
+            'pdf.tabular-report',
+            [
+                'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+                'reportTitle' => sprintf('GENERAL LEDGER - %s', $accountName),
+                'periodLabel' => sprintf('For the period %s to %s', $activity->periodStart()->format('d M Y'), $activity->periodEnd()->format('d M Y')),
+                'columns' => [
+                    ['label' => 'Date', 'align' => 'left'],
+                    ['label' => 'Description', 'align' => 'left'],
+                    ['label' => 'Direction', 'align' => 'left'],
+                    ['label' => 'Amount', 'align' => 'right'],
+                    ['label' => 'Balance', 'align' => 'right'],
+                ],
+                'rows' => $rows,
+                'noteLines' => [sprintf('Opening balance: %s', $this->formattedNetBalance($activity->openingBalance()))],
+                'summaryLines' => [
+                    ['label' => 'Closing Balance', 'amount' => $this->formattedNetBalance($activity->closingBalance()), 'emphasized' => true],
+                ],
+            ],
+        );
+    }
+
+    private function formattedNetBalance(NetBalance $balance): string
+    {
+        if ($balance->direction() === null) {
+            return sprintf('%s', $balance->amount()->toDecimalString());
+        }
+
+        return sprintf('%s %s', $balance->amount()->toDecimalString(), $balance->direction() === JournalDirection::Debit ? 'Dr' : 'Cr');
+    }
+
+    /**
+     * AETS-009 §21 (extended v1.9.0). `AgingReportLine` carries only an
+     * opaque `CustomerId` — mirrors {@see accountNamesByTenant()}
+     * exactly, for the same reason (a human-readable label the domain
+     * layer itself deliberately does not carry).
+     *
+     * @return array<string, string>
+     */
+    private function customerNamesByTenant(TenantId $tenantId): array
+    {
+        /** @var array<string, string> */
+        return DB::connection('pgsql')->table('customers')
+            ->where('tenant_id', $tenantId->toString())
+            ->pluck('name', 'id')
+            ->all();
+    }
+
+    private const AGING_BUCKET_LABELS = [
+        'Current' => 'Current',
+        'Overdue1To30' => '1-30 days',
+        'Overdue31To60' => '31-60 days',
+        'Overdue61To90' => '61-90 days',
+        'Overdue91Plus' => '91+ days',
+    ];
+
+    private function agingReportPdf(AgingReport $report, CurrentTenant $currentTenant): Response
+    {
+        $customerNames = $this->customerNamesByTenant($currentTenant->id());
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+
+        $rows = array_map(fn (AgingReportLine $line): array => [
+            $customerNames[$line->customerId()->toString()] ?? $line->customerId()->toString(),
+            $line->invoiceNumber() ?? 'Draft invoice',
+            $line->dueDate()->format('Y-m-d'),
+            self::AGING_BUCKET_LABELS[$line->bucket()->name],
+            $line->outstandingBalance()->toDecimalString(),
+        ], $report->lines());
+
+        return DocumentPdfBuilder::build(
+            sprintf('aging-report-%s.pdf', $report->asOfDate()->format('Y-m-d')),
+            'pdf.tabular-report',
+            [
+                'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+                'reportTitle' => 'AGING REPORT (RECEIVABLES)',
+                'periodLabel' => sprintf('As of %s', $report->asOfDate()->format('d M Y')),
+                'columns' => [
+                    ['label' => 'Customer', 'align' => 'left'],
+                    ['label' => 'Invoice', 'align' => 'left'],
+                    ['label' => 'Due Date', 'align' => 'left'],
+                    ['label' => 'Age', 'align' => 'left'],
+                    ['label' => 'Outstanding', 'align' => 'right'],
+                ],
+                'rows' => $rows,
+                'summaryLines' => [
+                    ['label' => 'Current', 'amount' => $report->totalForBucket(AgingBucket::Current)->toDecimalString(), 'emphasized' => false],
+                    ['label' => '1-30 days', 'amount' => $report->totalForBucket(AgingBucket::Overdue1To30)->toDecimalString(), 'emphasized' => false],
+                    ['label' => '31-60 days', 'amount' => $report->totalForBucket(AgingBucket::Overdue31To60)->toDecimalString(), 'emphasized' => false],
+                    ['label' => '61-90 days', 'amount' => $report->totalForBucket(AgingBucket::Overdue61To90)->toDecimalString(), 'emphasized' => false],
+                    ['label' => '91+ days', 'amount' => $report->totalForBucket(AgingBucket::Overdue91Plus)->toDecimalString(), 'emphasized' => false],
+                    ['label' => 'Grand Total', 'amount' => $report->grandTotal()->toDecimalString(), 'emphasized' => true],
+                ],
+            ],
+        );
+    }
+
+    private function evidenceIndexPdf(EvidenceIndex $index, CurrentTenant $currentTenant): Response
+    {
+        $businessProfile = BusinessProfile::query()->find($currentTenant->id()->toString());
+        $descriptions = $this->sourceDescriptionLookup->forSources(
+            $currentTenant->id(),
+            array_map(static fn (EvidenceIndexEntry $entry): SourceReference => $entry->source(), $index->entries()),
+        );
+
+        $rows = array_map(function (EvidenceIndexEntry $entry) use ($descriptions): array {
+            $source = $entry->source()->toString();
+            $sourceType = explode(':', $source, 2)[0];
+
+            return [
+                $entry->financialDate()->format('Y-m-d'),
+                $descriptions[$source] ?? $source,
+                $sourceType,
+                $entry->hasEvidence() ? 'Yes' : 'No',
+            ];
+        }, $index->entries());
+
+        $withEvidence = count(array_filter($index->entries(), static fn (EvidenceIndexEntry $entry): bool => $entry->hasEvidence()));
+
+        return DocumentPdfBuilder::build(
+            sprintf('evidence-index-%s-to-%s.pdf', $index->periodStart()->format('Y-m-d'), $index->periodEnd()->format('Y-m-d')),
+            'pdf.tabular-report',
+            [
+                'seller' => DocumentPartyFormatter::sellerFromBusinessProfile($businessProfile),
+                'reportTitle' => 'EVIDENCE INDEX',
+                'periodLabel' => sprintf('For the period %s to %s', $index->periodStart()->format('d M Y'), $index->periodEnd()->format('d M Y')),
+                'columns' => [
+                    ['label' => 'Date', 'align' => 'left'],
+                    ['label' => 'Description', 'align' => 'left'],
+                    ['label' => 'Source Type', 'align' => 'left'],
+                    ['label' => 'Evidence', 'align' => 'left'],
+                ],
+                'rows' => $rows,
+                'noteLines' => [sprintf('%d of %d entries have evidence attached', $withEvidence, count($index->entries()))],
+            ],
+        );
     }
 
     /**

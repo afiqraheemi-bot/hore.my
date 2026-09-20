@@ -1,7 +1,7 @@
 # ATS-009: Financial Reporting Test Specification
 
 - Status: Active
-- Version: 1.8.0
+- Version: 1.9.0
 - Effective date: 2026-09-07
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: Founder / Product Owner; CTO / Technical Partner; Accounting Domain Reviewer
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T061`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
+This document is the normative Accounting Test Specification (ATS) proving compliance with [AETS-009: Financial Reporting](../AETS-009-Financial-Reporting.md), fulfilling the exact coverage AETS-009 §13 names as required and explicitly leaves for this document to write. Every test defined here is identified by a stable ID (`RPT-T001`–`RPT-T067`) and traced to the `RPT-NNN` invariant(s) it proves (§5).
 
 Like [ATS-010](ATS-010-Audit-Trail-Test-Specification.md), this document was authored alongside — immediately after — AETS-009's implementation (M10), not before it: every test ID below traces to a concrete, already-passing test in the current suite, not a future target. The traceability matrix in §5 can therefore be verified directly against the repository rather than taken on faith.
 
@@ -68,6 +68,7 @@ This document is subordinate to [AETS-009](../AETS-009-Financial-Reporting.md) a
 | RPT-017 | RPT-T051 (standalone PDF endpoints), RPT-T049 (the identical PDFs embedded in the Compliance Pack), RPT-T060 (Cash Flow's own standalone PDF) |
 | RPT-018 | RPT-T054, RPT-T059 |
 | RPT-019 | RPT-T057 |
+| RPT-020 | RPT-T062, RPT-T063, RPT-T064, RPT-T065 (standalone PDF endpoints for the four newly-extended reports), RPT-T066 (running-balance unit proof), RPT-T067 (running-balance real-PostgreSQL tie-out proof) |
 
 ## 6. Test cases
 
@@ -183,6 +184,17 @@ Domain-level tests (`CashFlowStatement`) construct their own `CashFlowLine`s dir
 | RPT-T060 | The Cash Flow Statement downloads correctly in all three export forms for the same real posted activity: `?format=csv` contains the expected Account ID, `?format=xlsx` returns the correct `Content-Type` (`RPT-016`), and `?format=pdf` returns a valid PDF (magic-byte check) (`RPT-017`). | HTTP |
 | RPT-T061 | A Tenant with no Cash Flow activity of its own never reflects another Tenant's postings or Bank Account — zero Operating lines, zero Cash at Period End (`RPT-002`). | HTTP |
 
+### 6.10 Extended PDF export and General Ledger running balance (as of v1.9.0, AETS-009 §21)
+
+| ID | Description | Type |
+| --- | --- | --- |
+| RPT-T062 | Downloading Trial Balance via `?format=pdf` for real posted activity returns a valid PDF (real HTTP round trip, magic-byte check, `Content-Type: application/pdf`) (`RPT-020`). | HTTP |
+| RPT-T063 | Downloading General Ledger via `?format=pdf` for a real Account with real posted activity returns a valid PDF (`RPT-020`) — proves `GeneralLedgerRequest`'s own validation rule now accepts `pdf` (v1.7.0 had rejected it as invalid). | HTTP |
+| RPT-T064 | Downloading Aging Report via `?format=pdf` for a real outstanding Invoice returns a valid PDF (`RPT-020`). | HTTP |
+| RPT-T065 | Downloading Evidence Index via `?format=pdf` for real posted activity returns a valid PDF (`RPT-020`). | HTTP |
+| RPT-T066 | `GeneralLedgerRunningBalance::forEntries()` accumulates a hand-crafted, mixed-Debit/Credit entry sequence correctly at every row — including an entry offsetting the running balance to exactly zero (no fabricated Direction, mirroring `NetBalanceTest`'s own zero-case proof for `NetBalance::fromDebitCredit()`) — proven without any database. | Unit |
+| RPT-T067 | For real posted Expense and Income activity against the same Account, `GeneralLedgerRunningBalance::forEntries()`'s last computed row exactly equals `GeneralLedgerAccountActivity::closingBalance()` — the two computed by entirely different means (incremental accumulation vs. `AccountBalanceAggregator`'s direct as-of query) — proven against real PostgreSQL (`RPT-020`). | Integration |
+
 ## 7. RPT-003 — not independently tested by a runtime test
 
 `RPT-003` ("every report MUST be derivable, in full, from `journals`/`journal_lines`/`accounts` alone, with no independent stored source of truth") is a structural property of the schema and the Query layer's own source, not a behavior a runtime assertion can observe in isolation: there is no "cached balance" code path whose *absence* a test could exercise. It is proven by inspection, mirroring [ATS-010 §7](ATS-010-Audit-Trail-Test-Specification.md#7-aud-007--not-independently-testable)'s identical treatment of `AUD-007`:
@@ -201,6 +213,7 @@ Domain-level tests (`CashFlowStatement`) construct their own `CashFlowLine`s dir
 
 ## Changelog
 
+- **1.9.0 (2026-09-20):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.9.0 (§21 extended to Trial Balance, General Ledger, Aging Report, and Evidence Index PDF). Adds new §6.10 (six test cases, `RPT-T062`–`RPT-T067`): a real-HTTP magic-byte PDF proof for each of the four newly-extended reports, and two dedicated proofs for General Ledger's own new per-row running balance — an isolated unit test against a hand-crafted mixed-Debit/Credit sequence (including the zero-Direction offsetting case) and a real-PostgreSQL integration test proving the final row ties out exactly to the report's own already-computed closing balance. Adds a new `RPT-020` traceability row (§5). No existing test ID's prior coverage of any `RPT-NNN` invariant changed. Classified **MINOR**.
 - **1.8.0 (2026-09-17):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.8.0 (§22, Cash Flow Statement). Adds new §6.9 (ten test cases, `RPT-T052`–`RPT-T061`) covering the domain aggregate's own net-change/tie-out algebra, the query's fail-closed classification for an ambiguous hand-crafted Journal, an entirely-empty statement for a Tenant with no Bank Account, a golden-dataset classification-and-tie-out proof spanning every supported transaction type, all three export formats, and tenant isolation. Adds new `RPT-018` (Cash Flow tie-out) and `RPT-019` (fail-closed classification) traceability rows (§5), and extends the existing `RPT-002`, `RPT-016`, and `RPT-017` rows with the new Cash-Flow-specific tests. Updates `RPT-T049`'s own description: the Compliance Pack it proves now bundles nine entries (six CSV, three PDF), not seven. Resolves §2.2/§8's own "Cash Flow tests deferred" bullet. No existing test ID's prior coverage of any `RPT-NNN` invariant changed. Classified **MINOR**.
 - **1.7.0 (2026-09-17):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.7.0 (§21, "loan-ready" PDF export for Profit & Loss and Balance Sheet; §19's Compliance Pack extended with the same two PDFs). Adds `RPT-T051`, a real-HTTP proof that both reports' `?format=pdf` output is a valid PDF. Updates `RPT-T049` (renamed from "...as a zip of csvs" to "...as a zip of csvs and pdfs") to check the Compliance Pack's new seven-entry shape (five CSV, two PDF) instead of five. Adds a new `RPT-017` traceability row (§5) and adds `RPT-T049` to it (the Compliance Pack's own embedded PDFs). Corrects §8's stale "Export (PDF/XLSX) tests... deferred" bullet, which had not been updated when XLSX was resolved in v1.6.0. No existing test ID's prior coverage of `RPT-015` changed; `RPT-T049` gains new coverage of `RPT-017` in addition. Classified **MINOR**.
 - **1.6.0 (2026-09-16):** Companion update to [AETS-009](../AETS-009-Financial-Reporting.md) v1.6.0 (§20, XLSX report export). Adds `RPT-T050`, a real-HTTP proof that Trial Balance's `?format=xlsx` output opens as a valid workbook whose cell values match its own `?format=csv` output for the same parameters. Adds a new `RPT-016` traceability row (§5). No existing test ID or `RPT-NNN` invariant's prior coverage changed. Classified **MINOR**.

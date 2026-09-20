@@ -184,9 +184,10 @@ async function downloadXlsx() {
 const exportingPdf = ref(false)
 
 /**
- * AETS-009 §21: a formatted, "loan-ready" statement PDF — Profit &
- * Loss and Balance Sheet only, the two reports a bank or accountant
- * actually reviews as a statement rather than a data export.
+ * AETS-009 §21 (extended v1.9.0): a formatted PDF for every report —
+ * a "loan-ready" statement for Profit & Loss, Balance Sheet, and Cash
+ * Flow; a row-per-record table for Trial Balance, General Ledger,
+ * Aging Report, and Evidence Index.
  */
 async function downloadPdf() {
   exportingPdf.value = true
@@ -366,16 +367,7 @@ async function selectTab(tab: ReportTab) {
             <AppIcon name="download" :size="14" />
             {{ exportingXlsx ? 'Exporting…' : 'Excel' }}
           </AppButton>
-          <AppButton
-            v-if="
-              activeTab === 'Profit & Loss' ||
-              activeTab === 'Balance Sheet' ||
-              activeTab === 'Cash Flow'
-            "
-            size="sm"
-            :disabled="exportingPdf"
-            @click="downloadPdf"
-          >
+          <AppButton size="sm" :disabled="exportingPdf" @click="downloadPdf">
             <AppIcon name="download" :size="14" />
             {{ exportingPdf ? 'Exporting…' : 'PDF' }}
           </AppButton>
