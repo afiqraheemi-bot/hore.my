@@ -385,7 +385,7 @@ defineExpose({
     class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
   >
     <div
-      class="flex items-center justify-between gap-2 border-b border-border px-3 py-2 sm:px-4"
+      class="flex items-center justify-between gap-2 border-b border-border px-4 py-2 sm:px-5"
       role="radiogroup"
       aria-label="Posting mode"
     >
@@ -425,7 +425,7 @@ defineExpose({
     <div class="relative border-b border-border">
       <div
         ref="typeTabsScrollRef"
-        class="flex items-center gap-2 overflow-x-auto bg-surface-secondary/40 px-3 py-2.5"
+        class="flex items-center gap-2 overflow-x-auto bg-surface-secondary/40 px-4 py-2.5 sm:px-5"
         @scroll="updateTypeTabsFade"
       >
         <button
@@ -451,11 +451,11 @@ defineExpose({
       </div>
       <div
         v-show="showTypeTabsLeftFade"
-        class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[rgb(var(--shadow-color)/0.14)] to-transparent"
+        class="pointer-events-none absolute inset-y-0 left-0 w-11 bg-gradient-to-r from-surface-secondary from-30% via-[rgb(var(--shadow-color)/0.16)] via-60% to-transparent"
       />
       <div
         v-show="showTypeTabsRightFade"
-        class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[rgb(var(--shadow-color)/0.14)] to-transparent"
+        class="pointer-events-none absolute inset-y-0 right-0 w-11 bg-gradient-to-l from-surface-secondary from-30% via-[rgb(var(--shadow-color)/0.16)] via-60% to-transparent"
       />
     </div>
 

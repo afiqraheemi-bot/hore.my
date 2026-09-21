@@ -478,11 +478,11 @@ onUnmounted(() => {
         </div>
         <div
           v-show="showQueueFilterLeftFade"
-          class="pointer-events-none absolute inset-y-1 left-1 w-8 rounded-l-xl bg-gradient-to-r from-[rgb(var(--shadow-color)/0.14)] to-transparent"
+          class="pointer-events-none absolute inset-y-1 left-1 w-11 rounded-l-xl bg-gradient-to-r from-surface-secondary from-30% via-[rgb(var(--shadow-color)/0.16)] via-60% to-transparent"
         />
         <div
           v-show="showQueueFilterRightFade"
-          class="pointer-events-none absolute inset-y-1 right-1 w-8 rounded-r-xl bg-gradient-to-l from-[rgb(var(--shadow-color)/0.14)] to-transparent"
+          class="pointer-events-none absolute inset-y-1 right-1 w-11 rounded-r-xl bg-gradient-to-l from-surface-secondary from-30% via-[rgb(var(--shadow-color)/0.16)] via-60% to-transparent"
         />
       </div>
 
