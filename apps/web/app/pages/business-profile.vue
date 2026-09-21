@@ -1,5 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
+useHead({ title: 'Business Profile' })
 
 const BUSINESS_TYPES = ['Retail', 'FoodAndBeverage', 'Services', 'Trading', 'Other']
 const STATES = [

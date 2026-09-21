@@ -1,5 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
+useHead({ title: 'Bank Accounts' })
 
 /**
  * `$fetch` (ofetch) throws a `FetchError` whose own `.data` is the

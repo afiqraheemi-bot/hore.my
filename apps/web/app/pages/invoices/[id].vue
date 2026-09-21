@@ -7,6 +7,7 @@
  * visible nowhere in the UI).
  */
 definePageMeta({ middleware: 'auth', key: (route) => route.fullPath })
+useHead({ title: 'Invoice' })
 
 interface InvoiceLine {
   description: string

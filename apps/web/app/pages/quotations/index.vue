@@ -7,6 +7,7 @@
  * here, only the lifecycle actions AETS-016 §4 defines.
  */
 definePageMeta({ middleware: 'auth' })
+useHead({ title: 'Quotations' })
 
 interface QuotationLine {
   description: string

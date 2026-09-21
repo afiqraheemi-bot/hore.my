@@ -11,6 +11,7 @@
  * Proposal before Accounting Core receives a posting command.
  */
 definePageMeta({ middleware: 'auth', alias: '/tasks' })
+useHead({ title: 'Work Queue' })
 
 interface TaskSummary {
   command_type: string

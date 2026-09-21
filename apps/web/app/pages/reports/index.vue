@@ -2,6 +2,7 @@
 import type { AccountSummary, ReportResult, ReportTab } from '~/types/reporting'
 
 definePageMeta({ middleware: 'auth' })
+useHead({ title: 'Reports' })
 
 const { request } = useApi()
 const route = useRoute()

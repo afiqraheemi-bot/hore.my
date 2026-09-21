@@ -1,5 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'guest', layout: false })
+useHead({ title: 'Register' })
 
 const { register } = useAuth()
 const { init: initTheme } = useTheme()

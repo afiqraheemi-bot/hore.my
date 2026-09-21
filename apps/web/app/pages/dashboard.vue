@@ -7,6 +7,7 @@
  * are used only to scale chart pixels without binary floating point.
  */
 definePageMeta({ middleware: 'auth' })
+useHead({ title: 'Dashboard' })
 
 interface NetBalance {
   amount: string

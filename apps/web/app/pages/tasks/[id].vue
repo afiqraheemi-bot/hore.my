@@ -15,6 +15,7 @@
 // once from the route below) would go stale, and the page would keep
 // showing the *original* Task's data under the *new* URL.
 definePageMeta({ middleware: 'auth', key: (route) => route.fullPath })
+useHead({ title: 'Task' })
 
 interface Account {
   id: string

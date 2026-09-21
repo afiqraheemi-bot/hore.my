@@ -7,6 +7,7 @@
  * every card in a long list.
  */
 definePageMeta({ middleware: 'auth', key: (route) => route.fullPath })
+useHead({ title: 'Quotation' })
 
 interface QuotationLine {
   description: string

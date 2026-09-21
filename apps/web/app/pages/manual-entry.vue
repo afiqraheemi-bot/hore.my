@@ -8,6 +8,7 @@
  * page (UX-01, 2026-09-21 UI/UX audit).
  */
 definePageMeta({ middleware: 'auth' })
+useHead({ title: 'Manual Entry' })
 
 interface EvidenceEntry {
   journal_id: string
