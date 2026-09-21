@@ -14,6 +14,7 @@ use App\Domain\ProofOfAccuracy\TestRunCounts;
 use App\Infrastructure\ProofOfAccuracy\CertificationRecordWriter;
 use App\Infrastructure\ProofOfAccuracy\GoldenDatasetCertificationEvaluator;
 use App\Infrastructure\ProofOfAccuracy\GoldenDatasetScenarioRunner;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -62,24 +63,39 @@ final class CertifyProofOfAccuracy extends Command
 
         $this->info("Certifying Golden Dataset against database \"{$databaseName}\"...");
 
-        Artisan::call('migrate:fresh', ['--force' => true]);
+        // The fixture's dates (issue/due/payment/as-of) are fixed
+        // calendar dates authored once, but AgingReportQuery's P1-4
+        // guard compares payment_allocations.created_at — real
+        // wall-clock now() at insert time — against the fixture's own
+        // as-of date. Left unfrozen, a run only certifies through the
+        // fixture's as-of date and fails every day after. Freeze to a
+        // fixed instant on that as-of date, identical to
+        // ProofOfAccuracyCertificationTest's own freeze, so every
+        // created_at this run produces lands on or before it.
+        CarbonImmutable::setTestNow(new CarbonImmutable('2026-09-20 12:00:00', 'Asia/Kuala_Lumpur'));
 
-        [$firstRun, $firstError] = $this->certifyOnce($manifestLoader, $integrityVerifier, $runner, $evaluator, $manifestPath, $datasetBaseDir);
+        try {
+            Artisan::call('migrate:fresh', ['--force' => true]);
 
-        if ($firstError !== null) {
-            $this->error($firstError);
+            [$firstRun, $firstError] = $this->certifyOnce($manifestLoader, $integrityVerifier, $runner, $evaluator, $manifestPath, $datasetBaseDir);
 
-            return self::FAILURE;
-        }
+            if ($firstError !== null) {
+                $this->error($firstError);
 
-        Artisan::call('migrate:fresh', ['--force' => true]);
+                return self::FAILURE;
+            }
 
-        [$secondRun, $secondError] = $this->certifyOnce($manifestLoader, $integrityVerifier, $runner, $evaluator, $manifestPath, $datasetBaseDir);
+            Artisan::call('migrate:fresh', ['--force' => true]);
 
-        if ($secondError !== null) {
-            $this->error($secondError);
+            [$secondRun, $secondError] = $this->certifyOnce($manifestLoader, $integrityVerifier, $runner, $evaluator, $manifestPath, $datasetBaseDir);
 
-            return self::FAILURE;
+            if ($secondError !== null) {
+                $this->error($secondError);
+
+                return self::FAILURE;
+            }
+        } finally {
+            CarbonImmutable::setTestNow();
         }
 
         $poa009 = $this->compareIndependentRuns($this->mixedToString($firstRun['criteria_json'] ?? ''), $this->mixedToString($secondRun['criteria_json'] ?? ''));

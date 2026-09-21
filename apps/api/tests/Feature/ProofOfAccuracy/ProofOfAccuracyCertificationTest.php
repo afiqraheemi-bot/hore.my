@@ -11,6 +11,7 @@ use App\Domain\ProofOfAccuracy\GoldenDatasetIntegrityVerifier;
 use App\Domain\ProofOfAccuracy\GoldenDatasetManifestLoader;
 use App\Infrastructure\ProofOfAccuracy\GoldenDatasetCertificationEvaluator;
 use App\Infrastructure\ProofOfAccuracy\GoldenDatasetScenarioRunner;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -107,14 +108,29 @@ final class ProofOfAccuracyCertificationTest extends TestCase
         /** @var array<string, mixed> $expected */
         $actor = ActorReference::of('poa-v1-certification-test');
 
-        /** @var GoldenDatasetScenarioRunner $runner */
-        $runner = $this->app->make(GoldenDatasetScenarioRunner::class);
-        $runner->run($scenario, $datasetBaseDir, $actor);
-        $replayProbe = $runner->runReplayProbe($scenario, $datasetBaseDir, $actor);
+        // The fixture's dates (issue/due/payment/as-of) are fixed
+        // calendar dates authored once, but AgingReportQuery's P1-4
+        // guard compares payment_allocations.created_at — real
+        // wall-clock now() at insert time — against the fixture's own
+        // as-of date. Left unfrozen, this test passes only through the
+        // fixture's as-of date and fails every day after. Freeze to a
+        // fixed instant on that as-of date so every created_at this
+        // run produces lands on or before it, regardless of the actual
+        // calendar date the suite runs on.
+        CarbonImmutable::setTestNow(new CarbonImmutable('2026-09-20 12:00:00', 'Asia/Kuala_Lumpur'));
 
-        /** @var GoldenDatasetCertificationEvaluator $evaluator */
-        $evaluator = $this->app->make(GoldenDatasetCertificationEvaluator::class);
-        $results = $evaluator->evaluate($scenario, $expected, $datasetBaseDir, $replayProbe);
+        try {
+            /** @var GoldenDatasetScenarioRunner $runner */
+            $runner = $this->app->make(GoldenDatasetScenarioRunner::class);
+            $runner->run($scenario, $datasetBaseDir, $actor);
+            $replayProbe = $runner->runReplayProbe($scenario, $datasetBaseDir, $actor);
+
+            /** @var GoldenDatasetCertificationEvaluator $evaluator */
+            $evaluator = $this->app->make(GoldenDatasetCertificationEvaluator::class);
+            $results = $evaluator->evaluate($scenario, $expected, $datasetBaseDir, $replayProbe);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
 
         foreach ($results as $result) {
             /** @var CertificationCriterionResult $result */
