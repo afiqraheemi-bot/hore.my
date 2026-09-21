@@ -228,7 +228,7 @@ async function onRecordDirect() {
 
     const created = await request<{ journal_id: string }>(endpoint, {
       method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': generateUuid() },
       body,
     })
 

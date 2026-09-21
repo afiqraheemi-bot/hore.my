@@ -160,7 +160,7 @@ async function onIssue(invoiceId: string) {
     await request(`/api/v1/invoices/${invoiceId}/issue`, {
       method: 'POST',
       body: { issue_date: issueDateFor(invoiceId) },
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': generateUuid() },
     })
     await loadInvoices()
   } catch {

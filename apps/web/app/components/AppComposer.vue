@@ -316,7 +316,7 @@ async function onSubmit() {
     if (deferAccounts.value) {
       await request('/api/v1/tasks', {
         method: 'POST',
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': generateUuid() },
         body: {
           command_type: activeType.value.commandType,
           amount: normalizeMoney(amount.value),
@@ -328,7 +328,7 @@ async function onSubmit() {
     } else {
       await request(activeType.value.directEndpoint, {
         method: 'POST',
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': generateUuid() },
         body: {
           amount: normalizeMoney(amount.value),
           transaction_date: transactionDate.value,

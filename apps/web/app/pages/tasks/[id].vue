@@ -344,7 +344,7 @@ async function supersede() {
   try {
     const correction = await request<TaskDetail>(`/api/v1/tasks/${taskId}/supersede`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': generateUuid() },
       body: {
         command_type: task.value.proposal.command_type,
         amount: normalizeMoney(editAmount.value),

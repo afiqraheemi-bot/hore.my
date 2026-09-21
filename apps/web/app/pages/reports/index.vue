@@ -256,7 +256,7 @@ async function closePeriod() {
           closed_through_date: closeThroughDate.value,
           retained_earnings_account_id: retainedEarningsAccountId.value,
         },
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': generateUuid() },
       },
     )
     closePeriodSuccess.value = response.is_newly_closed

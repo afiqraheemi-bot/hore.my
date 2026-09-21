@@ -137,7 +137,7 @@ async function onCreate() {
         receivable_account_id: receivableAccountId.value,
         reference: reference.value || undefined,
       },
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': generateUuid() },
     })
     customerId.value = ''
     amount.value = ''
