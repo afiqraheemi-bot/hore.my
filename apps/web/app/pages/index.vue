@@ -144,6 +144,23 @@ const composerRef = ref<{
   pickFile: () => void
 } | null>(null)
 
+/**
+ * Quick actions collapse into one trigger that expands into a 3x2
+ * tray (Founder-approved concept, 2026-09-21 — the "expanding tray"
+ * prototype over a literal iOS-style radial burst: the same spring
+ * delight, but labels stay legible instead of hover-only, which a
+ * radial layout can't offer on a touch device).
+ */
+const quickActionsOpen = ref(false)
+
+function closeQuickActions() {
+  quickActionsOpen.value = false
+}
+
+function onQuickActionsKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeQuickActions()
+}
+
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour < 12) return 'Good morning'
@@ -258,6 +275,7 @@ interface QuickAction {
 }
 
 function focusComposer(typeKey: string) {
+  closeQuickActions()
   composerRef.value?.selectTypeByKey(typeKey)
   nextTick(() => {
     composerAnchorRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -266,6 +284,7 @@ function focusComposer(typeKey: string) {
 }
 
 function quickUploadReceipt() {
+  closeQuickActions()
   composerRef.value?.selectTypeByKey('expense')
   nextTick(() => {
     composerAnchorRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -274,6 +293,7 @@ function quickUploadReceipt() {
 }
 
 function quickReviewTransactions() {
+  closeQuickActions()
   queueFilter.value = 'attention'
   nextTick(() => {
     document
@@ -303,6 +323,11 @@ async function onComposerCreated() {
 onMounted(() => {
   loadTasks()
   loadActivity()
+  window.addEventListener('keydown', onQuickActionsKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onQuickActionsKeydown)
 })
 </script>
 
@@ -315,27 +340,78 @@ onMounted(() => {
       <p class="mt-1 text-sm text-ink-tertiary">What would you like to get done today?</p>
     </div>
 
-    <nav aria-label="Quick actions" class="flex flex-wrap justify-center gap-2">
-      <template v-for="action in quickActions" :key="action.key">
-        <NuxtLink
-          v-if="action.to"
-          :to="action.to"
-          class="flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-ink"
+    <div class="relative flex justify-center">
+      <button
+        type="button"
+        aria-label="Quick actions"
+        :aria-expanded="quickActionsOpen"
+        class="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-contrast shadow-lg shadow-black/10 transition-transform hover:scale-105 active:scale-95"
+        @click="quickActionsOpen = !quickActionsOpen"
+      >
+        <AppIcon
+          name="plus"
+          :size="20"
+          class="transition-transform duration-300"
+          :class="quickActionsOpen && 'rotate-45'"
+        />
+      </button>
+
+      <button
+        v-if="quickActionsOpen"
+        type="button"
+        aria-hidden="true"
+        tabindex="-1"
+        class="fixed inset-0 z-40 cursor-default"
+        @click="closeQuickActions"
+      />
+
+      <Transition
+        enter-active-class="transition duration-200 ease-[cubic-bezier(.34,1.56,.64,1)]"
+        enter-from-class="opacity-0 scale-90 -translate-y-1"
+        enter-to-class="opacity-100 scale-100 translate-y-0"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100 scale-100"
+        leave-to-class="opacity-0 scale-95"
+      >
+        <div
+          v-if="quickActionsOpen"
+          role="menu"
+          aria-label="Quick actions"
+          class="absolute top-full z-50 mt-3 grid w-72 grid-cols-3 gap-1 rounded-2xl border border-border bg-surface p-2 shadow-xl shadow-black/10"
         >
-          <AppIcon :name="action.icon" :size="14" />
-          {{ action.label }}
-        </NuxtLink>
-        <button
-          v-else
-          type="button"
-          class="flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-ink"
-          @click="action.run?.()"
-        >
-          <AppIcon :name="action.icon" :size="14" />
-          {{ action.label }}
-        </button>
-      </template>
-    </nav>
+          <template v-for="action in quickActions" :key="action.key">
+            <NuxtLink
+              v-if="action.to"
+              :to="action.to"
+              role="menuitem"
+              class="flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center transition-colors hover:bg-surface-hover"
+              @click="closeQuickActions"
+            >
+              <span
+                class="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-tertiary text-ink-secondary"
+              >
+                <AppIcon :name="action.icon" :size="16" />
+              </span>
+              <span class="text-[11px] leading-tight text-ink-secondary">{{ action.label }}</span>
+            </NuxtLink>
+            <button
+              v-else
+              type="button"
+              role="menuitem"
+              class="flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center transition-colors hover:bg-surface-hover"
+              @click="action.run?.()"
+            >
+              <span
+                class="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-tertiary text-ink-secondary"
+              >
+                <AppIcon :name="action.icon" :size="16" />
+              </span>
+              <span class="text-[11px] leading-tight text-ink-secondary">{{ action.label }}</span>
+            </button>
+          </template>
+        </div>
+      </Transition>
+    </div>
 
     <div ref="composerAnchorRef">
       <AppComposer ref="composerRef" :mode="initialMode" @created="onComposerCreated" />
