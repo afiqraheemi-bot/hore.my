@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * Explicit Manual Entry fallback. The default landing experience is
- * the review-first Work Queue; this page preserves the established
- * deterministic direct-entry workflow for users who intentionally
- * choose it.
+ * the review-first Work Queue; this page opens the same AppComposer
+ * with mode="direct" preselected for users who intentionally choose
+ * the deterministic direct-posting workflow — the composer's own
+ * toggle lets them switch back to review-first without leaving the
+ * page (UX-01, 2026-09-21 UI/UX audit).
  */
 definePageMeta({ middleware: 'auth' })
 
@@ -96,7 +98,7 @@ onMounted(loadActivity)
       <p class="mt-1 text-sm text-ink-tertiary">What happened in your business today?</p>
     </div>
 
-    <AppComposer @created="loadActivity" />
+    <AppComposer mode="direct" @created="loadActivity" />
 
     <div>
       <h2 class="mb-3 text-sm font-medium text-ink-secondary">Recent activity</h2>

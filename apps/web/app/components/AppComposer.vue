@@ -23,7 +23,24 @@
  * fabricated placeholder reference. Uploading happens first so a
  * transaction is only ever recorded with an `evidence_reference` that
  * genuinely, already resolves to stored Evidence.
+ *
+ * **One composer, two postures (UX-01, 2026-09-21 UI/UX audit).**
+ * `mode="review"` submits a Task to `POST /api/v1/tasks` — Accounting
+ * Core never sees it until a human confirms the resulting Proposal.
+ * `mode="direct"` posts straight to the type's own REST endpoint
+ * (`/api/v1/expenses`, etc.) via {@see TransactionType.directEndpoint}.
+ * Before this, the Work Queue page (`index.vue`) reimplemented this
+ * entire component inline to get review-mode — the same markup drifted
+ * out of sync (it was missing "Owner drawing" as a submittable type
+ * entirely) and, because the two copies were visually identical, made
+ * it easy to lose track of which page — and which posting behaviour —
+ * you were on. `mode` only sets the *initial* posture; the toggle below
+ * lets either page's composer switch postures in place, so the choice
+ * is an explicit, visible control rather than a fact you infer from the
+ * URL.
  */
+const props = defineProps<{ mode: 'review' | 'direct' }>()
+
 interface Account {
   id: string
   account_code: string
@@ -52,8 +69,12 @@ interface TransactionType {
   key: string
   label: string
   icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart' | 'download' | 'send'
-  endpoint: string
+  /** mode="direct" posts here. */
+  directEndpoint: string
+  /** mode="review" posts to /api/v1/tasks with this as `command_type`. */
+  commandType: string
   primaryAccountLabel: string
+  /** mode="direct" payload field name; mode="review" always uses `primary_account_id`. */
   primaryAccountKey: string
   primaryAccountTypes: string[]
   secondaryAccountLabel: string
@@ -67,7 +88,8 @@ const types: TransactionType[] = [
     key: 'expense',
     label: 'Expense',
     icon: 'receipt',
-    endpoint: '/api/v1/expenses',
+    directEndpoint: '/api/v1/expenses',
+    commandType: 'Expense',
     primaryAccountLabel: 'Category',
     primaryAccountKey: 'expense_account_id',
     primaryAccountTypes: ['Expense'],
@@ -80,7 +102,8 @@ const types: TransactionType[] = [
     key: 'income',
     label: 'Income',
     icon: 'wallet',
-    endpoint: '/api/v1/incomes',
+    directEndpoint: '/api/v1/incomes',
+    commandType: 'Income',
     primaryAccountLabel: 'Category',
     primaryAccountKey: 'income_account_id',
     primaryAccountTypes: ['Revenue'],
@@ -93,7 +116,8 @@ const types: TransactionType[] = [
     key: 'transfer',
     label: 'Transfer',
     icon: 'bank',
-    endpoint: '/api/v1/transfers',
+    directEndpoint: '/api/v1/transfers',
+    commandType: 'Transfer',
     primaryAccountLabel: 'From account',
     primaryAccountKey: 'source_account_id',
     primaryAccountTypes: ['Asset', 'Liability'],
@@ -108,7 +132,8 @@ const types: TransactionType[] = [
     key: 'loan-received',
     label: 'Loan received',
     icon: 'download',
-    endpoint: '/api/v1/transfers',
+    directEndpoint: '/api/v1/transfers',
+    commandType: 'Transfer',
     primaryAccountLabel: 'Loan account',
     primaryAccountKey: 'source_account_id',
     primaryAccountTypes: ['Liability'],
@@ -122,7 +147,8 @@ const types: TransactionType[] = [
     key: 'loan-repayment',
     label: 'Loan repayment',
     icon: 'send',
-    endpoint: '/api/v1/transfers',
+    directEndpoint: '/api/v1/transfers',
+    commandType: 'Transfer',
     primaryAccountLabel: 'Paid from',
     primaryAccountKey: 'source_account_id',
     primaryAccountTypes: ['Asset'],
@@ -135,7 +161,8 @@ const types: TransactionType[] = [
     key: 'capital',
     label: 'Capital contribution',
     icon: 'building',
-    endpoint: '/api/v1/capital-contributions',
+    directEndpoint: '/api/v1/capital-contributions',
+    commandType: 'CapitalContribution',
     primaryAccountLabel: 'Cash account',
     primaryAccountKey: 'cash_account_id',
     primaryAccountTypes: ['Asset'],
@@ -148,7 +175,8 @@ const types: TransactionType[] = [
     key: 'drawing',
     label: 'Owner drawing',
     icon: 'chart',
-    endpoint: '/api/v1/owner-drawings',
+    directEndpoint: '/api/v1/owner-drawings',
+    commandType: 'OwnerDrawing',
     primaryAccountLabel: 'Cash account',
     primaryAccountKey: 'cash_account_id',
     primaryAccountTypes: ['Asset'],
@@ -165,6 +193,35 @@ const { request } = useApi()
 const accounts = ref<Account[]>([])
 const expanded = ref(false)
 const activeType = ref<TransactionType>(types[0]!)
+const currentMode = ref<'review' | 'direct'>(props.mode)
+const deferAccounts = ref(false)
+
+const postureCopy = computed(() =>
+  currentMode.value === 'review'
+    ? {
+        submitLabel: 'Submit for review',
+        submittingLabel: 'Submitting…',
+        confirmedLabel: 'Submitted.',
+        footer: 'Nothing posts until you review and confirm the Proposal.',
+        errorFallback:
+          'Could not submit this Task. Check the amount, accounts, and optional attachment.',
+      }
+    : {
+        submitLabel: 'Record',
+        submittingLabel: 'Recording…',
+        confirmedLabel: 'Recorded.',
+        footer: 'Recorded immediately — accurate and traceable.',
+        errorFallback:
+          'Could not record this — check the amount format (e.g. 50.00), account selection, and attachment (max 10MB, image or PDF).',
+      },
+)
+
+function setMode(next: 'review' | 'direct') {
+  if (currentMode.value === next) return
+  currentMode.value = next
+  deferAccounts.value = false
+  error.value = null
+}
 
 const {
   scrollRef: typeTabsScrollRef,
@@ -219,6 +276,7 @@ function selectType(type: TransactionType) {
   activeType.value = type
   primaryAccountId.value = ''
   secondaryAccountId.value = ''
+  deferAccounts.value = false
   error.value = null
 }
 
@@ -227,6 +285,7 @@ function resetForm() {
   description.value = ''
   primaryAccountId.value = ''
   secondaryAccountId.value = ''
+  deferAccounts.value = false
   evidenceFile.value = null
 }
 
@@ -255,31 +314,69 @@ async function onSubmit() {
   try {
     const evidenceReference = await uploadEvidenceIfAttached()
 
-    await request(activeType.value.endpoint, {
-      method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-      body: {
-        amount: normalizeMoney(amount.value),
-        transaction_date: transactionDate.value,
-        [activeType.value.primaryAccountKey]: primaryAccountId.value,
-        [activeType.value.secondaryAccountKey]: secondaryAccountId.value,
-        description: description.value,
-        ...(evidenceReference ? { evidence_reference: evidenceReference } : {}),
-      },
-    })
+    if (currentMode.value === 'review') {
+      await request('/api/v1/tasks', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        body: {
+          command_type: activeType.value.commandType,
+          amount: normalizeMoney(amount.value),
+          transaction_date: transactionDate.value,
+          ...(deferAccounts.value
+            ? {}
+            : {
+                primary_account_id: primaryAccountId.value,
+                secondary_account_id: secondaryAccountId.value,
+              }),
+          description: description.value,
+          ...(evidenceReference ? { evidence_reference: evidenceReference } : {}),
+        },
+      })
+    } else {
+      await request(activeType.value.directEndpoint, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        body: {
+          amount: normalizeMoney(amount.value),
+          transaction_date: transactionDate.value,
+          [activeType.value.primaryAccountKey]: primaryAccountId.value,
+          [activeType.value.secondaryAccountKey]: secondaryAccountId.value,
+          description: description.value,
+          ...(evidenceReference ? { evidence_reference: evidenceReference } : {}),
+        },
+      })
+    }
+
     resetForm()
     justCreated.value = true
     setTimeout(() => (justCreated.value = false), 2500)
     emit('created')
   } catch {
-    error.value =
-      'Could not record this — check the amount format (e.g. 50.00), account selection, and attachment (max 10MB, image or PDF).'
+    error.value = postureCopy.value.errorFallback
   } finally {
     submitting.value = false
   }
 }
 
 onMounted(loadAccounts)
+
+const amountInputEl = ref<HTMLInputElement | null>(null)
+const dropzoneEl = ref<{ pickFile: () => void } | null>(null)
+
+defineExpose({
+  /** Selects a type by key and expands the form — used by quick actions on the page embedding this composer. */
+  selectTypeByKey(key: string) {
+    const type = types.find((t) => t.key === key)
+    if (type) selectType(type)
+    open()
+  },
+  focusAmount() {
+    amountInputEl.value?.focus()
+  },
+  pickFile() {
+    dropzoneEl.value?.pickFile()
+  },
+})
 </script>
 
 <template>
@@ -287,6 +384,44 @@ onMounted(loadAccounts)
     :padded="false"
     class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
   >
+    <div
+      class="flex items-center justify-between gap-2 border-b border-border px-3 py-2 sm:px-4"
+      role="radiogroup"
+      aria-label="Posting mode"
+    >
+      <span class="text-xs font-medium text-ink-tertiary">This will</span>
+      <div class="flex gap-1 rounded-full bg-surface-secondary p-0.5">
+        <button
+          type="button"
+          role="radio"
+          :aria-checked="currentMode === 'review'"
+          class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
+          :class="
+            currentMode === 'review'
+              ? 'bg-surface text-ink shadow-sm'
+              : 'text-ink-tertiary hover:text-ink'
+          "
+          @click="setMode('review')"
+        >
+          Wait for my review
+        </button>
+        <button
+          type="button"
+          role="radio"
+          :aria-checked="currentMode === 'direct'"
+          class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
+          :class="
+            currentMode === 'direct'
+              ? 'bg-surface text-ink shadow-sm'
+              : 'text-ink-tertiary hover:text-ink'
+          "
+          @click="setMode('direct')"
+        >
+          Post directly
+        </button>
+      </div>
+    </div>
+
     <div class="relative border-b border-border">
       <div
         ref="typeTabsScrollRef"
@@ -329,6 +464,7 @@ onMounted(loadAccounts)
         <div class="flex min-w-0 flex-1 items-center gap-3">
           <span class="text-lg font-medium text-ink-tertiary">RM</span>
           <input
+            ref="amountInputEl"
             v-model="amount"
             aria-label="Amount"
             placeholder="0.00"
@@ -357,26 +493,49 @@ onMounted(loadAccounts)
         v-if="expanded"
         class="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2"
       >
-        <AppField :label="activeType.primaryAccountLabel">
-          <AppSelect
-            v-model="primaryAccountId"
-            :options="primaryAccountOptions"
-            :placeholder="
-              activeType.primaryAccountLabel === 'Category'
-                ? 'Select a category'
-                : 'Select an account'
-            "
-            required
-          />
-        </AppField>
-        <AppField :label="activeType.secondaryAccountLabel">
-          <AppSelect
-            v-model="secondaryAccountId"
-            :options="secondaryAccountOptions"
-            placeholder="Select an account"
-            required
-          />
-        </AppField>
+        <template v-if="currentMode === 'direct' || !deferAccounts">
+          <AppField :label="activeType.primaryAccountLabel">
+            <AppSelect
+              v-model="primaryAccountId"
+              :options="primaryAccountOptions"
+              :placeholder="
+                activeType.primaryAccountLabel === 'Category'
+                  ? 'Select a category'
+                  : 'Select an account'
+              "
+              required
+            />
+          </AppField>
+          <AppField :label="activeType.secondaryAccountLabel">
+            <AppSelect
+              v-model="secondaryAccountId"
+              :options="secondaryAccountOptions"
+              placeholder="Select an account"
+              required
+            />
+          </AppField>
+          <div v-if="currentMode === 'review'" class="sm:col-span-2">
+            <button
+              type="button"
+              class="text-xs font-medium text-ink-tertiary underline hover:text-ink"
+              @click="deferAccounts = true"
+            >
+              Not sure which accounts yet? Decide later.
+            </button>
+          </div>
+        </template>
+        <div v-else class="sm:col-span-2">
+          <p class="text-sm text-ink-secondary">
+            No accounts chosen yet — this will wait for you to decide.
+          </p>
+          <button
+            type="button"
+            class="mt-1 text-xs font-medium text-ink-tertiary underline hover:text-ink"
+            @click="deferAccounts = false"
+          >
+            Choose accounts now
+          </button>
+        </div>
         <div class="sm:col-span-2">
           <AppField label="Description">
             <AppInput v-model="description" placeholder="What was this for?" required />
@@ -385,6 +544,7 @@ onMounted(loadAccounts)
         <div class="sm:col-span-2">
           <AppField label="Receipt or invoice (optional)">
             <AppDropzone
+              ref="dropzoneEl"
               v-model="evidenceFile"
               accept="image/jpeg,image/png,image/webp,application/pdf"
               hint="JPG, PNG, WEBP, or PDF — up to 10MB"
@@ -395,18 +555,18 @@ onMounted(loadAccounts)
 
       <p v-if="error" class="text-sm text-danger">{{ error }}</p>
       <p v-if="justCreated" class="flex items-center gap-1.5 text-sm text-success">
-        <AppIcon name="check" :size="14" /> Recorded.
+        <AppIcon name="check" :size="14" /> {{ postureCopy.confirmedLabel }}
       </p>
 
       <div
         class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"
       >
         <p class="text-xs leading-5 text-ink-tertiary">
-          Recorded immediately — accurate and traceable.
+          {{ postureCopy.footer }}
         </p>
         <AppButton type="submit" variant="primary" :disabled="submitting" class="justify-center">
           <AppIcon name="send" :size="15" />
-          {{ submitting ? 'Recording…' : 'Record' }}
+          {{ submitting ? postureCopy.submittingLabel : postureCopy.submitLabel }}
         </AppButton>
       </div>
     </form>
