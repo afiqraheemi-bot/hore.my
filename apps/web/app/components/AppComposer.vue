@@ -384,44 +384,6 @@ defineExpose({
     :padded="false"
     class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
   >
-    <div
-      class="flex items-center justify-between gap-2 border-b border-border px-4 py-2 sm:px-5"
-      role="radiogroup"
-      aria-label="Posting mode"
-    >
-      <span class="text-xs font-medium text-ink-tertiary">This will</span>
-      <div class="flex gap-1 rounded-full bg-surface-secondary p-0.5">
-        <button
-          type="button"
-          role="radio"
-          :aria-checked="currentMode === 'review'"
-          class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
-          :class="
-            currentMode === 'review'
-              ? 'bg-surface text-ink shadow-sm'
-              : 'text-ink-tertiary hover:text-ink'
-          "
-          @click="setMode('review')"
-        >
-          Wait for my review
-        </button>
-        <button
-          type="button"
-          role="radio"
-          :aria-checked="currentMode === 'direct'"
-          class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
-          :class="
-            currentMode === 'direct'
-              ? 'bg-surface text-ink shadow-sm'
-              : 'text-ink-tertiary hover:text-ink'
-          "
-          @click="setMode('direct')"
-        >
-          Post directly
-        </button>
-      </div>
-    </div>
-
     <div class="relative border-b border-border">
       <div
         ref="typeTabsScrollRef"
@@ -557,6 +519,43 @@ defineExpose({
       <p v-if="justCreated" class="flex items-center gap-1.5 text-sm text-success">
         <AppIcon name="check" :size="14" /> {{ postureCopy.confirmedLabel }}
       </p>
+
+      <div class="flex justify-center">
+        <div
+          role="radiogroup"
+          aria-label="Posting mode"
+          class="flex w-full max-w-xs gap-1 rounded-full bg-surface-secondary p-1 sm:max-w-sm"
+        >
+          <button
+            type="button"
+            role="radio"
+            :aria-checked="currentMode === 'review'"
+            class="flex-1 rounded-full px-3 py-2 text-xs font-medium transition-colors"
+            :class="
+              currentMode === 'review'
+                ? 'bg-surface text-ink shadow-sm'
+                : 'text-ink-tertiary hover:text-ink'
+            "
+            @click="setMode('review')"
+          >
+            Wait for my review
+          </button>
+          <button
+            type="button"
+            role="radio"
+            :aria-checked="currentMode === 'direct'"
+            class="flex-1 rounded-full px-3 py-2 text-xs font-medium transition-colors"
+            :class="
+              currentMode === 'direct'
+                ? 'bg-surface text-ink shadow-sm'
+                : 'text-ink-tertiary hover:text-ink'
+            "
+            @click="setMode('direct')"
+          >
+            Post directly
+          </button>
+        </div>
+      </div>
 
       <div
         class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"
