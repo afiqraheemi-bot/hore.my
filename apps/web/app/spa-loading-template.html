@@ -1,0 +1,67 @@
+<!--
+  UX-07 (2026-09-21 UI/UX audit): ssr:false means a cold load has
+  nothing to paint until the JS bundle boots — this static fragment is
+  injected into the page's own base HTML (Nuxt's spaLoadingTemplate)
+  and removed automatically the instant the real app mounts, so the
+  first frame a new owner sees is this mark instead of a blank white
+  flash. Self-contained CSS only — this file sits outside Tailwind's
+  content scan (tailwind.config.ts), so no utility classes here would
+  survive the production purge. Colors read main.css's own --color-bg/
+  --color-accent tokens, already resolvable by the time this paints
+  since the stylesheet loads in <head> and the dark/light class is
+  applied to <html> by a blocking inline script before first paint —
+  both light and dark sessions get the correct background immediately,
+  never a mismatched flash.
+-->
+<div
+  style="
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(var(--color-bg, 255 255 255));
+  "
+>
+  <div
+    style="
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgb(var(--color-accent, 23 23 26));
+      color: rgb(var(--color-accent-contrast, 255 255 255));
+      font:
+        600 16px/1 ui-sans-serif,
+        system-ui,
+        -apple-system,
+        'Segoe UI',
+        Roboto,
+        sans-serif;
+      animation: hore-pulse 1.4s ease-in-out infinite;
+    "
+  >
+    H
+  </div>
+</div>
+<style>
+  @keyframes hore-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    @keyframes hore-pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+    }
+  }
+</style>

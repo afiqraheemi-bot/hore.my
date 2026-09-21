@@ -36,6 +36,19 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'apple-touch-icon', href: '/pwa-icons/apple-touch-icon.png' },
       ],
+      // Applies the dark/light class to <html> before first paint —
+      // useTheme.ts's own init() only runs from a layout's onMounted,
+      // which is after the spa-loading-template (below) has already
+      // painted, so without this a dark-preference session saw a
+      // light-themed flash on every cold load (UX-07, 2026-09-21 UI/UX
+      // audit). Mirrors useTheme.ts's own storage key and precedence
+      // exactly; kept in sync by hand since a blocking script can't
+      // import a composable.
+      script: [
+        {
+          innerHTML: `(function(){try{var t=localStorage.getItem('hore-theme');var d=t==='dark'||((!t||t==='system')&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`,
+        },
+      ],
       meta: [
         // Matches main.css's light --color-bg by default — useTheme.ts
         // (client-side) keeps this in sync with the user's actual
