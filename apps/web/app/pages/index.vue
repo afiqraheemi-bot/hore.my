@@ -2,16 +2,24 @@
 /**
  * Home — the action-first workspace (HORE_MY_MASTER_CONTEXT.md §5) and
  * the authenticated default landing experience (ADR-0009, WTS-001).
- * Also reachable at `/tasks` via `alias` below — the same route, with
- * no client-side redirect or loading flash. Manual Entry remains the
- * controlled, deterministic direct-posting fallback.
+ * Also reachable at `/tasks` (no client-side redirect or loading
+ * flash) and at `/manual-entry` — the same page, opened with the
+ * composer's "Post directly" posture preselected instead of "Wait for
+ * my review" — via `alias` below.
  *
- * This structured composer submits a Task to `NeedsReview`; it never
- * posts directly. An authenticated human must inspect and confirm the
- * Proposal before Accounting Core receives a posting command.
+ * **One page, not two (UX-01 follow-up, 2026-09-21).** This used to be
+ * two separate pages/nav entries with near-identical composers; once
+ * AppComposer.vue grew an in-place mode toggle, keeping a second page
+ * around was itself the redundancy the original audit finding named —
+ * a returning owner reasonably asked "if it's merged, why are there
+ * still two things in the sidebar?". `initialMode` below only picks
+ * which posture the composer *opens* in; the toggle inside it still
+ * switches freely either way without navigating.
  */
-definePageMeta({ middleware: 'auth', alias: '/tasks' })
+definePageMeta({ middleware: 'auth', alias: ['/tasks', '/manual-entry'] })
 useHead({ title: 'Work Queue' })
+
+const initialMode = useRoute().path === '/manual-entry' ? 'direct' : 'review'
 
 interface TaskSummary {
   command_type: string
@@ -31,6 +39,37 @@ interface Task {
 
 type QueueFilter = 'attention' | 'progress' | 'completed' | 'all'
 
+interface EvidenceEntry {
+  journal_id: string
+  financial_date: string
+  source: string
+  amount: string
+  has_evidence: boolean
+  evidence_references: string[]
+  description: string | null
+}
+
+const SOURCE_LABELS: Record<
+  string,
+  { label: string; icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart' }
+> = {
+  expense: { label: 'Expense', icon: 'receipt' },
+  income: { label: 'Income', icon: 'wallet' },
+  transfer: { label: 'Transfer', icon: 'bank' },
+  invoice: { label: 'Invoice issued', icon: 'receipt' },
+  payment: { label: 'Payment received', icon: 'wallet' },
+  'owner-equity': { label: 'Owner equity', icon: 'building' },
+  'period-closing': { label: 'Books closed', icon: 'chart' },
+}
+
+function describeSource(source: string): {
+  label: string
+  icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart'
+} {
+  const prefix = source.split(':')[0] ?? ''
+  return SOURCE_LABELS[prefix] ?? { label: prefix || 'Record', icon: 'chart' }
+}
+
 const stateTone: Record<string, 'neutral' | 'success' | 'danger' | 'warning' | 'accent'> = {
   Received: 'neutral',
   Processing: 'neutral',
@@ -48,10 +87,48 @@ const stateTone: Record<string, 'neutral' | 'success' | 'danger' | 'warning' | '
 const { request } = useApi()
 const { user } = useAuth()
 
+/** Mirrors `invoices/index.vue`'s own `pdfUrl()` — a same-site GET
+ * carries the Sanctum SPA session cookie, so no blob/fetch plumbing
+ * is needed to open the originally-uploaded receipt/document. */
+function evidenceUrl(evidenceId: string): string {
+  const config = useRuntimeConfig()
+  const port = config.public.apiPort as string
+  return `${window.location.protocol}//${window.location.hostname}:${port}/api/v1/evidence/${evidenceId}`
+}
+
 const tasks = ref<Task[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const queueFilter = ref<QueueFilter>('attention')
+
+const activityEntries = ref<EvidenceEntry[]>([])
+const activityLoading = ref(true)
+
+// Caps the calm, at-a-glance list at a fixed height regardless of how
+// much a tenant has recorded — "Show more" reveals the rest a page at
+// a time rather than dumping every entry from the last 60 days at once.
+const ACTIVITY_STEP = 8
+const visibleActivityCount = ref(ACTIVITY_STEP)
+const visibleActivityEntries = computed(() =>
+  activityEntries.value.slice(0, visibleActivityCount.value),
+)
+
+async function loadActivity() {
+  activityLoading.value = true
+  visibleActivityCount.value = ACTIVITY_STEP
+  try {
+    const periodEnd = new Date().toISOString().slice(0, 10)
+    const periodStart = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10)
+    const data = await request<{ entries: EvidenceEntry[] }>('/api/v1/reports/evidence-index', {
+      query: { period_start: periodStart, period_end: periodEnd },
+    })
+    activityEntries.value = [...data.entries].sort((a, b) =>
+      b.financial_date.localeCompare(a.financial_date),
+    )
+  } finally {
+    activityLoading.value = false
+  }
+}
 
 const {
   scrollRef: queueFilterScrollRef,
@@ -219,7 +296,14 @@ const quickActions: QuickAction[] = [
   { key: 'reports', label: 'View reports', icon: 'chart', to: '/reports' },
 ]
 
-onMounted(loadTasks)
+async function onComposerCreated() {
+  await Promise.all([loadTasks(), loadActivity()])
+}
+
+onMounted(() => {
+  loadTasks()
+  loadActivity()
+})
 </script>
 
 <template>
@@ -254,7 +338,7 @@ onMounted(loadTasks)
     </nav>
 
     <div ref="composerAnchorRef">
-      <AppComposer ref="composerRef" mode="review" @created="loadTasks" />
+      <AppComposer ref="composerRef" :mode="initialMode" @created="onComposerCreated" />
     </div>
 
     <section aria-labelledby="your-work-heading">
@@ -371,6 +455,62 @@ onMounted(loadTasks)
           </li>
         </ul>
       </div>
+    </section>
+
+    <section aria-labelledby="recent-activity-heading">
+      <h2 id="recent-activity-heading" class="mb-4 text-xl font-semibold tracking-tight text-ink">
+        Recent activity
+      </h2>
+
+      <p v-if="activityLoading" class="text-sm text-ink-tertiary">Loading…</p>
+      <EmptyState
+        v-else-if="activityEntries.length === 0"
+        title="Nothing recorded in the last 60 days"
+        description="Postings from either mode above — reviewed or direct — show up here once they've landed in your books."
+      />
+      <ul v-else class="space-y-1.5">
+        <li v-for="entry in visibleActivityEntries" :key="entry.journal_id">
+          <AppCard :padded="false" hoverable>
+            <div class="flex items-center gap-3 px-4 py-3">
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
+              >
+                <AppIcon :name="describeSource(entry.source).icon" :size="16" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium text-ink">
+                  {{ entry.description || describeSource(entry.source).label }}
+                </p>
+                <p class="truncate text-xs text-ink-tertiary">
+                  <template v-if="entry.description"
+                    >{{ describeSource(entry.source).label }} · </template
+                  >{{ formatRelativeDate(entry.financial_date) }}
+                </p>
+              </div>
+              <p class="shrink-0 text-sm font-medium text-ink">RM{{ entry.amount }}</p>
+              <a
+                v-if="entry.evidence_references.length > 0"
+                :href="evidenceUrl(entry.evidence_references[0]!)"
+                target="_blank"
+                rel="noopener"
+              >
+                <AppBadge tone="success">
+                  <AppIcon name="paperclip" :size="11" /> Evidence
+                </AppBadge>
+              </a>
+            </div>
+          </AppCard>
+        </li>
+      </ul>
+
+      <button
+        v-if="visibleActivityCount < activityEntries.length"
+        type="button"
+        class="mt-3 w-full text-center text-sm font-medium text-ink-tertiary hover:text-ink"
+        @click="visibleActivityCount += ACTIVITY_STEP"
+      >
+        Show {{ Math.min(ACTIVITY_STEP, activityEntries.length - visibleActivityCount) }} more
+      </button>
     </section>
   </div>
 </template>

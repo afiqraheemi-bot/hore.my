@@ -9,16 +9,28 @@ import { createAccount, registerNewUser } from './support/fixtures'
  * previously-flagged gap: see `tests/e2e/README.md`).
  */
 test.describe('Work Queue and Human Confirmation', () => {
-  test('the authenticated landing route opens Work Queue while Manual Entry remains available', async ({
+  test('the authenticated landing route opens Work Queue, and /manual-entry opens the same page in direct-post mode', async ({
     page,
   }) => {
     await page.goto('/')
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByRole('heading', { name: 'Your work' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Recent activity' })).toBeVisible()
+    await expect(page.getByRole('radio', { name: 'Wait for my review' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
 
-    await page.getByRole('link', { name: 'Manual Entry' }).click()
+    // Manual Entry no longer has its own sidebar entry — the composer's
+    // mode toggle replaced it (UX-01 follow-up) — but /manual-entry
+    // still deep-links to this same page with "Post directly" preset.
+    await page.goto('/manual-entry')
     await expect(page).toHaveURL(/\/manual-entry$/)
-    await expect(page.getByText('Recent activity')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your work' })).toBeVisible()
+    await expect(page.getByRole('radio', { name: 'Post directly' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
   })
 
   async function submitExpenseTask(page: import('@playwright/test').Page, description: string) {
