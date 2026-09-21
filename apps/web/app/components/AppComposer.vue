@@ -451,11 +451,11 @@ defineExpose({
       </div>
       <div
         v-show="showTypeTabsLeftFade"
-        class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-surface-secondary to-transparent"
+        class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[rgb(var(--shadow-color)/0.14)] to-transparent"
       />
       <div
         v-show="showTypeTabsRightFade"
-        class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-secondary to-transparent"
+        class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[rgb(var(--shadow-color)/0.14)] to-transparent"
       />
     </div>
 
