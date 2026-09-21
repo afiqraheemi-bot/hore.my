@@ -1,11 +1,19 @@
-# Development-only image. Not built, tagged, or scanned for production use.
+# Multi-stage: a shared `base` stage (system packages, PHP extensions,
+# Composer binary — everything both environments need identically),
+# then `development` (used by docker-compose.yml, bind-mounts the repo
+# over what COPY places here) and `production` (used by
+# docker-compose.staging.yml, no bind-mount — the image itself is the
+# deployable artifact, per ADR-0002's "Production artifacts must be
+# immutable"). Neither existing `docker-compose.yml` behavior nor its
+# own dev workflow changes — it now builds with `target: development`
+# explicitly rather than relying on "last stage wins".
 #
 # Pinned to 8.5 (not 8.3, despite composer.json's ">=8.3 <8.6" floor):
 # the committed composer.lock resolved symfony/* packages that require
 # PHP >=8.4.1, so php:8.3.33-cli fails `composer install` in a clean
 # container even though the host workstation (PHP 8.5.6) never surfaced
 # this. 8.5.10 satisfies both the lock file and composer.json's range.
-FROM php:8.5.10-cli
+FROM php:8.5.10-cli AS base
 
 # ADR-0008: SESSION_DRIVER=redis requires the `redis` PECL extension —
 # PhpRedisConnector (Laravel's default REDIS_CLIENT) needs the native
@@ -57,10 +65,6 @@ COPY --from=composer:2.10.3 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-COPY . .
-
-RUN composer install --no-interaction --no-progress --prefer-dist
-
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
@@ -80,3 +84,27 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 # through unchanged; the traded-off `.env`-change auto-restart is not
 # needed in a container that gets restarted directly for such changes.
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload"]
+
+# Development-only stage. Not built, tagged, or scanned for production
+# use — docker-compose.yml bind-mounts the real repo over this COPY,
+# so what actually runs is the host's own working tree, not this
+# layer's snapshot; `composer install` here (dev deps included) only
+# primes the `api_vendor` named volume for the first boot.
+FROM base AS development
+
+COPY . .
+
+RUN composer install --no-interaction --no-progress --prefer-dist
+
+# Production stage — used by docker-compose.staging.yml only. No
+# bind-mount: this image *is* the deployable artifact (ADR-0002,
+# "Production artifacts must be immutable and promoted unchanged
+# across environments"). `--no-dev --optimize-autoloader`: no test/
+# lint tooling shipped, class map generated once at build time rather
+# than resolved via composer's dev autoloader on every request.
+FROM base AS production
+
+COPY . .
+
+RUN composer install --no-interaction --no-progress --prefer-dist \
+        --no-dev --optimize-autoloader

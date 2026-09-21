@@ -31,6 +31,7 @@ Decisions are interpreted using the precedence documented in [`docs/product/refe
 | [ADR-0007](0007-money-representation-strategy.md) | Accepted | Use PostgreSQL BIGINT storing integer minor units as canonical Money persistence; prohibit binary floating point everywhere. |
 | [ADR-0008](0008-identity-authentication-tenancy-strategy.md) | Accepted | Use Laravel Sanctum SPA cookie authentication, a REST/JSON `/api/v1` API, and a Tenant-owns-its-owner-User tenancy shape. |
 | [ADR-0009](0009-workspace-task-module-boundary.md) | Accepted | Introduce a Workspace and Task module that depends only on Accounting Core's existing Command contracts (never the reverse), governed by a new sibling specification series (WTS) outside AETS. |
+| [ADR-0010](0010-staging-deployment-architecture.md) | Accepted | Run staging on a single VPS via Docker Compose + Caddy, same registrable domain split only by port (no app code changes), resolving the deployment-topology question ADR-0002/ADR-0008 had deferred. |
 
 ## Creating an ADR
 

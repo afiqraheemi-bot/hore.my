@@ -1,0 +1,115 @@
+# Staging environment. Built for a single VPS running Docker + the
+# Compose plugin — see docs/operations/staging-deployment.md for the
+# full one-time setup and the ongoing deploy flow.
+#
+# Unlike docker-compose.yml (local dev): no bind mounts — each image
+# *is* the deployable artifact (ADR-0002, "Production artifacts must
+# be immutable and promoted unchanged across environments"), built
+# from each Dockerfile's `production` target. Real secrets come from
+# `.env.staging` (gitignored, created once on the VPS from
+# `apps/api/.env.staging.example` — never committed).
+
+services:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: production
+    env_file:
+      - apps/api/.env.staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/up"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      # Matches the port Caddy TLS-terminates the api service on
+      # below — see infrastructure/caddy/Caddyfile's own comment for
+      # why this is a port, not a subdomain, split.
+      NUXT_PUBLIC_API_PORT: "8443"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"
+    environment:
+      # The domain staging is reachable at (e.g. staging.hore.my) —
+      # set on the VPS's own shell environment or an `.env` file
+      # docker compose reads automatically; never hardcoded in the
+      # Caddyfile itself. See docs/operations/staging-deployment.md.
+      STAGING_DOMAIN: "${STAGING_DOMAIN:?Set STAGING_DOMAIN, e.g. staging.hore.my}"
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: hore_my
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hore_my"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.11-alpine
+    volumes:
+      - redis_staging_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Staging mail catcher (no real transactional email is sent by this
+  # codebase yet) — deliberately not port-published to the host; the
+  # runbook covers reaching its web UI via an SSH tunnel on the rare
+  # occasion it's needed, rather than exposing it publicly by default.
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_staging_data:
+  redis_staging_data:
+  caddy_data:
+  caddy_config:

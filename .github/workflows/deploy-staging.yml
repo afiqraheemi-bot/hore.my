@@ -1,0 +1,39 @@
+name: Deploy Staging
+
+# Deliberately separate from backend-ci.yml/frontend-ci.yml/e2e-ci.yml
+# (untouched by this workflow) — those gate every PR; this one only
+# ever runs against the `staging` branch, after those have already
+# passed on it. See docs/operations/staging-deployment.md for the
+# one-time VPS setup this workflow assumes already exists (the repo
+# cloned, .env.staging populated, DNS pointed) — this workflow only
+# pulls and rebuilds, it never provisions anything.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.STAGING_DEPLOY_PATH }}
+            git fetch origin staging
+            git reset --hard origin/staging
+            docker compose -f docker-compose.staging.yml up -d --build
+            docker compose -f docker-compose.staging.yml exec -T api php artisan migrate --force

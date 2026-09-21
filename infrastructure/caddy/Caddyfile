@@ -1,0 +1,26 @@
+# Staging reverse proxy — two site blocks on the SAME registrable
+# domain, distinguished by port, never by subdomain.
+#
+# Why same domain, different port (not api.{domain}): Sanctum's SPA
+# cookie authentication (ADR-0008) is SameSite=Lax, which only checks
+# the *registrable domain* (the public-suffix "site"), ignoring both
+# port and subdomain — so a subdomain split would work too. But
+# apps/web/app/composables/useApi.ts deliberately derives the API
+# origin from the page's own `window.location.hostname` and varies
+# only the port (`NUXT_PUBLIC_API_PORT`) — the exact scheme local dev
+# already proves end-to-end via `localhost:3000` (web) /
+# `localhost:8000` (api). Matching that scheme here means zero
+# frontend code changes for staging; a subdomain split would require
+# a new full-origin override this app does not have yet.
+#
+# {$STAGING_DOMAIN} is read from the environment (see
+# docker-compose.staging.yml) — never hardcoded here, so this file is
+# identical across any staging (or later, production) domain.
+
+{$STAGING_DOMAIN} {
+	reverse_proxy web:3000
+}
+
+{$STAGING_DOMAIN}:8443 {
+	reverse_proxy api:8000
+}
