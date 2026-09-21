@@ -22,14 +22,13 @@ test.describe('Work Queue and Human Confirmation', () => {
   }) => {
     await page.goto('/')
     await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByRole('heading', { name: 'Your work' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Recent activity' })).toBeVisible()
 
     // Manual Entry no longer has its own sidebar entry or distinct
     // posture — it's a historical alias so old links still resolve.
     await page.goto('/manual-entry')
     await expect(page).toHaveURL(/\/manual-entry$/)
-    await expect(page.getByRole('heading', { name: 'Your work' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Recent activity' })).toBeVisible()
   })
 
   test.beforeEach(async ({ page }) => {
@@ -48,11 +47,11 @@ test.describe('Work Queue and Human Confirmation', () => {
     await expect(page.getByText('E2E: office supplies')).toBeVisible()
     await expect(page.getByRole('button', { name: /confirm and post/i })).toBeVisible()
 
+    // The pending Task pins to the top of the one unified Recent
+    // activity feed (Founder-directed simplification, 2026-09-21) —
+    // no separate tab to switch to.
     await page.goto('/tasks')
-    await expect(page.getByText('NeedsReview')).toBeVisible()
-    await page.getByRole('tab', { name: /in progress/i }).click()
-    await expect(page.getByText('Nothing in progress')).toBeVisible()
-    await page.getByRole('tab', { name: /all tasks/i }).click()
+    await expect(page.getByText('E2E: office supplies')).toBeVisible()
     await expect(page.getByText('NeedsReview')).toBeVisible()
   })
 
@@ -125,7 +124,9 @@ test.describe('Work Queue and Human Confirmation', () => {
     await expect(page.getByText('Executing → Completed')).toBeVisible()
   })
 
-  test('rejecting a Task requires a reason and moves it to Rejected', async ({ page }) => {
+  test('rejecting a Task requires a reason and moves it to Rejected, and it stays visible (muted) in Recent activity', async ({
+    page,
+  }) => {
     await createTaskInNeedsReview(page, '88.50', 'Office Supplies', 'Cash', 'E2E: reject flow')
 
     await page.getByRole('button', { name: /^reject$/i }).click()
@@ -137,6 +138,13 @@ test.describe('Work Queue and Human Confirmation', () => {
     ])
 
     await expect(page.getByText('Rejected', { exact: true })).toBeVisible()
+
+    // A rejected Task is a resolved dead end, not a pending one — it
+    // never re-pins to the top, but it never silently disappears
+    // either (CTO call, 2026-09-21).
+    await page.goto('/tasks')
+    await expect(page.getByText('E2E: reject flow')).toBeVisible()
+    await expect(page.getByText('Rejected')).toBeVisible()
   })
 
   test("a Task submitted under one tenant never appears in another tenant's Work Queue", async ({
@@ -150,7 +158,7 @@ test.describe('Work Queue and Human Confirmation', () => {
     await registerNewUser(page)
 
     await page.goto('/tasks')
-    await expect(page.getByText('Nothing waiting on you')).toBeVisible()
+    await expect(page.getByText('Nothing recorded yet')).toBeVisible()
     await expect(page.getByText('E2E: tenant A only')).not.toBeVisible()
   })
 

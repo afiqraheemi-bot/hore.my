@@ -35,8 +35,6 @@ interface Task {
   summary: TaskSummary | null
 }
 
-type QueueFilter = 'attention' | 'progress' | 'completed' | 'all'
-
 interface EvidenceEntry {
   journal_id: string
   financial_date: string
@@ -97,7 +95,6 @@ function evidenceUrl(evidenceId: string): string {
 const tasks = ref<Task[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
-const queueFilter = ref<QueueFilter>('attention')
 
 const activityEntries = ref<EvidenceEntry[]>([])
 const activityLoading = ref(true)
@@ -107,9 +104,6 @@ const activityLoading = ref(true)
 // a time rather than dumping every entry from the last 60 days at once.
 const ACTIVITY_STEP = 8
 const visibleActivityCount = ref(ACTIVITY_STEP)
-const visibleActivityEntries = computed(() =>
-  activityEntries.value.slice(0, visibleActivityCount.value),
-)
 
 async function loadActivity() {
   activityLoading.value = true
@@ -127,13 +121,6 @@ async function loadActivity() {
     activityLoading.value = false
   }
 }
-
-const {
-  scrollRef: queueFilterScrollRef,
-  showLeftFade: showQueueFilterLeftFade,
-  showRightFade: showQueueFilterRightFade,
-  updateScrollFade: updateQueueFilterFade,
-} = useHorizontalScrollFade()
 
 const composerAnchorRef = ref<HTMLElement | null>(null)
 const composerRef = ref<{
@@ -166,32 +153,6 @@ const greeting = computed(() => {
   return 'Good evening'
 })
 
-const attentionStates = new Set(['NeedsInformation', 'NeedsReview', 'Failed'])
-const progressStates = new Set(['Received', 'Processing', 'Approved', 'Executing'])
-const completedStates = new Set(['Completed'])
-
-const queueFilters: { key: QueueFilter; label: string }[] = [
-  { key: 'attention', label: 'Needs attention' },
-  { key: 'progress', label: 'In progress' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'all', label: 'All tasks' },
-]
-
-function tasksForFilter(filter: QueueFilter): Task[] {
-  if (filter === 'attention') return tasks.value.filter((task) => attentionStates.has(task.state))
-  if (filter === 'progress') return tasks.value.filter((task) => progressStates.has(task.state))
-  if (filter === 'completed') return tasks.value.filter((task) => completedStates.has(task.state))
-  return tasks.value
-}
-
-const filteredTasks = computed(() => tasksForFilter(queueFilter.value))
-const emptyFilterTitle = computed(() => {
-  if (queueFilter.value === 'attention') return 'Nothing needs attention'
-  if (queueFilter.value === 'progress') return 'Nothing in progress'
-  if (queueFilter.value === 'completed') return 'Nothing completed yet'
-  return 'No Tasks yet'
-})
-
 async function loadTasks() {
   loading.value = true
   error.value = null
@@ -199,7 +160,7 @@ async function loadTasks() {
     const data = await request<{ data: Task[] }>('/api/v1/tasks')
     tasks.value = data.data
   } catch {
-    error.value = 'Could not load your Work Queue.'
+    error.value = 'Could not load your recent activity.'
   } finally {
     loading.value = false
   }
@@ -258,6 +219,101 @@ function iconForTask(task: Task): TaskIconName {
 }
 
 /**
+ * One unified, calm feed (Founder-directed simplification, 2026-09-21)
+ * — replaces the previous two-section, five-tab "Your work" +
+ * "Recent activity" layout. Recent activity (real postings) is the
+ * primary content; anything still needing you pins to the top with a
+ * status badge instead of living in a separate tab system.
+ *
+ * A `Completed` Task is the one state deliberately excluded — its own
+ * Journal already appears via `activityEntries` (the Evidence Index),
+ * so including both would show the same event twice. Every other dead
+ * -end state (`Rejected` / `Failed` / `Cancelled` / `Superseded`)
+ * still appears, muted into the same chronological list as real
+ * postings rather than pinned at the top — resolved, so it doesn't
+ * need your attention, but never silently gone (CTO call, 2026-09-21:
+ * "nothing hidden" matters at least as much as "calm" for a financial
+ * app someone might later ask "wait, what happened to that one?"
+ * about).
+ */
+interface TaskFeedItem {
+  kind: 'task'
+  id: string
+  state: string
+  date: string
+  description: string
+  amount: string | null
+  icon: TaskIconName
+}
+
+interface ActivityFeedItem {
+  kind: 'activity'
+  journalId: string
+  date: string
+  description: string
+  amount: string
+  icon: TaskIconName
+  evidenceId: string | null
+}
+
+type FeedItem = TaskFeedItem | ActivityFeedItem
+
+const pendingStates = new Set([
+  'NeedsInformation',
+  'NeedsReview',
+  'Received',
+  'Processing',
+  'Approved',
+  'Executing',
+])
+const resolvedTaskStates = new Set(['Rejected', 'Failed', 'Cancelled', 'Superseded'])
+
+function toTaskFeedItem(task: Task): TaskFeedItem {
+  return {
+    kind: 'task',
+    id: task.id,
+    state: task.state,
+    date: task.created_at.slice(0, 10),
+    description: task.summary?.description || 'Task',
+    amount: task.summary?.amount ?? null,
+    icon: iconForTask(task),
+  }
+}
+
+const pendingItems = computed<TaskFeedItem[]>(() =>
+  tasks.value
+    .filter((task) => pendingStates.has(task.state))
+    .map(toTaskFeedItem)
+    .sort((a, b) => b.date.localeCompare(a.date)),
+)
+
+// activityEntries is already sorted newest-first by loadActivity();
+// resolved (dead-end) Tasks are merged in and the combined list
+// re-sorted so both interleave by date rather than one block per kind.
+const settledItems = computed<FeedItem[]>(() => {
+  const resolvedTasks: FeedItem[] = tasks.value
+    .filter((task) => resolvedTaskStates.has(task.state))
+    .map(toTaskFeedItem)
+  const activity: FeedItem[] = activityEntries.value.map((entry) => ({
+    kind: 'activity',
+    journalId: entry.journal_id,
+    date: entry.financial_date,
+    description: entry.description || describeSource(entry.source).label,
+    amount: entry.amount,
+    icon: describeSource(entry.source).icon,
+    evidenceId: entry.evidence_references[0] ?? null,
+  }))
+
+  return [...resolvedTasks, ...activity].sort((a, b) => b.date.localeCompare(a.date))
+})
+
+const visibleSettledItems = computed(() => settledItems.value.slice(0, visibleActivityCount.value))
+
+async function refreshFeed() {
+  await Promise.all([loadTasks(), loadActivity()])
+}
+
+/**
  * One-click shortcuts into the composer/nav below, named after
  * HORE_MY_MASTER_CONTEXT.md §5's own quick-action list. "Record
  * income/expense" and "Review transactions" both land on content
@@ -292,10 +348,9 @@ function quickUploadReceipt() {
 
 function quickReviewTransactions() {
   closeQuickActions()
-  queueFilter.value = 'attention'
   nextTick(() => {
     document
-      .getElementById('your-work-heading')
+      .getElementById('activity-heading')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 }
@@ -313,10 +368,6 @@ const quickActions: QuickAction[] = [
   { key: 'review', label: 'Review transactions', icon: 'tasks', run: quickReviewTransactions },
   { key: 'reports', label: 'View reports', icon: 'chart', to: '/reports' },
 ]
-
-async function onComposerCreated() {
-  await Promise.all([loadTasks(), loadActivity()])
-}
 
 onMounted(() => {
   loadTasks()
@@ -338,34 +389,26 @@ onUnmounted(() => {
       <p class="mt-1 text-sm text-ink-tertiary">What would you like to get done today?</p>
     </div>
 
-    <div class="relative flex justify-center">
-      <button
-        type="button"
-        aria-label="Quick actions"
-        :aria-expanded="quickActionsOpen"
-        class="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-contrast shadow-lg shadow-black/10 transition-transform hover:scale-105 active:scale-95"
-        @click="quickActionsOpen = !quickActionsOpen"
-      >
-        <AppIcon
-          name="plus"
-          :size="20"
-          class="transition-transform duration-300"
-          :class="quickActionsOpen && 'rotate-45'"
-        />
-      </button>
+    <!-- A true floating action button (Founder feedback, 2026-09-21:
+         sitting inline between the greeting and the composer made it
+         "static" — anchored to one fixed spot in the document instead
+         of actually floating). Fixed to the viewport corner, so it
+         stays put and reachable regardless of scroll position, and no
+         longer eats a row of vertical space on a page that's supposed
+         to feel calm. -->
+    <button
+      v-if="quickActionsOpen"
+      type="button"
+      aria-hidden="true"
+      tabindex="-1"
+      class="fixed inset-0 z-40 cursor-default"
+      @click="closeQuickActions"
+    />
 
-      <button
-        v-if="quickActionsOpen"
-        type="button"
-        aria-hidden="true"
-        tabindex="-1"
-        class="fixed inset-0 z-40 cursor-default"
-        @click="closeQuickActions"
-      />
-
+    <div class="fixed bottom-6 right-6 z-50 sm:bottom-8 sm:right-8">
       <Transition
         enter-active-class="transition duration-200 ease-[cubic-bezier(.34,1.56,.64,1)]"
-        enter-from-class="opacity-0 scale-90 -translate-y-1"
+        enter-from-class="opacity-0 scale-90 translate-y-2"
         enter-to-class="opacity-100 scale-100 translate-y-0"
         leave-active-class="transition duration-150 ease-in"
         leave-from-class="opacity-100 scale-100"
@@ -375,7 +418,7 @@ onUnmounted(() => {
           v-if="quickActionsOpen"
           role="menu"
           aria-label="Quick actions"
-          class="absolute top-full z-50 mt-3 grid w-72 grid-cols-3 gap-1 rounded-2xl border border-border bg-surface p-2 shadow-xl shadow-black/10"
+          class="absolute bottom-full right-0 mb-3 grid w-72 grid-cols-3 gap-1 rounded-2xl border border-border bg-surface p-2 shadow-xl shadow-black/10"
         >
           <template v-for="action in quickActions" :key="action.key">
             <NuxtLink
@@ -409,16 +452,31 @@ onUnmounted(() => {
           </template>
         </div>
       </Transition>
+
+      <button
+        type="button"
+        aria-label="Quick actions"
+        :aria-expanded="quickActionsOpen"
+        class="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-contrast shadow-lg shadow-black/20 transition-transform hover:scale-105 active:scale-95"
+        @click="quickActionsOpen = !quickActionsOpen"
+      >
+        <AppIcon
+          name="plus"
+          :size="22"
+          class="transition-transform duration-300"
+          :class="quickActionsOpen && 'rotate-45'"
+        />
+      </button>
     </div>
 
     <div ref="composerAnchorRef">
-      <AppComposer ref="composerRef" @created="onComposerCreated" />
+      <AppComposer ref="composerRef" @created="refreshFeed" />
     </div>
 
-    <section aria-labelledby="your-work-heading">
+    <section aria-labelledby="activity-heading">
       <div class="mb-4 flex items-center justify-between gap-3">
-        <h2 id="your-work-heading" class="text-xl font-semibold tracking-tight text-ink">
-          Your work
+        <h2 id="activity-heading" class="text-xl font-semibold tracking-tight text-ink">
+          Recent activity
         </h2>
         <div class="flex items-center gap-2">
           <span
@@ -433,138 +491,99 @@ onUnmounted(() => {
             <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
           </span>
           <button
-            v-if="!loading"
+            v-if="!loading && !activityLoading"
             type="button"
             aria-label="Refresh"
             class="flex h-7 w-7 items-center justify-center rounded-full text-ink-tertiary transition-colors hover:bg-surface-hover hover:text-ink"
-            @click="loadTasks"
+            @click="refreshFeed"
           >
             <AppIcon name="refresh" :size="14" />
           </button>
         </div>
       </div>
 
-      <div class="relative mb-4">
-        <div
-          ref="queueFilterScrollRef"
-          class="flex gap-1 overflow-x-auto rounded-2xl bg-surface-secondary p-1"
-          role="tablist"
-          aria-label="Filter work queue"
-          @scroll="updateQueueFilterFade"
-        >
-          <button
-            v-for="filter in queueFilters"
-            :key="filter.key"
-            type="button"
-            role="tab"
-            :aria-selected="queueFilter === filter.key"
-            class="flex min-h-11 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-colors sm:min-w-0"
-            :class="
-              queueFilter === filter.key
-                ? 'bg-surface text-ink shadow-sm'
-                : 'text-ink-secondary hover:bg-surface-hover hover:text-ink'
-            "
-            @click="queueFilter = filter.key"
-          >
-            <span>{{ filter.label }}</span>
-            <span
-              class="inline-flex min-w-6 items-center justify-center rounded-full bg-surface-tertiary px-1.5 py-0.5 text-xs tabular-nums text-ink-secondary"
-            >
-              {{ tasksForFilter(filter.key).length }}
-            </span>
-          </button>
-        </div>
-        <div
-          v-show="showQueueFilterLeftFade"
-          class="pointer-events-none absolute inset-y-1 left-1 w-11 rounded-l-xl bg-gradient-to-r from-surface-secondary from-30% via-[rgb(var(--shadow-color)/0.16)] via-60% to-transparent"
-        />
-        <div
-          v-show="showQueueFilterRightFade"
-          class="pointer-events-none absolute inset-y-1 right-1 w-11 rounded-r-xl bg-gradient-to-l from-surface-secondary from-30% via-[rgb(var(--shadow-color)/0.16)] via-60% to-transparent"
-        />
-      </div>
-
       <div class="overflow-hidden rounded-[1.5rem] border border-border bg-surface">
-        <div v-if="loading" class="px-5 py-12 text-center text-sm text-ink-tertiary">Loading…</div>
+        <div
+          v-if="loading || activityLoading"
+          class="px-5 py-12 text-center text-sm text-ink-tertiary"
+        >
+          Loading…
+        </div>
         <div v-else-if="error" class="px-5 py-12 text-center text-sm text-danger">
           {{ error }}
         </div>
         <EmptyState
-          v-else-if="tasks.length === 0"
+          v-else-if="pendingItems.length === 0 && settledItems.length === 0"
           :bordered="false"
-          title="Nothing waiting on you"
-          description="Entries you save without picking accounts yet land here to finish."
-          class="min-h-48"
-        />
-        <EmptyState
-          v-else-if="filteredTasks.length === 0"
-          :bordered="false"
-          :title="emptyFilterTitle"
-          description="Choose another filter to see the rest of your tasks."
+          title="Nothing recorded yet"
+          description="Use the composer above to record your first expense, income, or transfer."
           class="min-h-48"
         />
         <ul v-else class="divide-y divide-border">
-          <li v-for="task in filteredTasks" :key="task.id">
+          <li v-for="item in pendingItems" :key="`pending-${item.id}`">
             <NuxtLink
-              :to="`/tasks/${task.id}`"
+              :to="`/tasks/${item.id}`"
               class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
             >
               <span
                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
               >
-                <AppIcon :name="iconForTask(task)" :size="16" />
+                <AppIcon :name="item.icon" :size="16" />
               </span>
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-ink">
-                  {{ task.summary?.description || 'Task' }}
-                </p>
+                <p class="truncate text-sm font-medium text-ink">{{ item.description }}</p>
                 <p class="truncate text-xs text-ink-tertiary">
-                  <template v-if="task.summary">RM{{ task.summary.amount }} · </template
-                  >{{ formatRelativeDate(task.created_at.slice(0, 10)) }}
+                  <template v-if="item.amount">RM{{ item.amount }} · </template
+                  >{{ formatRelativeDate(item.date) }}
                 </p>
               </div>
-              <AppBadge :tone="stateTone[task.state] ?? 'neutral'">{{ task.state }}</AppBadge>
+              <AppBadge :tone="stateTone[item.state] ?? 'neutral'">{{ item.state }}</AppBadge>
               <AppIcon name="chevron-left" :size="15" class="rotate-180 text-ink-tertiary" />
             </NuxtLink>
           </li>
-        </ul>
-      </div>
-    </section>
-
-    <section aria-labelledby="recent-activity-heading">
-      <h2 id="recent-activity-heading" class="mb-4 text-xl font-semibold tracking-tight text-ink">
-        Recent activity
-      </h2>
-
-      <p v-if="activityLoading" class="text-sm text-ink-tertiary">Loading…</p>
-      <EmptyState
-        v-else-if="activityEntries.length === 0"
-        title="Nothing recorded in the last 60 days"
-        description="Postings from either mode above — reviewed or direct — show up here once they've landed in your books."
-      />
-      <ul v-else class="space-y-1.5">
-        <li v-for="entry in visibleActivityEntries" :key="entry.journal_id">
-          <AppCard :padded="false" hoverable>
-            <div class="flex items-center gap-3 px-4 py-3">
+          <li
+            v-for="item in visibleSettledItems"
+            :key="item.kind === 'task' ? `task-${item.id}` : `activity-${item.journalId}`"
+          >
+            <!-- A resolved dead end (Rejected/Failed/Cancelled/Superseded) —
+                 muted, never pinned like a pending Task, but still visible
+                 and still clickable through to why (CTO call, 2026-09-21). -->
+            <NuxtLink
+              v-if="item.kind === 'task'"
+              :to="`/tasks/${item.id}`"
+              class="flex items-center gap-3 px-4 py-3 opacity-60 transition-opacity hover:bg-surface-hover hover:opacity-100 sm:px-5"
+            >
               <span
                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
               >
-                <AppIcon :name="describeSource(entry.source).icon" :size="16" />
+                <AppIcon :name="item.icon" :size="16" />
               </span>
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-ink">
-                  {{ entry.description || describeSource(entry.source).label }}
-                </p>
+                <p class="truncate text-sm font-medium text-ink">{{ item.description }}</p>
                 <p class="truncate text-xs text-ink-tertiary">
-                  <template v-if="entry.description"
-                    >{{ describeSource(entry.source).label }} · </template
-                  >{{ formatRelativeDate(entry.financial_date) }}
+                  <template v-if="item.amount">RM{{ item.amount }} · </template
+                  >{{ formatRelativeDate(item.date) }}
                 </p>
               </div>
-              <p class="shrink-0 text-sm font-medium text-ink">RM{{ entry.amount }}</p>
+              <AppBadge :tone="stateTone[item.state] ?? 'neutral'">{{ item.state }}</AppBadge>
+              <AppIcon name="chevron-left" :size="15" class="rotate-180 text-ink-tertiary" />
+            </NuxtLink>
+            <div v-else class="flex items-center gap-3 px-4 py-3 sm:px-5">
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-ink-secondary"
+              >
+                <AppIcon :name="item.icon" :size="16" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium text-ink">{{ item.description }}</p>
+                <p class="truncate text-xs text-ink-tertiary">
+                  {{ formatRelativeDate(item.date) }}
+                </p>
+              </div>
+              <p class="shrink-0 text-sm font-medium text-ink">RM{{ item.amount }}</p>
               <a
-                v-if="entry.evidence_references.length > 0"
-                :href="evidenceUrl(entry.evidence_references[0]!)"
+                v-if="item.evidenceId"
+                :href="evidenceUrl(item.evidenceId)"
                 target="_blank"
                 rel="noopener"
               >
@@ -573,17 +592,17 @@ onUnmounted(() => {
                 </AppBadge>
               </a>
             </div>
-          </AppCard>
-        </li>
-      </ul>
+          </li>
+        </ul>
+      </div>
 
       <button
-        v-if="visibleActivityCount < activityEntries.length"
+        v-if="visibleActivityCount < settledItems.length"
         type="button"
         class="mt-3 w-full text-center text-sm font-medium text-ink-tertiary hover:text-ink"
         @click="visibleActivityCount += ACTIVITY_STEP"
       >
-        Show {{ Math.min(ACTIVITY_STEP, activityEntries.length - visibleActivityCount) }} more
+        Show {{ Math.min(ACTIVITY_STEP, settledItems.length - visibleActivityCount) }} more
       </button>
     </section>
   </div>
