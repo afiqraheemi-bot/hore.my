@@ -10,14 +10,15 @@
  * follow-up to UX-01).** This used to expose a "Wait for my
  * review"/"Post directly" toggle, as if which to use were a user
  * preference. It isn't: AppComposer.vue now posts directly whenever
- * you filled in the whole form yourself, and only lands in Work Queue
- * when you explicitly deferred choosing accounts — the queue is where
- * incomplete decisions wait, not a mode to opt into. See
+ * you filled in the whole form yourself, and only lands here, pinned
+ * to the top of Recent activity, when you explicitly deferred
+ * choosing accounts — that's where incomplete decisions wait, not a
+ * mode to opt into. See
  * AppComposer.vue's own docblock for the full reasoning, including how
  * this same door is what a future AI-produced Proposal will use too.
  */
 definePageMeta({ middleware: 'auth', alias: ['/tasks', '/manual-entry'] })
-useHead({ title: 'Work Queue' })
+useHead({ title: 'Home' })
 
 interface TaskSummary {
   command_type: string
@@ -117,6 +118,8 @@ async function loadActivity() {
     activityEntries.value = [...data.entries].sort((a, b) =>
       b.financial_date.localeCompare(a.financial_date),
     )
+  } catch {
+    error.value = 'Could not load your recent activity.'
   } finally {
     activityLoading.value = false
   }

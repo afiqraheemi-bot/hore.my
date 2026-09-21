@@ -372,7 +372,7 @@ onMounted(load)
       <template #actions>
         <NuxtLink to="/tasks">
           <AppButton variant="ghost">
-            <AppIcon name="chevron-left" :size="15" /> Back to Work Queue
+            <AppIcon name="chevron-left" :size="15" /> Back to Home
           </AppButton>
         </NuxtLink>
       </template>

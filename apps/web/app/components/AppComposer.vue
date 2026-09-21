@@ -208,7 +208,7 @@ const postureCopy = computed(() =>
         submitLabel: 'Save for later',
         submittingLabel: 'Saving…',
         confirmedLabel: 'Saved.',
-        footer: 'Saved without accounts — finish it anytime from Work Queue, then confirm to post.',
+        footer: 'Saved without accounts — finish it anytime from Home, then confirm to post.',
         errorFallback: 'Could not save this. Check the amount and optional attachment.',
       }
     : {
@@ -249,6 +249,7 @@ const evidenceFile = ref<File | null>(null)
 const submitting = ref(false)
 const error = ref<string | null>(null)
 const justCreated = ref(false)
+const justCreatedLabel = ref('')
 
 const primaryAccountOptions = computed(() =>
   accounts.value
@@ -339,6 +340,7 @@ async function onSubmit() {
       })
     }
 
+    justCreatedLabel.value = postureCopy.value.confirmedLabel
     resetForm()
     justCreated.value = true
     setTimeout(() => (justCreated.value = false), 2500)
@@ -480,7 +482,7 @@ defineExpose({
         </template>
         <div v-else class="sm:col-span-2">
           <p class="text-sm text-ink-secondary">
-            No accounts chosen yet — this will wait in Work Queue for you to decide.
+            No accounts chosen yet — this will wait on Home for you to decide.
           </p>
           <button
             type="button"
@@ -509,7 +511,7 @@ defineExpose({
 
       <p v-if="error" class="text-sm text-danger">{{ error }}</p>
       <p v-if="justCreated" class="flex items-center gap-1.5 text-sm text-success">
-        <AppIcon name="check" :size="14" /> {{ postureCopy.confirmedLabel }}
+        <AppIcon name="check" :size="14" /> {{ justCreatedLabel }}
       </p>
 
       <div
