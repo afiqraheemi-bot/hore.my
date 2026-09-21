@@ -292,7 +292,9 @@ async function loadAccounts() {
   accounts.value = data.data
 }
 
-const commandTypeIcon: Record<string, TaskType['icon']> = {
+type TaskIconName = TaskType['icon'] | 'tasks'
+
+const commandTypeIcon: Record<string, TaskIconName> = {
   Expense: 'receipt',
   Income: 'wallet',
   Transfer: 'bank',
@@ -300,7 +302,7 @@ const commandTypeIcon: Record<string, TaskType['icon']> = {
   OwnerDrawing: 'chart',
 }
 
-function iconForTask(task: Task): TaskType['icon'] {
+function iconForTask(task: Task): TaskIconName {
   return commandTypeIcon[task.summary?.command_type ?? ''] ?? 'tasks'
 }
 
@@ -459,151 +461,156 @@ onMounted(async () => {
     </nav>
 
     <div ref="composerAnchorRef">
-    <AppCard
-      :padded="false"
-      class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
-    >
-      <div class="relative border-b border-border">
-        <div
-          ref="typeTabsScrollRef"
-          class="flex items-center gap-2 overflow-x-auto bg-surface-secondary/40 px-3 py-2.5"
-          @scroll="updateTypeTabsFade"
-        >
-          <button
-            v-for="type in types"
-            :key="type.key"
-            type="button"
-            class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-            :class="
-              activeType.key === type.key
-                ? 'bg-accent text-accent-contrast'
-                : 'bg-surface text-ink-secondary hover:bg-surface-hover hover:text-ink'
-            "
-            @click="selectType(type)"
+      <AppCard
+        :padded="false"
+        class="overflow-hidden rounded-[1.5rem] border-border-strong shadow-[0_12px_35px_rgb(var(--shadow-color)/0.06)]"
+      >
+        <div class="relative border-b border-border">
+          <div
+            ref="typeTabsScrollRef"
+            class="flex items-center gap-2 overflow-x-auto bg-surface-secondary/40 px-3 py-2.5"
+            @scroll="updateTypeTabsFade"
           >
-            <AppIcon :name="type.icon" :size="14" />
-            {{ type.label }}
-          </button>
-        </div>
-        <div
-          v-show="showTypeTabsLeftFade"
-          class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-surface-secondary to-transparent"
-        />
-        <div
-          v-show="showTypeTabsRightFade"
-          class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-secondary to-transparent"
-        />
-      </div>
-
-      <form class="space-y-4 p-4 sm:p-5" @submit.prevent="onSubmit" @focusin="expanded = true">
-        <div class="flex items-center gap-3">
-          <div class="flex min-w-0 flex-1 items-center gap-3">
-            <span class="text-lg font-medium text-ink-tertiary">RM</span>
-            <input
-              ref="amountInputRef"
-              v-model="amount"
-              aria-label="Amount"
-              placeholder="0.00"
-              required
-              inputmode="decimal"
-              class="min-w-0 flex-1 border-0 bg-transparent p-0 text-2xl font-semibold text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-0"
-            />
-          </div>
-          <label
-            class="relative flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-sm font-medium text-ink-secondary focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 sm:px-3"
-          >
-            <span class="sm:hidden">{{ compactTransactionDate }}</span>
-            <span class="hidden sm:inline">{{ fullTransactionDate }}</span>
-            <AppIcon name="calendar" :size="16" />
-            <input
-              v-model="transactionDate"
-              aria-label="Transaction date"
-              type="date"
-              required
-              class="absolute inset-0 cursor-pointer opacity-0 focus:outline-none"
-            />
-          </label>
-        </div>
-
-        <div
-          v-if="expanded"
-          class="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2"
-        >
-          <template v-if="!deferAccounts">
-            <AppField :label="activeType.primaryAccountLabel">
-              <AppSelect
-                v-model="primaryAccountId"
-                :options="primaryAccountOptions"
-                :placeholder="
-                  activeType.primaryAccountLabel === 'Category'
-                    ? 'Select a category'
-                    : 'Select an account'
-                "
-                required
-              />
-            </AppField>
-            <AppField :label="activeType.secondaryAccountLabel">
-              <AppSelect
-                v-model="secondaryAccountId"
-                :options="secondaryAccountOptions"
-                placeholder="Select an account"
-                required
-              />
-            </AppField>
-            <div class="sm:col-span-2">
-              <button
-                type="button"
-                class="text-xs font-medium text-ink-tertiary underline hover:text-ink"
-                @click="deferAccounts = true"
-              >
-                Not sure which accounts yet? Decide later.
-              </button>
-            </div>
-          </template>
-          <div v-else class="sm:col-span-2">
-            <p class="text-sm text-ink-secondary">
-              No accounts chosen yet — this will wait for you to decide.
-            </p>
             <button
+              v-for="type in types"
+              :key="type.key"
               type="button"
-              class="mt-1 text-xs font-medium text-ink-tertiary underline hover:text-ink"
-              @click="deferAccounts = false"
+              class="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+              :class="
+                activeType.key === type.key
+                  ? 'bg-accent text-accent-contrast'
+                  : 'bg-surface text-ink-secondary hover:bg-surface-hover hover:text-ink'
+              "
+              @click="selectType(type)"
             >
-              Choose accounts now
+              <AppIcon :name="type.icon" :size="14" />
+              {{ type.label }}
             </button>
           </div>
-          <div class="sm:col-span-2">
-            <AppField label="Description">
-              <AppInput v-model="description" placeholder="What was this for?" required />
-            </AppField>
-          </div>
-          <div class="sm:col-span-2">
-            <AppField label="Receipt or invoice (optional)">
-              <AppDropzone
-                ref="dropzoneRef"
-                v-model="evidenceFile"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
-                hint="JPG, PNG, WEBP, or PDF — up to 10MB"
+          <div
+            v-show="showTypeTabsLeftFade"
+            class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-surface-secondary to-transparent"
+          />
+          <div
+            v-show="showTypeTabsRightFade"
+            class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface-secondary to-transparent"
+          />
+        </div>
+
+        <form class="space-y-4 p-4 sm:p-5" @submit.prevent="onSubmit" @focusin="expanded = true">
+          <div class="flex items-center gap-3">
+            <div class="flex min-w-0 flex-1 items-center gap-3">
+              <span class="text-lg font-medium text-ink-tertiary">RM</span>
+              <input
+                ref="amountInputRef"
+                v-model="amount"
+                aria-label="Amount"
+                placeholder="0.00"
+                required
+                inputmode="decimal"
+                class="min-w-0 flex-1 border-0 bg-transparent p-0 text-2xl font-semibold text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-0"
               />
-            </AppField>
+            </div>
+            <label
+              class="relative flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-sm font-medium text-ink-secondary focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 sm:px-3"
+            >
+              <span class="sm:hidden">{{ compactTransactionDate }}</span>
+              <span class="hidden sm:inline">{{ fullTransactionDate }}</span>
+              <AppIcon name="calendar" :size="16" />
+              <input
+                v-model="transactionDate"
+                aria-label="Transaction date"
+                type="date"
+                required
+                class="absolute inset-0 cursor-pointer opacity-0 focus:outline-none"
+              />
+            </label>
           </div>
-        </div>
 
-        <p v-if="submitError" class="text-sm text-danger">{{ submitError }}</p>
+          <div
+            v-if="expanded"
+            class="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2"
+          >
+            <template v-if="!deferAccounts">
+              <AppField :label="activeType.primaryAccountLabel">
+                <AppSelect
+                  v-model="primaryAccountId"
+                  :options="primaryAccountOptions"
+                  :placeholder="
+                    activeType.primaryAccountLabel === 'Category'
+                      ? 'Select a category'
+                      : 'Select an account'
+                  "
+                  required
+                />
+              </AppField>
+              <AppField :label="activeType.secondaryAccountLabel">
+                <AppSelect
+                  v-model="secondaryAccountId"
+                  :options="secondaryAccountOptions"
+                  placeholder="Select an account"
+                  required
+                />
+              </AppField>
+              <div class="sm:col-span-2">
+                <button
+                  type="button"
+                  class="text-xs font-medium text-ink-tertiary underline hover:text-ink"
+                  @click="deferAccounts = true"
+                >
+                  Not sure which accounts yet? Decide later.
+                </button>
+              </div>
+            </template>
+            <div v-else class="sm:col-span-2">
+              <p class="text-sm text-ink-secondary">
+                No accounts chosen yet — this will wait for you to decide.
+              </p>
+              <button
+                type="button"
+                class="mt-1 text-xs font-medium text-ink-tertiary underline hover:text-ink"
+                @click="deferAccounts = false"
+              >
+                Choose accounts now
+              </button>
+            </div>
+            <div class="sm:col-span-2">
+              <AppField label="Description">
+                <AppInput v-model="description" placeholder="What was this for?" required />
+              </AppField>
+            </div>
+            <div class="sm:col-span-2">
+              <AppField label="Receipt or invoice (optional)">
+                <AppDropzone
+                  ref="dropzoneRef"
+                  v-model="evidenceFile"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  hint="JPG, PNG, WEBP, or PDF — up to 10MB"
+                />
+              </AppField>
+            </div>
+          </div>
 
-        <div
-          class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p class="text-xs leading-5 text-ink-tertiary">
-            Nothing posts until you review and confirm the Proposal.
-          </p>
-          <AppButton type="submit" variant="primary" :disabled="submitting" class="justify-center">
-            <AppIcon name="send" :size="15" />
-            {{ submitting ? 'Submitting…' : 'Submit for review' }}
-          </AppButton>
-        </div>
-      </form>
-    </AppCard>
+          <p v-if="submitError" class="text-sm text-danger">{{ submitError }}</p>
+
+          <div
+            class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p class="text-xs leading-5 text-ink-tertiary">
+              Nothing posts until you review and confirm the Proposal.
+            </p>
+            <AppButton
+              type="submit"
+              variant="primary"
+              :disabled="submitting"
+              class="justify-center"
+            >
+              <AppIcon name="send" :size="15" />
+              {{ submitting ? 'Submitting…' : 'Submit for review' }}
+            </AppButton>
+          </div>
+        </form>
+      </AppCard>
     </div>
 
     <section aria-labelledby="your-work-heading">
@@ -618,7 +625,9 @@ onMounted(async () => {
             role="status"
             aria-label="Updating automatically"
           >
-            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75"
+            />
             <span class="relative inline-flex h-2 w-2 rounded-full bg-accent" />
           </span>
           <button

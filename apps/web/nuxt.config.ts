@@ -17,7 +17,9 @@ export default defineNuxtConfig({
     head: {
       htmlAttrs: { lang: 'en' },
       title: 'hore.my',
-      titleTemplate: (chunk) => (chunk ? `${chunk} · hore.my` : 'hore.my'),
+      // titleTemplate is a function, which nuxt.config's own static app.head
+      // can't carry (its type is Serializable<AppHeadMetaObject>, which maps
+      // any function to `never`) — set via useHead() in app.vue instead.
       // PWA basics (installable app, no offline-caching sophistication):
       // a static manifest + a hand-written service worker
       // (app/plugins/pwa.client.ts registers it), not the
