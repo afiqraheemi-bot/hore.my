@@ -145,7 +145,11 @@ onMounted(loadCustomers)
 
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
-    <EmptyState v-else-if="customers.length === 0" title="No customers yet" />
+    <EmptyState
+      v-else-if="customers.length === 0"
+      title="No customers yet"
+      description="Add your first customer to start sending quotations and invoices."
+    />
     <div v-else class="space-y-2">
       <AppCard v-for="customer in customers" :key="customer.id">
         <template v-if="editingId !== customer.id">

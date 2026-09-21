@@ -313,7 +313,11 @@ onMounted(async () => {
 
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
-    <EmptyState v-else-if="quotations.length === 0" title="No quotations yet" />
+    <EmptyState
+      v-else-if="quotations.length === 0"
+      title="No quotations yet"
+      description="Draft your first quotation to send a customer before you invoice them."
+    />
     <div v-else class="space-y-2">
       <AppCard v-for="quotation in quotations" :key="quotation.id">
         <div class="flex flex-wrap items-center justify-between gap-3">

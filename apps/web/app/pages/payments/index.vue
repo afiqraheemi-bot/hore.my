@@ -279,7 +279,11 @@ onMounted(async () => {
 
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
-    <EmptyState v-else-if="payments.length === 0" title="No payments yet" />
+    <EmptyState
+      v-else-if="payments.length === 0"
+      title="No payments yet"
+      description="Record a payment once a customer pays an invoice."
+    />
     <div v-else class="space-y-2">
       <AppCard v-for="payment in payments" :key="payment.id">
         <div class="flex flex-wrap items-center justify-between gap-3">

@@ -285,7 +285,11 @@ onMounted(async () => {
 
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <p v-else-if="error" class="text-sm text-danger">{{ error }}</p>
-    <EmptyState v-else-if="invoices.length === 0" title="No invoices yet" />
+    <EmptyState
+      v-else-if="invoices.length === 0"
+      title="No invoices yet"
+      description="Create your first invoice to start billing customers."
+    />
     <div v-else class="space-y-2">
       <AppCard
         v-for="invoice in invoices"
