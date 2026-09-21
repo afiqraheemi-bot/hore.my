@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createAccount, registerNewUser } from './support/fixtures'
+import { createAccount, createTaskInNeedsReview, registerNewUser } from './support/fixtures'
 
 /**
  * Real-browser proof of WTS-001 v3.0.0's two new flows (TSK-013,
@@ -27,7 +27,7 @@ test.describe('NeedsInformation and edit/supersede', () => {
       page.waitForResponse(
         (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
       ),
-      page.getByRole('button', { name: /submit for review/i }).click(),
+      page.getByRole('button', { name: /save for later/i }).click(),
     ])
 
     await expect(page.getByText('NeedsInformation')).toBeVisible()
@@ -55,28 +55,18 @@ test.describe('NeedsInformation and edit/supersede', () => {
     await expect(page.getByText('Completed', { exact: true })).toBeVisible()
   })
 
-  async function submitExpenseTask(page: import('@playwright/test').Page, description: string) {
-    await page.goto('/')
-    await page.locator('input[inputmode="decimal"]').fill('40.00')
-    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
-    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
-    await page.getByPlaceholder('What was this for?').fill(description)
-
-    await Promise.all([
-      page.waitForResponse(
-        (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
-      ),
-      page.getByRole('button', { name: /submit for review/i }).click(),
-    ])
-  }
-
   test('editing a task under review supersedes it and navigates to the linked correction', async ({
     page,
   }) => {
     await createAccount(page, '1010', 'Savings', 'Asset')
-    await submitExpenseTask(page, 'E2E: wrong payment account')
+    await createTaskInNeedsReview(
+      page,
+      '40.00',
+      'Office Supplies',
+      'Cash',
+      'E2E: wrong payment account',
+    )
 
-    await page.locator('a[href^="/tasks/"]').first().click()
     await page.waitForURL(/\/tasks\/[^/]+$/)
     const originalUrl = page.url()
 

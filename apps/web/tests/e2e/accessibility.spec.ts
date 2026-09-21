@@ -1,6 +1,11 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { createAccount, createCustomer, registerNewUser } from './support/fixtures'
+import {
+  createAccount,
+  createCustomer,
+  createTaskInNeedsReview,
+  registerNewUser,
+} from './support/fixtures'
 
 /**
  * Automated proof against HORE_MY_MASTER_CONTEXT.md §5's own "WCAG 2.2
@@ -62,22 +67,7 @@ test.describe('Accessibility (WCAG 2.2 AA)', () => {
     await createAccount(page, '5000', 'Office Supplies', 'Expense')
     await createAccount(page, '1000', 'Cash', 'Asset')
 
-    await page.goto('/')
-    await page.getByRole('button', { name: 'Expense' }).click()
-    await page.locator('input[inputmode="decimal"]').fill('45.00')
-    await page.locator('form select').nth(0).selectOption({ label: 'Office Supplies' })
-    await page.locator('form select').nth(1).selectOption({ label: 'Cash' })
-    await page.getByPlaceholder('What was this for?').fill('Stationery')
-
-    await Promise.all([
-      page.waitForResponse(
-        (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
-      ),
-      page.getByRole('button', { name: /submit for review/i }).click(),
-    ])
-
-    await page.getByRole('link', { name: /stationery/i }).click()
-    await page.waitForURL(/\/tasks\/.+/)
+    await createTaskInNeedsReview(page, '45.00', 'Office Supplies', 'Cash', 'Stationery')
     await assertNoViolations(page)
   })
 

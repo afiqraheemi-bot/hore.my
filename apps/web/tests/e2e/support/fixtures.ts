@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 /**
  * Registers a fresh Tenant/User and leaves the browser authenticated
@@ -114,5 +114,53 @@ export async function registerBankAccount(
       (res) => res.url().endsWith('/api/v1/bank-accounts') && res.request().method() === 'POST',
     ),
     page.locator('form button[type="submit"]').click(),
+  ])
+}
+
+/**
+ * Creates a Task and drives it all the way to `NeedsReview`, leaving
+ * the browser on that Task's own detail page — the only door into the
+ * Task/Work Queue pipeline now that a fully-filled composer posts
+ * directly (2026-09-21, Founder-directed follow-up to UX-01; see
+ * AppComposer.vue's own docblock). Deferring the Account decision at
+ * submission time lands it in `NeedsInformation`; completing it via
+ * the Task detail page's own form transitions
+ * `NeedsInformation -> NeedsReview` — the same two real HTTP round
+ * trips (`POST /api/v1/tasks`, `POST .../provide-information`) a user
+ * who genuinely wasn't sure yet, then came back, would make.
+ */
+export async function createTaskInNeedsReview(
+  page: Page,
+  amount: string,
+  primaryAccountLabel: string,
+  secondaryAccountLabel: string,
+  description: string,
+): Promise<void> {
+  await page.goto('/')
+  await page.locator('input[inputmode="decimal"]').fill(amount)
+  await page.getByPlaceholder('What was this for?').fill(description)
+  await page.getByText('Not sure which accounts yet? Decide later.').click()
+
+  await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
+    ),
+    page.getByRole('button', { name: /save for later/i }).click(),
+  ])
+  await expect(page.getByText('NeedsInformation')).toBeVisible()
+
+  // Client-side (Vue Router) navigation — click() resolves as soon as
+  // the event fires, not once the destination has rendered. Without
+  // waiting for content unique to the Task detail page first, the
+  // form selects below can race the still-visible composer's own
+  // (unrelated) selects on the page being navigated away from.
+  await page.locator('a[href^="/tasks/"]').first().click()
+  await expect(page.getByRole('heading', { name: 'Needs more information' })).toBeVisible()
+  await page.locator('form select').nth(0).selectOption({ label: primaryAccountLabel })
+  await page.locator('form select').nth(1).selectOption({ label: secondaryAccountLabel })
+
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes('/provide-information')),
+    page.getByRole('button', { name: /submit for review/i }).click(),
   ])
 }

@@ -24,23 +24,30 @@
  * transaction is only ever recorded with an `evidence_reference` that
  * genuinely, already resolves to stored Evidence.
  *
- * **One composer, two postures (UX-01, 2026-09-21 UI/UX audit).**
- * `mode="review"` submits a Task to `POST /api/v1/tasks` — Accounting
- * Core never sees it until a human confirms the resulting Proposal.
- * `mode="direct"` posts straight to the type's own REST endpoint
- * (`/api/v1/expenses`, etc.) via {@see TransactionType.directEndpoint}.
- * Before this, the Work Queue page (`index.vue`) reimplemented this
- * entire component inline to get review-mode — the same markup drifted
- * out of sync (it was missing "Owner drawing" as a submittable type
- * entirely) and, because the two copies were visually identical, made
- * it easy to lose track of which page — and which posting behaviour —
- * you were on. `mode` only sets the *initial* posture; the toggle below
- * lets either page's composer switch postures in place, so the choice
- * is an explicit, visible control rather than a fact you infer from the
- * URL.
+ * **One path, decided by data — not a mode you pick (2026-09-21,
+ * Founder-directed follow-up to UX-01).** Earlier versions of this
+ * component exposed a "Wait for my review" / "Post directly" toggle,
+ * as if which one to use were a preference. It isn't: Work Queue was
+ * never meant to be a mode — it's simply where anything lands that a
+ * human hasn't yet made a complete, certain decision about. Whether
+ * you filled in the whole form yourself, that decision is already
+ * complete — it posts straight to the type's own REST endpoint
+ * ({@see TransactionType.directEndpoint}), no extra confirmation
+ * step, exactly like Manual Entry always did. Whether you defer
+ * choosing accounts ("Not sure which accounts yet?"), that's
+ * incomplete by definition — it saves as a Task
+ * (`POST /api/v1/tasks`, `NeedsInformation`) and waits in Work Queue
+ * until you finish it, at which point it still asks for one
+ * "Confirm and post" (`tasks/[id].vue`) — the same
+ * `NeedsInformation -> NeedsReview -> approve()` pipeline
+ * {@see \App\Domain\Workspace\TaskService} already runs end-to-end
+ * today specifically so a future AI-produced Proposal (uncertain by
+ * construction, and forbidden by HORE_MY_MASTER_CONTEXT.md §11 from
+ * ever writing to the ledger on its own) needs no new confirmation
+ * machinery — only a new way to reach `NeedsReview`, alongside this
+ * one. Deferring is the only door into that pipeline today; AI will
+ * be the second one.
  */
-const props = defineProps<{ mode: 'review' | 'direct' }>()
-
 interface Account {
   id: string
   account_code: string
@@ -69,12 +76,12 @@ interface TransactionType {
   key: string
   label: string
   icon: 'receipt' | 'wallet' | 'bank' | 'building' | 'chart' | 'download' | 'send'
-  /** mode="direct" posts here. */
+  /** Posted here when accounts are chosen. */
   directEndpoint: string
-  /** mode="review" posts to /api/v1/tasks with this as `command_type`. */
+  /** Sent to POST /api/v1/tasks as `command_type` when accounts are deferred. */
   commandType: string
   primaryAccountLabel: string
-  /** mode="direct" payload field name; mode="review" always uses `primary_account_id`. */
+  /** Direct-post payload field name; the deferred Task payload always uses `primary_account_id`. */
   primaryAccountKey: string
   primaryAccountTypes: string[]
   secondaryAccountLabel: string
@@ -193,18 +200,16 @@ const { request } = useApi()
 const accounts = ref<Account[]>([])
 const expanded = ref(false)
 const activeType = ref<TransactionType>(types[0]!)
-const currentMode = ref<'review' | 'direct'>(props.mode)
 const deferAccounts = ref(false)
 
 const postureCopy = computed(() =>
-  currentMode.value === 'review'
+  deferAccounts.value
     ? {
-        submitLabel: 'Submit for review',
-        submittingLabel: 'Submitting…',
-        confirmedLabel: 'Submitted.',
-        footer: 'Nothing posts until you review and confirm the Proposal.',
-        errorFallback:
-          'Could not submit this Task. Check the amount, accounts, and optional attachment.',
+        submitLabel: 'Save for later',
+        submittingLabel: 'Saving…',
+        confirmedLabel: 'Saved.',
+        footer: 'Saved without accounts — finish it anytime from Work Queue, then confirm to post.',
+        errorFallback: 'Could not save this. Check the amount and optional attachment.',
       }
     : {
         submitLabel: 'Record',
@@ -215,13 +220,6 @@ const postureCopy = computed(() =>
           'Could not record this — check the amount format (e.g. 50.00), account selection, and attachment (max 10MB, image or PDF).',
       },
 )
-
-function setMode(next: 'review' | 'direct') {
-  if (currentMode.value === next) return
-  currentMode.value = next
-  deferAccounts.value = false
-  error.value = null
-}
 
 const {
   scrollRef: typeTabsScrollRef,
@@ -314,7 +312,7 @@ async function onSubmit() {
   try {
     const evidenceReference = await uploadEvidenceIfAttached()
 
-    if (currentMode.value === 'review') {
+    if (deferAccounts.value) {
       await request('/api/v1/tasks', {
         method: 'POST',
         headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -322,12 +320,6 @@ async function onSubmit() {
           command_type: activeType.value.commandType,
           amount: normalizeMoney(amount.value),
           transaction_date: transactionDate.value,
-          ...(deferAccounts.value
-            ? {}
-            : {
-                primary_account_id: primaryAccountId.value,
-                secondary_account_id: secondaryAccountId.value,
-              }),
           description: description.value,
           ...(evidenceReference ? { evidence_reference: evidenceReference } : {}),
         },
@@ -455,7 +447,7 @@ defineExpose({
         v-if="expanded"
         class="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2"
       >
-        <template v-if="currentMode === 'direct' || !deferAccounts">
+        <template v-if="!deferAccounts">
           <AppField :label="activeType.primaryAccountLabel">
             <AppSelect
               v-model="primaryAccountId"
@@ -476,7 +468,7 @@ defineExpose({
               required
             />
           </AppField>
-          <div v-if="currentMode === 'review'" class="sm:col-span-2">
+          <div class="sm:col-span-2">
             <button
               type="button"
               class="text-xs font-medium text-ink-tertiary underline hover:text-ink"
@@ -488,7 +480,7 @@ defineExpose({
         </template>
         <div v-else class="sm:col-span-2">
           <p class="text-sm text-ink-secondary">
-            No accounts chosen yet — this will wait for you to decide.
+            No accounts chosen yet — this will wait in Work Queue for you to decide.
           </p>
           <button
             type="button"
@@ -519,43 +511,6 @@ defineExpose({
       <p v-if="justCreated" class="flex items-center gap-1.5 text-sm text-success">
         <AppIcon name="check" :size="14" /> {{ postureCopy.confirmedLabel }}
       </p>
-
-      <div class="flex justify-center">
-        <div
-          role="radiogroup"
-          aria-label="Posting mode"
-          class="flex w-full max-w-xs gap-1 rounded-full bg-surface-secondary p-1 sm:max-w-sm"
-        >
-          <button
-            type="button"
-            role="radio"
-            :aria-checked="currentMode === 'review'"
-            class="flex-1 rounded-full px-3 py-2 text-xs font-medium transition-colors"
-            :class="
-              currentMode === 'review'
-                ? 'bg-surface text-ink shadow-sm'
-                : 'text-ink-tertiary hover:text-ink'
-            "
-            @click="setMode('review')"
-          >
-            Wait for my review
-          </button>
-          <button
-            type="button"
-            role="radio"
-            :aria-checked="currentMode === 'direct'"
-            class="flex-1 rounded-full px-3 py-2 text-xs font-medium transition-colors"
-            :class="
-              currentMode === 'direct'
-                ? 'bg-surface text-ink shadow-sm'
-                : 'text-ink-tertiary hover:text-ink'
-            "
-            @click="setMode('direct')"
-          >
-            Post directly
-          </button>
-        </div>
-      </div>
 
       <div
         class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"

@@ -2,24 +2,22 @@
 /**
  * Home — the action-first workspace (HORE_MY_MASTER_CONTEXT.md §5) and
  * the authenticated default landing experience (ADR-0009, WTS-001).
- * Also reachable at `/tasks` (no client-side redirect or loading
- * flash) and at `/manual-entry` — the same page, opened with the
- * composer's "Post directly" posture preselected instead of "Wait for
- * my review" — via `alias` below.
+ * Also reachable at `/tasks` and `/manual-entry` (no client-side
+ * redirect or loading flash) — historical aliases to this same page;
+ * kept only so old links/bookmarks still resolve.
  *
- * **One page, not two (UX-01 follow-up, 2026-09-21).** This used to be
- * two separate pages/nav entries with near-identical composers; once
- * AppComposer.vue grew an in-place mode toggle, keeping a second page
- * around was itself the redundancy the original audit finding named —
- * a returning owner reasonably asked "if it's merged, why are there
- * still two things in the sidebar?". `initialMode` below only picks
- * which posture the composer *opens* in; the toggle inside it still
- * switches freely either way without navigating.
+ * **One page, one path decided by data (2026-09-21, Founder-directed
+ * follow-up to UX-01).** This used to expose a "Wait for my
+ * review"/"Post directly" toggle, as if which to use were a user
+ * preference. It isn't: AppComposer.vue now posts directly whenever
+ * you filled in the whole form yourself, and only lands in Work Queue
+ * when you explicitly deferred choosing accounts — the queue is where
+ * incomplete decisions wait, not a mode to opt into. See
+ * AppComposer.vue's own docblock for the full reasoning, including how
+ * this same door is what a future AI-produced Proposal will use too.
  */
 definePageMeta({ middleware: 'auth', alias: ['/tasks', '/manual-entry'] })
 useHead({ title: 'Work Queue' })
-
-const initialMode = useRoute().path === '/manual-entry' ? 'direct' : 'review'
 
 interface TaskSummary {
   command_type: string
@@ -414,7 +412,7 @@ onUnmounted(() => {
     </div>
 
     <div ref="composerAnchorRef">
-      <AppComposer ref="composerRef" :mode="initialMode" @created="onComposerCreated" />
+      <AppComposer ref="composerRef" @created="onComposerCreated" />
     </div>
 
     <section aria-labelledby="your-work-heading">
@@ -494,8 +492,8 @@ onUnmounted(() => {
         <EmptyState
           v-else-if="tasks.length === 0"
           :bordered="false"
-          title="No Tasks yet"
-          description="Submit one above. It will wait here for your review."
+          title="Nothing waiting on you"
+          description="Entries you save without picking accounts yet land here to finish."
           class="min-h-48"
         />
         <EmptyState
