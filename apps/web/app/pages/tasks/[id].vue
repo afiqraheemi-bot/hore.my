@@ -383,12 +383,9 @@ onMounted(load)
     <div v-else class="space-y-6">
       <AppCard>
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="font-mono text-xs text-ink-tertiary">{{ task.id }}</p>
-            <p class="text-sm text-ink-tertiary">
-              Submitted {{ new Date(task.created_at).toLocaleString() }}
-            </p>
-          </div>
+          <p class="text-sm text-ink-tertiary">
+            Submitted {{ new Date(task.created_at).toLocaleString() }}
+          </p>
           <div class="flex items-center gap-2">
             <span
               v-if="isPolling"
@@ -715,6 +712,9 @@ onMounted(load)
             }}</span>
           </li>
         </ol>
+        <p class="mt-3 border-t border-border pt-3 font-mono text-xs text-ink-tertiary">
+          Reference: {{ task.id }}
+        </p>
       </AppCard>
     </div>
   </div>
