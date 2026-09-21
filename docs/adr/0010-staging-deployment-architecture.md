@@ -117,6 +117,15 @@ exists anywhere in this codebase today, so there is nothing a worker process wou
   ADR-0008's own mitigation — `SANCTUM_STATEFUL_DOMAINS` and the API-origin derivation are both
   configuration/small-code concerns, not architectural ones; revisit at that time, exactly as ADR-0008
   already anticipated.
+- **Risk**: `docker-compose.yml` and `docker-compose.staging.yml` live in the same directory and, by
+  Docker Compose's own default, resolve to the *same* project name (derived from the directory) unless
+  `-p`/`COMPOSE_PROJECT_NAME` is passed explicitly — running a staging command without it silently
+  builds and retags the **dev** `horemy-api`/`horemy-web` images with the staging (`production`-target)
+  build, and dev's own containers keep running against those wrong images until explicitly rebuilt.
+  Reproduced directly during this ADR's own verification (see
+  `docs/operations/staging-deployment.md` §4). **Mitigation**: always pass an explicit `-p` (e.g. `-p
+  horemy-staging`) — or, on the actual staging VPS, simply never `git clone` the two compose files onto
+  the same machine as a dev checkout, which is the deploy workflow's own normal shape anyway.
 
 ## Validation
 

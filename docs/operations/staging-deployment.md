@@ -39,7 +39,7 @@ domain, two TLS-terminated ports, no app code changes) was chosen.
      the comments already in the example file.
    - `APP_KEY` — generate it from inside the built image itself (never by hand, never committed):
      ```
-     docker compose -f docker-compose.staging.yml run --rm api php artisan key:generate --show
+     docker compose -p horemy-staging -f docker-compose.staging.yml run --rm api php artisan key:generate --show
      ```
      paste the `base64:...` output back into `apps/api/.env.staging`.
 6. **Deploy key for CI.** Generate a dedicated SSH key pair for automated deploys (`ssh-keygen -t
@@ -52,8 +52,8 @@ domain, two TLS-terminated ports, no app code changes) was chosen.
    - `STAGING_DEPLOY_PATH` — the repo path on the VPS (e.g. `/opt/hore.my`)
 7. **First deploy (manual, one time only).** From the VPS:
    ```
-   docker compose -f docker-compose.staging.yml up -d --build
-   docker compose -f docker-compose.staging.yml exec -T api php artisan migrate --force
+   docker compose -p horemy-staging -f docker-compose.staging.yml up -d --build
+   docker compose -p horemy-staging -f docker-compose.staging.yml exec -T api php artisan migrate --force
    ```
    Every deploy after this happens automatically — see §3.
 
@@ -81,6 +81,16 @@ work):
   invalid payload with `422`, not a crash) once the dry run's own placeholder `DB_PASSWORD`/
   `SANCTUM_STATEFUL_DOMAINS`/`APP_KEY` values were corrected to real ones — each of those three
   failures, and their fixes, are exactly the mistakes §2 above now warns about, found by making them.
+- **A real incident, also found and fixed during this verification**: the very first dry-run attempt
+  omitted `-p`/`COMPOSE_PROJECT_NAME`, so Compose resolved `docker-compose.staging.yml` to the *same*
+  default project name as the dev stack (both files live in this same directory) — it silently rebuilt
+  and retagged the dev `horemy-api`/`horemy-web` images with the `production`-target build, and dev's
+  own containers kept running against those wrong images (proven by `horemy-web`'s CMD becoming `node
+  .output/server/index.mjs`, the production command, instead of `npm run dev`) until both were
+  explicitly rebuilt again. Full backend (1918 tests) and E2E (44 tests) suites were re-confirmed green
+  afterward. This is now ADR-0010's own documented risk — always pass an explicit `-p` when running a
+  staging Compose command anywhere near a dev checkout, exactly as this runbook's own commands already
+  do implicitly by never mixing the two on the same host in normal use.
 - **Not verified**: a full browser-driven register/login flow (Sanctum's CSRF cookie handshake) against
   the production image specifically — this requires either a real HTTPS domain or a more involved local
   HTTPS setup than a dry run justifies. This exact flow is already proven correct by this repo's own

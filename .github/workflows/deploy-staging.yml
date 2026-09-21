@@ -35,5 +35,5 @@ jobs:
             cd ${{ secrets.STAGING_DEPLOY_PATH }}
             git fetch origin staging
             git reset --hard origin/staging
-            docker compose -f docker-compose.staging.yml up -d --build
-            docker compose -f docker-compose.staging.yml exec -T api php artisan migrate --force
+            docker compose -p horemy-staging -f docker-compose.staging.yml up -d --build
+            docker compose -p horemy-staging -f docker-compose.staging.yml exec -T api php artisan migrate --force
