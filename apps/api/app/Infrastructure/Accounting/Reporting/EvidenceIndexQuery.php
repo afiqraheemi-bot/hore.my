@@ -46,7 +46,7 @@ final class EvidenceIndexQuery
 
     public function forPeriod(TenantId $tenantId, \DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): EvidenceIndex
     {
-        /** @var Collection<int, object{journal_id: string, financial_date: string, source: string}> $rows */
+        /** @var Collection<int, object{journal_id: string, financial_date: string, posted_at: string, source: string}> $rows */
         $rows = $this->connection->table(self::JOURNAL_TABLE)
             ->join(self::AUDIT_EVENT_TABLE, function ($join): void {
                 $join->on(self::JOURNAL_TABLE.'.tenant_id', '=', self::AUDIT_EVENT_TABLE.'.tenant_id')
@@ -60,6 +60,7 @@ final class EvidenceIndexQuery
             ->get([
                 self::JOURNAL_TABLE.'.journal_id',
                 self::JOURNAL_TABLE.'.financial_date',
+                self::JOURNAL_TABLE.'.posted_at',
                 self::AUDIT_EVENT_TABLE.'.source',
             ]);
 
@@ -74,6 +75,7 @@ final class EvidenceIndexQuery
             $entries[] = new EvidenceIndexEntry(
                 JournalId::of($row->journal_id),
                 new \DateTimeImmutable($row->financial_date),
+                new \DateTimeImmutable($row->posted_at),
                 SourceReference::of($row->source),
                 $amountByJournalId[$row->journal_id],
                 $evidenceByJournalId[$row->journal_id] ?? [],

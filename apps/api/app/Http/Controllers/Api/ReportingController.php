@@ -987,6 +987,7 @@ final class ReportingController extends Controller
             'entries' => array_map(fn (EvidenceIndexEntry $entry): array => [
                 'journal_id' => $entry->journalId()->toString(),
                 'financial_date' => $entry->financialDate()->format('Y-m-d'),
+                'posted_at' => $entry->postedAt()->format('Y-m-d\TH:i:sP'),
                 'source' => $entry->source()->toString(),
                 'amount' => $entry->amount()->toDecimalString(),
                 'has_evidence' => $entry->hasEvidence(),

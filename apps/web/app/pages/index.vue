@@ -39,6 +39,7 @@ interface Task {
 interface EvidenceEntry {
   journal_id: string
   financial_date: string
+  posted_at: string
   source: string
   amount: string
   has_evidence: boolean
@@ -116,7 +117,7 @@ async function loadActivity() {
       query: { period_start: periodStart, period_end: periodEnd },
     })
     activityEntries.value = [...data.entries].sort((a, b) =>
-      b.financial_date.localeCompare(a.financial_date),
+      b.posted_at.localeCompare(a.posted_at),
     )
   } catch {
     error.value = 'Could not load your recent activity.'
@@ -244,6 +245,8 @@ interface TaskFeedItem {
   id: string
   state: string
   date: string
+  /** Full-precision timestamp used only for ordering — `date` (day-only) can't tell same-day items apart. */
+  sortAt: string
   description: string
   amount: string | null
   icon: TaskIconName
@@ -253,6 +256,8 @@ interface ActivityFeedItem {
   kind: 'activity'
   journalId: string
   date: string
+  /** Full-precision timestamp used only for ordering — `date` (day-only) can't tell same-day items apart. */
+  sortAt: string
   description: string
   amount: string
   icon: TaskIconName
@@ -277,6 +282,7 @@ function toTaskFeedItem(task: Task): TaskFeedItem {
     id: task.id,
     state: task.state,
     date: task.created_at.slice(0, 10),
+    sortAt: task.created_at,
     description: task.summary?.description || 'Task',
     amount: task.summary?.amount ?? null,
     icon: iconForTask(task),
@@ -287,12 +293,14 @@ const pendingItems = computed<TaskFeedItem[]>(() =>
   tasks.value
     .filter((task) => pendingStates.has(task.state))
     .map(toTaskFeedItem)
-    .sort((a, b) => b.date.localeCompare(a.date)),
+    .sort((a, b) => b.sortAt.localeCompare(a.sortAt)),
 )
 
 // activityEntries is already sorted newest-first by loadActivity();
 // resolved (dead-end) Tasks are merged in and the combined list
-// re-sorted so both interleave by date rather than one block per kind.
+// re-sorted by the real posted/created timestamp (not the day-only
+// `date`) so same-day entries interleave in actual chronological
+// order instead of whatever order the underlying queries returned.
 const settledItems = computed<FeedItem[]>(() => {
   const resolvedTasks: FeedItem[] = tasks.value
     .filter((task) => resolvedTaskStates.has(task.state))
@@ -301,13 +309,14 @@ const settledItems = computed<FeedItem[]>(() => {
     kind: 'activity',
     journalId: entry.journal_id,
     date: entry.financial_date,
+    sortAt: entry.posted_at,
     description: entry.description || describeSource(entry.source).label,
     amount: entry.amount,
     icon: describeSource(entry.source).icon,
     evidenceId: entry.evidence_references[0] ?? null,
   }))
 
-  return [...resolvedTasks, ...activity].sort((a, b) => b.date.localeCompare(a.date))
+  return [...resolvedTasks, ...activity].sort((a, b) => b.sortAt.localeCompare(a.sortAt))
 })
 
 const visibleSettledItems = computed(() => settledItems.value.slice(0, visibleActivityCount.value))
