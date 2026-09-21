@@ -274,6 +274,10 @@ const reconciliationError = ref<string | null>(null)
 const transitioning = ref<string | null>(null)
 const reopenReason = ref<Record<string, string>>({})
 
+function linkedAccountName(bankAccount: BankAccount): string {
+  return accounts.value.find((a) => a.id === bankAccount.linked_account_id)?.account_name ?? '—'
+}
+
 async function loadAll() {
   loading.value = true
   try {
@@ -513,27 +517,46 @@ onMounted(loadAll)
 
     <p v-if="loading" class="text-sm text-ink-tertiary">Loading…</p>
     <template v-else>
-      <div class="flex flex-wrap gap-2">
+      <EmptyState
+        v-if="bankAccounts.length === 0"
+        title="No bank accounts registered yet"
+        description="Register one above to import statements and reconcile against it."
+      />
+      <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <button
           v-for="bankAccount in bankAccounts"
           :key="bankAccount.id"
           type="button"
-          class="rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
+          class="rounded-2xl border p-4 text-left transition-colors"
           :class="
             selectedBankAccountId === bankAccount.id
-              ? 'border-accent bg-accent text-accent-contrast'
-              : 'border-border bg-surface text-ink-secondary hover:bg-surface-hover'
+              ? 'border-accent bg-accent-soft'
+              : 'border-border bg-surface hover:bg-surface-hover'
           "
           @click="selectBankAccount(bankAccount.id)"
         >
-          {{ bankAccount.bank_name }}
-          <span v-if="bankAccount.account_number_last4"
-            >···{{ bankAccount.account_number_last4 }}</span
-          >
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-ink">{{ bankAccount.bank_name }}</p>
+              <p class="truncate text-xs text-ink-tertiary">
+                {{ linkedAccountName(bankAccount)
+                }}<template v-if="bankAccount.account_number_last4">
+                  · ···{{ bankAccount.account_number_last4 }}</template
+                >
+              </p>
+            </div>
+            <AppIcon name="bank" :size="16" class="shrink-0 text-ink-tertiary" />
+          </div>
+          <div class="mt-3 flex items-center gap-1.5">
+            <span
+              class="h-1.5 w-1.5 rounded-full"
+              :class="bankAccount.active ? 'bg-success' : 'bg-ink-tertiary'"
+            />
+            <span class="text-xs text-ink-tertiary">{{
+              bankAccount.active ? 'Active' : 'Inactive'
+            }}</span>
+          </div>
         </button>
-        <p v-if="bankAccounts.length === 0" class="text-sm text-ink-tertiary">
-          No bank accounts registered yet.
-        </p>
       </div>
 
       <div v-if="selectedBankAccountId" class="mt-6 space-y-6">
