@@ -585,7 +585,7 @@ onMounted(loadAll)
           <EmptyState v-if="transactions.length === 0" title="No transactions imported yet" />
           <div v-else class="space-y-1.5">
             <AppCard v-for="transaction in transactions" :key="transaction.id" :padded="false">
-              <div class="flex items-center gap-3 px-4 py-2.5">
+              <div class="flex items-start gap-3 px-4 py-2.5">
                 <span
                   class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
                   :class="
@@ -601,7 +601,7 @@ onMounted(loadAll)
                 </span>
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-sm text-ink">{{ transaction.description }}</p>
-                  <p class="text-xs text-ink-tertiary">
+                  <p class="line-clamp-2 text-xs text-ink-tertiary">
                     {{ transaction.transaction_date
                     }}<template v-if="transaction.reference">
                       · {{ transaction.reference }}</template
@@ -690,7 +690,7 @@ onMounted(loadAll)
               v-for="suggestion in suggestions"
               :key="suggestion.bank_transaction_id + suggestion.journal_id"
             >
-              <div class="flex items-center justify-between gap-3">
+              <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <AppBadge tone="accent">{{ suggestion.source_type }}</AppBadge>
                   <p class="mt-1 text-sm text-ink-secondary">{{ suggestion.rationale }}</p>
