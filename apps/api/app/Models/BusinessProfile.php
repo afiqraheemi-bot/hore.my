@@ -39,12 +39,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $business_type
  * @property int $financial_year_start_month
  * @property string $timezone
+ * @property string|null $msic_code
+ * @property string|null $sst_registration_number
  * @property-read Tenant $tenant
  */
 #[Fillable([
     'tenant_id', 'legal_name', 'registration_number', 'tin',
     'address_line1', 'address_line2', 'city', 'state', 'postcode',
     'business_type', 'financial_year_start_month', 'timezone',
+    'msic_code', 'sst_registration_number',
 ])]
 class BusinessProfile extends Model
 {

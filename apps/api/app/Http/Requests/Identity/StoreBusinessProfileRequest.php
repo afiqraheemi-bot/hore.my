@@ -31,6 +31,8 @@ final class StoreBusinessProfileRequest extends FormRequest
             'postcode' => ['required', 'string', 'regex:/^\d{5}$/'],
             'business_type' => ['required', 'string', Rule::in(BusinessProfile::BUSINESS_TYPES)],
             'financial_year_start_month' => ['required', 'integer', 'between:1,12'],
+            'msic_code' => ['sometimes', 'nullable', 'string', 'regex:/^\d{5}$/'],
+            'sst_registration_number' => ['sometimes', 'nullable', 'string', 'max:64'],
         ];
     }
 }

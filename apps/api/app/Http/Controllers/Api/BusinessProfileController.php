@@ -60,6 +60,8 @@ final class BusinessProfileController extends Controller
                 'postcode' => $request->string('postcode')->toString(),
                 'business_type' => $request->string('business_type')->toString(),
                 'financial_year_start_month' => $request->integer('financial_year_start_month'),
+                'msic_code' => $request->has('msic_code') ? $request->string('msic_code')->toString() : null,
+                'sst_registration_number' => $request->has('sst_registration_number') ? $request->string('sst_registration_number')->toString() : null,
             ],
         );
 
@@ -94,6 +96,8 @@ final class BusinessProfileController extends Controller
             'business_type' => $profile->business_type,
             'financial_year_start_month' => $profile->financial_year_start_month,
             'timezone' => $profile->timezone,
+            'msic_code' => $profile->msic_code,
+            'sst_registration_number' => $profile->sst_registration_number,
             'is_complete' => $profile->isComplete(),
         ];
     }

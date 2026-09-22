@@ -162,7 +162,7 @@ The AETS series itself is not independently versioned; its state at any time is 
 
 ## 10. Planned document structure
 
-**AETS-001 (Accounting Terminology), AETS-002 (Accounting Invariants), AETS-003 (Money Specification), and the later Active documents listed in [`README.md`](README.md) have already been created. AETS-008 and AETS-012 exist as Drafts only.** This table is the single authoritative roadmap for the AETS series; no other document states a competing numbering. Rows without an existing document remain planned and unreserved; a Draft row is not effective until activated under §8. The list may grow, shrink, or reorder as design work proceeds. This roadmap does not itself define any listed topic.
+**AETS-001 (Accounting Terminology), AETS-002 (Accounting Invariants), AETS-003 (Money Specification), and the later Active documents listed in [`README.md`](README.md) have already been created. AETS-008, AETS-012, and AETS-013 exist as Drafts only.** This table is the single authoritative roadmap for the AETS series; no other document states a competing numbering. Rows without an existing document remain planned and unreserved; a Draft row is not effective until activated under §8. The list may grow, shrink, or reorder as design work proceeds. This roadmap does not itself define any listed topic.
 
 | Planned | Working title | Anticipated concern |
 | --- | --- | --- |
@@ -175,7 +175,7 @@ The AETS series itself is not independently versioned; its state at any time is 
 | AETS-010 | Audit Trail | Audit event shape, evidence retention and linkage |
 | AETS-011 | AI Accounting Proposal Contract | What Accounting Core requires from, and how it validates, an AI-produced proposal |
 | AETS-012 (Draft) | Proof of Accuracy | Proposed golden dataset scope and acceptance criteria gating full AI workflows; not effective or certified pending review |
-| AETS-013 | MyInvois Integration | Idempotent submission, status reconciliation, sandbox/production isolation |
+| AETS-013 (Draft) | MyInvois Integration | Idempotent submission, status reconciliation, sandbox/production isolation; v0.1.0 covers only credential storage and document-building, not effective pending review |
 | AETS-014 | Period Management | Period lifecycle, close/reopen controls |
 
 Each, when created, must include a `Related` field citing the ADR(s) and sections of this document (or of [AETS-002](AETS-002-Accounting-Invariants.md)) it implements, and must not introduce anything AETS-002 or §3 prohibits.

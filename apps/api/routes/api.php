@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MatchController;
+use App\Http\Controllers\Api\MyInvoisCredentialController;
 use App\Http\Controllers\Api\OwnerDrawingController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PeriodController;
@@ -45,6 +46,9 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/dashboard', [DashboardController::class, 'show']);
             Route::get('/business-profile', [BusinessProfileController::class, 'show']);
             Route::put('/business-profile', [BusinessProfileController::class, 'store']);
+
+            Route::get('/myinvois/credentials', [MyInvoisCredentialController::class, 'index']);
+            Route::put('/myinvois/credentials', [MyInvoisCredentialController::class, 'store']);
 
             Route::get('/accounts', [AccountController::class, 'index']);
             Route::post('/accounts', [AccountController::class, 'store']);
