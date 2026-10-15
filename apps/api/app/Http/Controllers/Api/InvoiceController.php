@@ -29,9 +29,13 @@ use App\Domain\Invoicing\InvoiceId;
 use App\Domain\Invoicing\InvoiceIssuingService;
 use App\Domain\Invoicing\InvoiceLine;
 use App\Domain\Invoicing\InvoiceStatus;
+use App\Domain\MyInvois\Exception\InvalidMyInvoisLineDetailException;
+use App\Domain\MyInvois\MyInvoisLineDetail;
+use App\Domain\MyInvois\MyInvoisTaxType;
 use App\Domain\Payments\AllocationService;
 use App\Domain\Payments\Payment;
 use App\Domain\Payments\PaymentAllocation;
+use App\Domain\Shared\Tenancy\TenantId;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Invoicing\IssueInvoiceRequest;
 use App\Http\Requests\Invoicing\StoreInvoiceRequest;
@@ -42,6 +46,7 @@ use App\Http\Support\DocumentPartyFormatter;
 use App\Http\Support\DocumentPdfBuilder;
 use App\Infrastructure\Customers\CustomerRepository;
 use App\Infrastructure\Invoicing\InvoiceRepository;
+use App\Infrastructure\MyInvois\MyInvoisInvoiceLineDetailRepository;
 use App\Infrastructure\Payments\PaymentAllocationRepository;
 use App\Infrastructure\Payments\PaymentRepository;
 use App\Models\BusinessProfile;
@@ -70,6 +75,7 @@ final class InvoiceController extends Controller
         private readonly AllocationService $allocationService,
         private readonly PaymentAllocationRepository $allocationRepository,
         private readonly PaymentRepository $paymentRepository,
+        private readonly MyInvoisInvoiceLineDetailRepository $myInvoisLineDetailRepository,
     ) {}
 
     public function index(CurrentTenant $currentTenant): JsonResponse
@@ -96,6 +102,7 @@ final class InvoiceController extends Controller
         }
 
         $data = $this->toArray($invoice);
+        $data['lines'] = $this->withMyInvoisLineDetails($currentTenant->id(), $invoice);
 
         if ($invoice->status() === InvoiceStatus::Issued) {
             $allocations = $this->allocationRepository->findByInvoice($currentTenant->id(), $invoice->id());
@@ -136,6 +143,7 @@ final class InvoiceController extends Controller
 
         $receivableAccountId = AccountId::of($request->string('receivable_account_id')->toString());
         $revenueAccountId = AccountId::of($request->string('revenue_account_id')->toString());
+        $lines = $request->array('lines');
 
         try {
             $this->accountTypeValidator->validate($currentTenant->id(), $receivableAccountId, $revenueAccountId);
@@ -147,22 +155,28 @@ final class InvoiceController extends Controller
                 new \DateTimeImmutable($request->string('due_date')->toString()),
                 $receivableAccountId,
                 $revenueAccountId,
-                $this->linesFromRequest($request->array('lines')),
+                $this->linesFromRequest($lines),
                 Currency::of('MYR'),
             );
+            $lineDetails = $this->myInvoisLineDetailsFromRequest($lines);
         } catch (
             RejectedAccountReferenceException|
             InvalidReceivableAccountTypeException|
             InvalidRevenueAccountTypeException|
             InvalidInvoiceLineException|
-            TooManyInvoiceLinesException $e
+            TooManyInvoiceLinesException|
+            InvalidMyInvoisLineDetailException $e
         ) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         $this->invoiceRepository->save($invoice);
+        $this->myInvoisLineDetailRepository->replaceForInvoice($currentTenant->id(), $invoice->id(), $lineDetails);
 
-        return response()->json($this->toArray($invoice), 201);
+        $data = $this->toArray($invoice);
+        $data['lines'] = $this->withMyInvoisLineDetails($currentTenant->id(), $invoice);
+
+        return response()->json($data, 201);
     }
 
     public function update(UpdateInvoiceRequest $request, CurrentTenant $currentTenant, string $invoiceId): JsonResponse
@@ -175,6 +189,7 @@ final class InvoiceController extends Controller
 
         $receivableAccountId = AccountId::of($request->string('receivable_account_id')->toString());
         $revenueAccountId = AccountId::of($request->string('revenue_account_id')->toString());
+        $lines = $request->array('lines');
 
         try {
             $this->accountTypeValidator->validate($currentTenant->id(), $receivableAccountId, $revenueAccountId);
@@ -183,14 +198,16 @@ final class InvoiceController extends Controller
                 new \DateTimeImmutable($request->string('due_date')->toString()),
                 $receivableAccountId,
                 $revenueAccountId,
-                $this->linesFromRequest($request->array('lines')),
+                $this->linesFromRequest($lines),
             );
+            $lineDetails = $this->myInvoisLineDetailsFromRequest($lines);
         } catch (
             RejectedAccountReferenceException|
             InvalidReceivableAccountTypeException|
             InvalidRevenueAccountTypeException|
             InvalidInvoiceLineException|
-            TooManyInvoiceLinesException $e
+            TooManyInvoiceLinesException|
+            InvalidMyInvoisLineDetailException $e
         ) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (InvoiceNotEditableException $e) {
@@ -198,8 +215,12 @@ final class InvoiceController extends Controller
         }
 
         $this->invoiceRepository->update($invoice);
+        $this->myInvoisLineDetailRepository->replaceForInvoice($currentTenant->id(), $invoice->id(), $lineDetails);
 
-        return response()->json($this->toArray($invoice));
+        $data = $this->toArray($invoice);
+        $data['lines'] = $this->withMyInvoisLineDetails($currentTenant->id(), $invoice);
+
+        return response()->json($data);
     }
 
     public function destroy(CurrentTenant $currentTenant, string $invoiceId): JsonResponse
@@ -312,6 +333,83 @@ final class InvoiceController extends Controller
             $line['quantity'],
             Money::fromDecimalString($line['unit_price'], Currency::of('MYR')),
         ), $lines));
+    }
+
+    /**
+     * Same request array {@see linesFromRequest()} reads.
+     *
+     * @param  array<int, array{description: string, quantity: int, unit_price: string, myinvois_tax_type?: string|null, myinvois_tax_rate?: string|int|float|null, myinvois_tax_amount?: string|null, myinvois_classification_code?: string|null, myinvois_unit_of_measure?: string|null}>  $lines
+     * @return array<int, MyInvoisLineDetail|null> Keyed by 0-based line position — `null` where a line supplies no MyInvois data at all.
+     *
+     * @throws InvalidMyInvoisLineDetailException if a line supplies some but not all of the five MyInvois fields (AETS-013 v0.1.0 §6.1).
+     */
+    private function myInvoisLineDetailsFromRequest(array $lines): array
+    {
+        return array_values(array_map(function (array $line): ?MyInvoisLineDetail {
+            $taxType = $line['myinvois_tax_type'] ?? null;
+            $taxRate = $line['myinvois_tax_rate'] ?? null;
+            $taxAmount = $line['myinvois_tax_amount'] ?? null;
+            $classificationCode = $line['myinvois_classification_code'] ?? null;
+            $unitOfMeasure = $line['myinvois_unit_of_measure'] ?? null;
+
+            $presentCount = count(array_filter(
+                [$taxType, $taxRate, $taxAmount, $classificationCode, $unitOfMeasure],
+                static fn (mixed $value): bool => $value !== null && $value !== '',
+            ));
+
+            if ($presentCount === 0) {
+                return null;
+            }
+
+            if (
+                $presentCount < 5
+                || ! is_string($taxType)
+                || ! is_string($taxAmount)
+                || ! is_string($classificationCode)
+                || ! is_string($unitOfMeasure)
+            ) {
+                throw InvalidMyInvoisLineDetailException::forPartiallyFilledLine();
+            }
+
+            return MyInvoisLineDetail::of(
+                MyInvoisTaxType::from($taxType),
+                (string) $taxRate,
+                Money::fromDecimalString($taxAmount, Currency::of('MYR')),
+                $classificationCode,
+                $unitOfMeasure,
+            );
+        }, $lines));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function withMyInvoisLineDetails(TenantId $tenantId, Invoice $invoice): array
+    {
+        $details = $this->myInvoisLineDetailRepository->findForInvoice(
+            $tenantId,
+            $invoice->id(),
+            $invoice->totalAmount()->currency()->identifier(),
+        );
+
+        $lines = [];
+        foreach ($invoice->lines() as $position => $line) {
+            $detail = $details[$position] ?? null;
+
+            $lines[] = [
+                'description' => $line->description(),
+                'quantity' => $line->quantity(),
+                'unit_price' => $line->unitPrice()->toDecimalString(),
+                'line_amount' => $line->lineAmount()->toDecimalString(),
+                'myinvois_tax_type' => $detail?->taxType()->value,
+                'myinvois_tax_rate' => $detail?->taxRate(),
+                'myinvois_tax_amount' => $detail?->taxAmount()->toDecimalString(),
+                'myinvois_classification_code' => $detail?->classificationCode(),
+                'myinvois_unit_of_measure' => $detail?->unitOfMeasure(),
+            ];
+        }
+
+        return $lines;
     }
 
     /**

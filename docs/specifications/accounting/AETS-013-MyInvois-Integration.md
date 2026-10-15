@@ -1,7 +1,7 @@
 # AETS-013: MyInvois Integration
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.2.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer (outstanding — same honest gap [AETS-008](AETS-008-Bank-Reconciliation.md)/[AETS-012](AETS-012-Proof-of-Accuracy.md)/[AETS-015](AETS-015-Evidence-Storage.md) each record); Founder / Product Owner (scope approval obtained 2026-09-22 — see §3)
@@ -80,7 +80,9 @@ Customer already carries a Tax Identification Number (`Customer::taxIdentificati
 
 `InvoiceLine` (`app/Domain/Invoicing/InvoiceLine.php`) is a tightly invariant-checked Value Object that flows directly into ledger posting (`InvoiceToPostingCommandTranslator`) and carries its own re-derivation check (`hasConsistentLineAmount()`). None of the fields above affect what gets posted to the ledger — SST/e-Invoice metadata is a MyInvois submission concern, not an accounting-posting concern, and this codebase has no Malaysian-SST ledger treatment (a dedicated tax-liability Account) today. Extending the core `InvoiceLine` constructor would touch the posting pipeline for data the posting pipeline never needs, widening this change's blast radius into code the existing 1918-test backend suite exercises heavily for reasons unrelated to MyInvois.
 
-This version instead adds a separate, MyInvois-owned table keyed by `(invoice_id, line_position)`, populated optionally alongside Invoice line creation and read only by `UblInvoiceDocumentBuilder` (§7). `InvoiceLine` itself, `InvoiceToPostingCommandTranslator`, and `InvoiceIssuingService` are unchanged by this document.
+This version instead adds a separate, MyInvois-owned table (`myinvois_invoice_line_details`, as of v0.2.0) keyed by `(invoice_id, line_number)` — FK'd onto `invoice_lines`'s own `(invoice_id, line_number)` unique constraint with `ON DELETE CASCADE`, so it empties automatically every time `InvoiceRepository::replaceLines()` deletes and re-inserts a Draft's lines, with no explicit cleanup of its own. `InvoiceLine` itself, `InvoiceToPostingCommandTranslator`, `InvoiceIssuingService`, and `InvoiceRepository` are unchanged by this document — `MyInvoisInvoiceLineDetailRepository::replaceForInvoice()` is called separately by `InvoiceController` right after `InvoiceRepository::save()`/`update()` succeeds, not inside that repository's own transaction (an accepted gap for optional, supplementary data nothing downstream depends on yet).
+
+**As of v0.2.0, `InvoiceController`'s existing `store`/`update`/`show` actions carry this data** — five optional per-line request fields (`myinvois_tax_type`, `myinvois_tax_rate`, `myinvois_tax_amount`, `myinvois_classification_code`, `myinvois_unit_of_measure`), all-or-nothing per line (a line supplying some but not all five is rejected with a 422, never silently partial). This is request/response plumbing only — no new HTTP endpoint, no submission action, nothing `UblInvoiceDocumentBuilder` itself didn't already expect to read.
 
 ## 7. `UblInvoiceDocumentBuilder`
 
@@ -124,6 +126,7 @@ Source: LHDN MyInvois SDK, `sdk.myinvois.hasil.gov.my/codes/` (reviewed 2026-09-
 | MYI-004 | `UblInvoiceDocumentBuilder` never emits a document with a missing mandatory field silently substituted or omitted — a missing required field is a raised, named exception, not a partial document. |
 | MYI-005 | A built document's financial totals reconcile exactly to the source Invoice's own already-computed line/total amounts — no independent recomputation that could silently diverge. |
 | MYI-006 | Saving a `MyInvoisCredential` for one Environment never reads from or writes to the other Environment's row for the same Tenant. |
+| MYI-007 | An Invoice line request supplying some but not all five MyInvois fields is rejected (422) — never silently partial, never silently dropped. |
 
 ## 10. Required test specification
 
@@ -140,4 +143,5 @@ A companion `ATS-013` document is required (unlike `AETS-015`'s initial slice, t
 
 ## Changelog
 
+- **0.2.0 (2026-10-15):** Persists `MyInvoisLineDetail` (new `myinvois_invoice_line_details` table, §6.1) and wires it into `InvoiceController`'s existing `store`/`update`/`show` actions — the increment v0.1.0 explicitly deferred ("wiring MyInvoisLineDetail into the live Invoice create/update UI"). Adds MYI-007 (all-or-nothing per line). Still no live LHDN call, no outbox, no digital signature, no submit endpoint — `UblInvoiceDocumentBuilder` itself is unchanged.
 - **0.1.0 (2026-09-22):** Initial Draft. Resolves `AETS-000` §10's planned "MyInvois Integration" entry with a first, deliberately narrow slice: `MyInvoisCredential` storage (encrypted, environment-isolated) and a pure `UblInvoiceDocumentBuilder` producing an unsigned MyInvois v1.0 Invoice document from an Issued Invoice — no live LHDN call, no outbox, no digital signature. Founder scope approval obtained 2026-09-22; Accounting Domain Reviewer sign-off outstanding.

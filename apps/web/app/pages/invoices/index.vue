@@ -7,7 +7,74 @@ interface InvoiceLine {
   quantity: number
   unit_price: string
   line_amount: string
+  myinvois_tax_type: string | null
+  myinvois_tax_rate: string | null
+  myinvois_tax_amount: string | null
+  myinvois_classification_code: string | null
+  myinvois_unit_of_measure: string | null
 }
+
+interface LineDraft {
+  description: string
+  quantity: number
+  unit_price: string
+  myinvois_tax_type: string
+  myinvois_tax_rate: string
+  myinvois_tax_amount: string
+  myinvois_classification_code: string
+  myinvois_unit_of_measure: string
+  myinvoisOpen: boolean
+}
+
+function newLineDraft(): LineDraft {
+  return {
+    description: '',
+    quantity: 1,
+    unit_price: '',
+    myinvois_tax_type: '',
+    myinvois_tax_rate: '',
+    myinvois_tax_amount: '',
+    myinvois_classification_code: '',
+    myinvois_unit_of_measure: '',
+    myinvoisOpen: false,
+  }
+}
+
+/**
+ * Only sends the five MyInvois fields when the Tax Type has actually
+ * been picked — the backend (AETS-013 v0.1.0 §6.1) requires all five
+ * together once any is present, so an untouched line (the common
+ * case today, with no live MyInvois submission to use this for yet)
+ * carries none of them, exactly as if the fields didn't exist.
+ */
+function lineDraftToPayload(line: LineDraft): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    description: line.description,
+    quantity: line.quantity,
+    unit_price: normalizeMoney(line.unit_price),
+  }
+
+  if (line.myinvois_tax_type) {
+    payload.myinvois_tax_type = line.myinvois_tax_type
+    payload.myinvois_tax_rate = line.myinvois_tax_rate
+    payload.myinvois_tax_amount = normalizeMoney(line.myinvois_tax_amount)
+    payload.myinvois_classification_code = line.myinvois_classification_code
+    payload.myinvois_unit_of_measure = line.myinvois_unit_of_measure
+  }
+
+  return payload
+}
+
+/** LHDN MyInvois's own Tax Type code table (AETS-013 v0.1.0 §8). */
+const MYINVOIS_TAX_TYPE_OPTIONS = [
+  { value: '01', label: '01 — Sales Tax' },
+  { value: '02', label: '02 — Service Tax' },
+  { value: '03', label: '03 — Tourism Tax' },
+  { value: '04', label: '04 — High-Value Goods Tax' },
+  { value: '05', label: '05 — Sales Tax on Low Value Goods' },
+  { value: '06', label: '06 — Not Applicable' },
+  { value: 'E', label: 'E — Tax exemption' },
+]
 
 interface Invoice {
   id: string
@@ -65,9 +132,7 @@ const customerId = ref('')
 const dueDate = ref('')
 const receivableAccountId = ref('')
 const revenueAccountId = ref('')
-const lineDrafts = ref<{ description: string; quantity: number; unit_price: string }[]>([
-  { description: '', quantity: 1, unit_price: '' },
-])
+const lineDrafts = ref<LineDraft[]>([newLineDraft()])
 const creating = ref(false)
 const createError = ref<string | null>(null)
 
@@ -116,7 +181,7 @@ async function loadAccounts() {
 }
 
 function addLine() {
-  lineDrafts.value.push({ description: '', quantity: 1, unit_price: '' })
+  lineDrafts.value.push(newLineDraft())
 }
 
 function removeLine(index: number) {
@@ -136,14 +201,14 @@ async function onCreate() {
         revenue_account_id: revenueAccountId.value,
         lines: lineDrafts.value
           .filter((l) => l.description && l.unit_price)
-          .map((l) => ({ ...l, unit_price: normalizeMoney(l.unit_price) })),
+          .map((l) => lineDraftToPayload(l)),
       },
     })
     customerId.value = ''
     dueDate.value = ''
     receivableAccountId.value = ''
     revenueAccountId.value = ''
-    lineDrafts.value = [{ description: '', quantity: 1, unit_price: '' }]
+    lineDrafts.value = [newLineDraft()]
     showForm.value = false
     await loadInvoices()
   } catch {
@@ -251,23 +316,52 @@ onMounted(async () => {
 
         <div class="space-y-2">
           <p class="text-xs font-medium text-ink-secondary">Lines</p>
-          <div v-for="(line, i) in lineDrafts" :key="i" class="flex flex-wrap items-end gap-2">
-            <div class="min-w-[10rem] flex-1">
-              <AppInput v-model="line.description" placeholder="Description" />
+          <div
+            v-for="(line, i) in lineDrafts"
+            :key="i"
+            class="space-y-1.5 rounded-xl border border-border/60 p-2"
+          >
+            <div class="flex flex-wrap items-end gap-2">
+              <div class="min-w-[10rem] flex-1">
+                <AppInput v-model="line.description" placeholder="Description" />
+              </div>
+              <div class="w-20">
+                <AppInput v-model.number="line.quantity" type="number" min="1" placeholder="Qty" />
+              </div>
+              <div class="w-28">
+                <AppInput v-model="line.unit_price" placeholder="Unit price" />
+              </div>
+              <button
+                type="button"
+                class="mb-2.5 text-ink-tertiary hover:text-danger"
+                @click="removeLine(i)"
+              >
+                <AppIcon name="trash" :size="16" />
+              </button>
             </div>
-            <div class="w-20">
-              <AppInput v-model.number="line.quantity" type="number" min="1" placeholder="Qty" />
-            </div>
-            <div class="w-28">
-              <AppInput v-model="line.unit_price" placeholder="Unit price" />
-            </div>
+
             <button
               type="button"
-              class="mb-2.5 text-ink-tertiary hover:text-danger"
-              @click="removeLine(i)"
+              class="text-[11px] text-ink-tertiary hover:text-ink"
+              @click="line.myinvoisOpen = !line.myinvoisOpen"
             >
-              <AppIcon name="trash" :size="16" />
+              {{ line.myinvoisOpen ? 'Hide MyInvois details' : 'Add MyInvois details (optional)' }}
             </button>
+
+            <div v-if="line.myinvoisOpen" class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <AppSelect
+                v-model="line.myinvois_tax_type"
+                :options="MYINVOIS_TAX_TYPE_OPTIONS"
+                placeholder="Tax type"
+              />
+              <AppInput v-model="line.myinvois_tax_rate" placeholder="Tax rate %" />
+              <AppInput v-model="line.myinvois_tax_amount" placeholder="Tax amount" />
+              <AppInput
+                v-model="line.myinvois_classification_code"
+                placeholder="Classification code"
+              />
+              <AppInput v-model="line.myinvois_unit_of_measure" placeholder="Unit (e.g. EA)" />
+            </div>
           </div>
           <AppButton size="sm" variant="ghost" type="button" @click="addLine">
             <AppIcon name="plus" :size="13" /> Add line

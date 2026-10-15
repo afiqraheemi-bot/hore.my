@@ -1,7 +1,7 @@
 # ATS-013: MyInvois Integration Test Specification
 
 - Status: Draft
-- Version: 0.1.0
+- Version: 0.2.0
 - Effective date: Not effective — pending required review
 - Owner: Accounting Core (see [`CODEOWNERS`](../../../../CODEOWNERS))
 - Reviewers: CTO / Technical Partner; Accounting Domain Reviewer (outstanding)
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-This specification proves `AETS-013` v0.1.0 — `MyInvoisCredential` storage and `UblInvoiceDocumentBuilder` only. It proves none of AETS-013 §2.2's deferred items (no live LHDN call exists yet to test against).
+This specification proves `AETS-013` v0.2.0 — `MyInvoisCredential` storage, `UblInvoiceDocumentBuilder`, and (as of v0.2.0) `MyInvoisLineDetail` persistence/HTTP wiring through `InvoiceController`. It proves none of AETS-013 §2.2's deferred items (no live LHDN call exists yet to test against).
 
 ## 2. Test strategy
 
@@ -26,6 +26,7 @@ This specification proves `AETS-013` v0.1.0 — `MyInvoisCredential` storage and
 | MYI-004 | MYI-T008, MYI-T009 |
 | MYI-005 | MYI-T013 |
 | MYI-006 | MYI-T005, MYI-T006 |
+| MYI-007 | MYI-T018 |
 
 ## 4. Test cases
 
@@ -58,10 +59,23 @@ These are methods of `MyInvoisCredentialManagementTest` (Feature, real PostgreSQ
 
 These are methods of `UblInvoiceDocumentBuilderTest` (Unit, no persistence).
 
+### 4.3 `MyInvoisLineDetail` persistence and HTTP wiring (real PostgreSQL, as of v0.2.0)
+
+| ID | Proof |
+| --- | --- |
+| MYI-T016 | Creating an Invoice with all five MyInvois fields on a line persists a row and returns it in the response. |
+| MYI-T017 | Creating an Invoice with no MyInvois fields on a line persists no row — unchanged, backward-compatible behavior. |
+| MYI-T018 | A line supplying some but not all five MyInvois fields is rejected (422); no Invoice is persisted. |
+| MYI-T019 | Updating an Invoice replaces its MyInvois line data wholesale, mirroring `InvoiceRepository::replaceLines()`'s own convention — old rows gone, only the new set present. |
+| MYI-T020 | `GET /api/v1/invoices/{id}` returns previously persisted MyInvois line data. |
+
+These are methods of `MyInvoisInvoiceLineDetailManagementTest` (Feature, real PostgreSQL).
+
 ## 5. Out of scope for this version
 
 No test in this document exercises a live HTTP call to MyInvois, the outbox, or digital signature — none of that code exists yet (`AETS-013` §2.2). A future `ATS-013` version adds those test IDs once Phase 2/3 land.
 
 ## Changelog
 
+- **0.2.0 (2026-10-15):** Adds §4.3 (MYI-T016–MYI-T020) and MYI-007, proving AETS-013 v0.2.0's `MyInvoisLineDetail` persistence and `InvoiceController` wiring.
 - **0.1.0 (2026-09-22):** Initial Draft, proving AETS-013 v0.1.0 (`MyInvoisCredential` storage and `UblInvoiceDocumentBuilder` only).

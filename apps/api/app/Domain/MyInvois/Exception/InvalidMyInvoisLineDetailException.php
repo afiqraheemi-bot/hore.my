@@ -25,4 +25,9 @@ final class InvalidMyInvoisLineDetailException extends \InvalidArgumentException
     {
         return new self(sprintf('Tax rate "%s" is not a non-negative decimal percentage.', $taxRate));
     }
+
+    public static function forPartiallyFilledLine(): self
+    {
+        return new self('A line with any MyInvois field set must supply all of them: tax type, tax rate, tax amount, classification code, and unit of measure.');
+    }
 }

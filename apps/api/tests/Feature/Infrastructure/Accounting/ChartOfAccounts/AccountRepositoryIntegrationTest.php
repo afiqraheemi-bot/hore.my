@@ -544,6 +544,7 @@ final class AccountRepositoryIntegrationTest extends TestCase
         Schema::connection('pgsql')->dropIfExists('payments');
         Schema::connection('pgsql')->dropIfExists('quotation_lines');
         Schema::connection('pgsql')->dropIfExists('quotations');
+        Schema::connection('pgsql')->dropIfExists('myinvois_invoice_line_details');
         Schema::connection('pgsql')->dropIfExists('invoice_lines');
         Schema::connection('pgsql')->dropIfExists('invoices');
 
