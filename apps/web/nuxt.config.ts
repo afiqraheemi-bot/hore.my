@@ -1,3 +1,5 @@
+import { version as appVersion } from './package.json'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -79,6 +81,10 @@ export default defineNuxtConfig({
       // CSRF cookie the moment the page is reached through a different
       // hostname, e.g. a LAN IP for phone testing).
       apiPort: process.env.NUXT_PUBLIC_API_PORT || '8000',
+      // A visible build/version marker (sidebar footer) — so after any
+      // deploy, it's immediately obvious which release is actually
+      // live, instead of guessing from a possibly-stale browser tab.
+      appVersion,
     },
   },
 })

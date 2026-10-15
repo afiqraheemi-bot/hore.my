@@ -6,6 +6,7 @@ const { user, tenant, logout } = useAuth()
 const { canInstall, promptInstall } = useInstallPrompt()
 const router = useRouter()
 const route = useRoute()
+const appVersion = useRuntimeConfig().public.appVersion as string
 
 interface NavItem {
   to: string
@@ -188,6 +189,13 @@ function toggleDesktopSidebar() {
         <AppIcon name="logout" :size="18" class="shrink-0" />
         <span v-if="!collapsed || mobileOpen" :class="collapsed && 'md:hidden'">Log out</span>
       </button>
+      <p
+        v-if="!collapsed || mobileOpen"
+        class="mt-2 px-2.5 text-[11px] text-ink-tertiary"
+        :class="collapsed && 'md:hidden'"
+      >
+        hore.my v{{ appVersion }}
+      </p>
     </div>
   </aside>
 </template>
